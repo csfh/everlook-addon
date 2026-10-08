@@ -1164,11 +1164,14 @@ local function detail_extra(role, text_key, text)
 	}
 	extra[text_key] = public(text)
 	if who then
+		-- The giver and turn-in ids carry no type, so only a creature may use them. An object says what it is in
+		-- starters and enders, and an id here would read as an NPC with the same number.
+		local is_creature = who.type ~= "object"
 		if role == ROLE_GIVER then
-			extra.giverId = who.id
+			extra.giverId = is_creature and who.id or nil
 			extra.starters = { who }
 		else
-			extra.turnInId = who.id
+			extra.turnInId = is_creature and who.id or nil
 			extra.enders = { who }
 		end
 		if who.type == "object" then
