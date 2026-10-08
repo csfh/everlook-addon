@@ -2,7 +2,7 @@
 ## Title: |cffffd100Everlook|r
 ## Notes: Collects world data for Everlook and holds the settings page for its module addons.
 ## Author: Christoffer Hallas
-## Version: 0.24.2
+## Version: 0.24.3
 ## SavedVariables: EverlookDB
 ## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
 
