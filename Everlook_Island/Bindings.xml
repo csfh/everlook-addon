@@ -1,0 +1,8 @@
+<Bindings>
+	<Binding name="EVERLOOK_SMART_ISLAND" header="EVERLOOK" runOnUp="true">
+		everlook_smart_island_key(keystate)
+	</Binding>
+	<Binding name="EVERLOOK_SMART_ISLAND_DISMISS" header="EVERLOOK">
+		everlook_smart_island_dismiss()
+	</Binding>
+</Bindings>

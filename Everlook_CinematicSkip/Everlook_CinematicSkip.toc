@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffCinematicSkip|r
+## Notes: Closes a cinematic or a movie when it starts.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+cinematic_skip.lua

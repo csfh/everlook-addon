@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffSellJunk|r
+## Notes: Sells grey items when a vendor opens, and says what that junk brought in once selling stops.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+sell_junk.lua

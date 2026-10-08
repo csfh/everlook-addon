@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffQuestTextSize|r
+## Notes: Sets the quest description, objectives, reward, and progress text to the size you choose, and waits while you are in combat.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+quest_interface.lua

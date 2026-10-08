@@ -1,0 +1,5 @@
+<Bindings>
+	<Binding name="EVERLOOK_SHARE" header="EVERLOOK" category="Everlook" default="ALT-BUTTON2">
+		everlook_share_click()
+	</Binding>
+</Bindings>

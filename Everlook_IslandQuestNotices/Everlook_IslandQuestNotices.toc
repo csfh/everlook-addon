@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cffad76efIslandQuestNotices|r
+## Notes: Notices for quest turn-ins, quests ready to hand in, the suggested next quest, and quests worth pinning.
+## Author: Christoffer Hallas
+## Dependencies: Everlook, Everlook_Island
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+island_quest_notices.lua

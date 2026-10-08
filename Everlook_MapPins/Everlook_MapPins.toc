@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffMapPins|r
+## Notes: Draws quest givers, turn-ins, objectives, objects, rares, world bosses, flight masters, vendors, and trainers you have seen on the world map.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+map_pins.lua
+map_pins.xml

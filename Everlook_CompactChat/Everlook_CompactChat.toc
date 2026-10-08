@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffCompactChat|r
+## Notes: Shows say, yell, party, raid, guild, officer, instance, and whisper lines as a short label (S, Y, P, PL, R, RL, RW, G, O, I, IL, W, or To), the name, then the message, with no brackets, and a numbered channel as its number.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+chat_format.lua

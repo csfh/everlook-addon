@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffUnitFrameNames|r
+## Notes: Adds the points on Extra points to the player and target names on the default unit frames, and grows each name's region so the larger text is not clipped.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+unit_names.lua

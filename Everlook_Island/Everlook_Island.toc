@@ -1,0 +1,21 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cffad76efIsland|r
+## Notes: A small pill at the top of the screen that shows your level, your quest and notices.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+island_quests.lua
+island_actions.lua
+island_capsule.lua
+island_vitals.lua
+island_history.lua
+island_surface.lua
+island_rim.lua
+island_scroll.lua
+island_notice.lua
+island_inbox.lua
+island_toasts.lua
+smart_island.lua
+island_feed_kit.lua

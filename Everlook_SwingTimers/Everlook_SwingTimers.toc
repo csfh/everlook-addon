@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffSwingTimers|r
+## Notes: Sets the main hand, off hand, and ranged swing timers to the size on Timer scale, and leaves Edit Mode's saved size alone.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+swing_timers.lua

@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffTakeMail|r
+## Notes: Takes the money and the attached items from the open mailbox, one letter at a time, and that letter leaves the inbox.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+mail.lua

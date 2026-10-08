@@ -1,0 +1,125 @@
+name: addon-release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: addon-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  AWS_ENDPOINT: ${{ secrets.AWS_ENDPOINT }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+  AWS_USE_PATH_STYLE_ENDPOINT: ${{ secrets.AWS_USE_PATH_STYLE_ENDPOINT }}
+  AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
+  AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
+
+jobs:
+  tests:
+    uses: ./.github/workflows/addon-tests.yml
+
+  addon:
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Bump version
+        id: bump
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: ${{ github.workspace }}
+        run: python3 scripts/auto_release.py maybe-bump-addon --root "${{ github.workspace }}" --before "${{ github.event.before }}" --after "${{ github.sha }}"
+
+      - name: Setup uv
+        if: steps.bump.outputs.release != 'false'
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.11.26"
+
+      - name: Pack Everlook
+        if: steps.bump.outputs.release != 'false'
+        id: pack
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ steps.bump.outputs.version }}" ]]; then
+            version="${{ steps.bump.outputs.version }}"
+          else
+            version="$(awk -F': ' '/^## Version:/{gsub("\r","",$2); print $2; exit}' Everlook/Everlook.toc)"
+          fi
+          archive="$(bash scripts/pack.sh "${version}")"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "archive=${archive}" >> "${GITHUB_OUTPUT}"
+          tar -tzf "${archive}" | awk 'NR<=10'
+
+      - name: Upload Everlook archive
+        if: steps.bump.outputs.release != 'false'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.ADDON_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.ADDON_AWS_SECRET_ACCESS_KEY }}
+          ADDON_AWS_BUCKET: ${{ secrets.ADDON_AWS_BUCKET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${AWS_SECRET_ACCESS_KEY}" ]; then
+            echo "ADDON_AWS_SECRET_ACCESS_KEY is not set; packed archive was not uploaded."
+            echo "Set ADDON_AWS_* and shared AWS_ENDPOINT secrets on csfh/everlook-addon."
+            exit 0
+          fi
+          version="${{ steps.pack.outputs.version }}"
+          archive="${{ steps.pack.outputs.archive }}"
+          name="$(basename "${archive}")"
+          aws s3 cp "${archive}" "s3://${ADDON_AWS_BUCKET}/${name}" --endpoint-url "${AWS_ENDPOINT}"
+          aws s3 cp "${archive}" "s3://${ADDON_AWS_BUCKET}/Everlook-latest.tar.gz" --endpoint-url "${AWS_ENDPOINT}"
+          aws s3 cp "$(dirname "${archive}")/Everlook.json" "s3://${ADDON_AWS_BUCKET}/Everlook.json" --endpoint-url "${AWS_ENDPOINT}" --content-type application/json
+
+      - name: Commit version
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.bump.outputs.bumped == 'true'
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Everlook/Everlook.toc
+          git commit -m "chore: release addon ${{ steps.bump.outputs.version }}"
+          bash scripts/push_release_commit.sh
+
+      - name: Tag and publish GitHub release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.bump.outputs.release != 'false'
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.pack.outputs.version }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          tag="addon-v${VERSION}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "${tag} already exists; nothing to publish."
+            exit 0
+          fi
+          # Notes cover everything since the last addon release, so a push that
+          # did not release (docs, tests) still shows up in the next one.
+          since="$(git describe --tags --abbrev=0 --match 'addon-v*' HEAD 2>/dev/null || true)"
+          if [[ -z "${since}" ]]; then
+            since="${BEFORE}"
+          fi
+          python3 scripts/auto_release.py release-notes --product addon --since "${since}" > "${RUNNER_TEMP}/notes.md" \
+            || echo "See the commit history for this release." > "${RUNNER_TEMP}/notes.md"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${tag}" -m "Everlook addon ${VERSION}"
+          git push origin "${tag}"
+          gh release create "${tag}" "${{ steps.pack.outputs.archive }}" \
+            --verify-tag \
+            --title "Everlook addon ${VERSION}" \
+            --notes-file "${RUNNER_TEMP}/notes.md"

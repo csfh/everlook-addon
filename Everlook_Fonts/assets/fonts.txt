@@ -1,0 +1,19 @@
+Expressway Free, version 2.100
+Copyright 2005 Ray Larabie. The font is unmodified.
+
+Source: https://github.com/NeticSoul/DragonUI/blob/main/DragonUI/Fonts/expressway.ttf
+Accompanying licence: https://github.com/NeticSoul/DragonUI/blob/main/LICENSES/Typodermic-EULA.txt
+Included licence: expressway_license.txt
+
+This older freeware font is distributed under its accompanying Typodermic
+Freeware Fonts End User License Agreement. Keep the licence and copyright
+notice with every copy. Newer Expressway releases may have different terms.
+
+Manrope Regular, version 4.505
+Copyright 2018 The Manrope Project Authors. The font is unmodified.
+
+Source: https://github.com/googlefonts/manrope/blob/468c0dbe/fonts/ttf/manrope-regular.ttf
+Included licence: manrope_license.txt (SIL Open Font License, Version 1.1)
+
+Manrope draws Latin, Cyrillic, Greek and Vietnamese. Keep the licence with
+every copy.

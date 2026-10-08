@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffRadialMenu|r
+## Notes: Hold the key over a player, a hostile unit, an object, the ground, or your own character, flick toward an action, and let go.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+radial_wheel.lua
+radial_menu.lua

@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffTrackerTextSize|r
+## Notes: Sets the quest tracker objectives to the size on Objective size, from 12 to 20, and keeps the headers two points larger.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+quest_tracker.lua

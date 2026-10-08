@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffOpenContainers|r
+## Notes: Opens clam shells, crates, and other containers in your bags, then takes what is inside when that loot came from the container.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+open_containers.lua

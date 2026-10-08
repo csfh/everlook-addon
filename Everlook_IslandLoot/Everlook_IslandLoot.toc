@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cffad76efIslandLoot|r
+## Notes: Tells you when you loot a rare item or better.
+## Author: Christoffer Hallas
+## Dependencies: Everlook, Everlook_Island
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+island_loot.lua

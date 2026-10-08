@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cffad76efIslandHearth|r
+## Notes: Tells you when your Hearthstone finishes its cooldown.
+## Author: Christoffer Hallas
+## Dependencies: Everlook, Everlook_Island
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+island_hearth.lua

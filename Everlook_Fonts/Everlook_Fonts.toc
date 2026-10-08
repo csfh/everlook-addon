@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffFonts|r
+## Notes: Sets chat and player names in Manrope and the rest of the interface in Expressway, and waits while you are in combat.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+fonts.lua

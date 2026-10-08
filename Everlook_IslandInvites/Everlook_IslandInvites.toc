@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cffad76efIslandInvites|r
+## Notes: Shows a toast when someone invites you to a group.
+## Author: Christoffer Hallas
+## Dependencies: Everlook, Everlook_Island
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+island_invites.lua

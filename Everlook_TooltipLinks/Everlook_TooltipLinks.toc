@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffTooltipLinks|r
+## Notes: Shows Everlook: everlook.ing and the page on an item, spell, creature, or vehicle tooltip, for you to type.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+site_links.lua

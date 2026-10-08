@@ -1,0 +1,3 @@
+<Bindings>
+	<Binding name="CLICK EverlookRadialButton:LeftButton" header="EVERLOOK" category="Everlook" />
+</Bindings>

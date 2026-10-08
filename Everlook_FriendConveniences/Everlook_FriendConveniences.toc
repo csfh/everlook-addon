@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffFriendConveniences|r
+## Notes: When a party invite or a duel arrives, this accepts or declines it if the matching choice below is on, and closes that request.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+friend_conveniences.lua

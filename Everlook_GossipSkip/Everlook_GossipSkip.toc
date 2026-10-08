@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffGossipSkip|r
+## Notes: Chooses the only gossip option when that window opens, unless it is a vendor, flight master, trainer, or binder.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+gossip_continue.lua

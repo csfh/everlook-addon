@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffTooltipCursor|r
+## Notes: When the game places its default tooltip, this moves that tooltip just off the mouse cursor, so the pointer stays visible, and it follows the cursor.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+tooltip_cursor.lua

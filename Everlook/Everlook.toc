@@ -1,0 +1,32 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r
+## Notes: Collects world data for Everlook and holds the settings page for its module addons.
+## Author: Christoffer Hallas
+## Version: 0.24.1
+## SavedVariables: EverlookDB
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+world.lua
+location.lua
+sightings.lua
+npcs.lua
+items.lua
+objects.lua
+quests.lua
+vendors.lua
+spells.lua
+talents.lua
+factions.lua
+recipes.lua
+taxi.lua
+fishing.lua
+drops.lua
+scan.lua
+hash.lua
+config.lua
+sign.lua
+links.lua
+module.lua
+collected.lua
+settings.lua
+minimap.lua

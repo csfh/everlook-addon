@@ -1,0 +1,17 @@
+dist/
+.DS_Store
+*.swp
+*.swo
+*~
+WTF/
+Interface/
+SavedVariables/
+.luac
+*.luac
+*.lua.bak
+.env
+.env.*
+*.pem
+*.key
+/Everlook/sign.lua
+__pycache__/

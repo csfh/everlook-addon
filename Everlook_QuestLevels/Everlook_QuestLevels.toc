@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffQuestLevels|r
+## Notes: Puts the level in brackets in front of a quest title wherever the game asks for that quest by its id, using a level you have recorded when there is one and the game's own level otherwise.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+quest_levels.lua

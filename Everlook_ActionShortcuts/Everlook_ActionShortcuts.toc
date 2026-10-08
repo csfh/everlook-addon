@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffActionShortcuts|r
+## Notes: Shortens Shift and Alt on the default action bars, so s-4 and a-4 read as S4 and A4, and s-a-4 reads as SA4.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+action_shortcuts.lua
