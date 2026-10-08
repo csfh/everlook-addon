@@ -2091,6 +2091,60 @@ end)()
 	_G.EverlookDB = nil
 end)()
 
+-- A later sighting enriches a stored record and never makes it poorer.
+;(function()
+Everlook.world.reset()
+Everlook.world.store("quests", {
+	id = 14,
+	title = "Wolves",
+	starters = { { type = "npc", id = 1, name = "Deputy" } },
+	rewards = { items = { { id = 5, quantity = 1 }, { id = 6, quantity = 2 } }, money = 50 },
+	objectives = { { text = "a" }, { text = "b" } },
+})
+Everlook.world.store("quests", {
+	id = 14,
+	title = "Wolves",
+	starters = { { type = "object", id = 9, name = "Poster" }, { type = "npc", id = 1, name = "Deputy" } },
+	rewards = { items = {}, spells = { { id = 77 } } },
+	objectives = { { text = "a" } },
+})
+local quest = Everlook.world.row("quests", 14)
+check("starters from another sighting are added", #quest.starters == 2 and quest.starters[2].id == 9)
+check("a sparser reward list keeps the fuller one", #quest.rewards.items == 2 and quest.rewards.money == 50)
+check("a reward the later sighting read is added", quest.rewards.spells and quest.rewards.spells[1].id == 77)
+check("a shorter objectives list never replaces a longer one", #quest.objectives == 2)
+Everlook.world.store("quests", { id = 14, objectives = { { text = "a" }, { text = "b" }, { text = "c" } } })
+check("a longer objectives list replaces a shorter one", #Everlook.world.row("quests", 14).objectives == 3)
+Everlook.world.store("items", { id = 1, name = "Hearthstone", effects = { { text = "Teleports", trigger = 0 } } })
+Everlook.world.store("items", { id = 1, name = "Unknown item 1", effects = {} })
+check("a placeholder name never replaces a real one", Everlook.world.row("items", 1).name == "Hearthstone")
+check("an empty list never blanks a stored one", #Everlook.world.row("items", 1).effects == 1)
+Everlook.world.store("npcs", { id = 3, name = "Unknown NPC 3" })
+Everlook.world.store("npcs", { id = 3, name = "Deputy Willem" })
+check("a real name replaces a placeholder", Everlook.world.row("npcs", 3).name == "Deputy Willem")
+Everlook.world.store("vendors", { npcId = 10, itemId = 20, price = 5, quantity = 20 })
+Everlook.world.store("vendors", { npcId = 10, itemId = 20, price = 6, quantity = 20 })
+Everlook.world.store("npcs", { id = 9, name = "Hogger", classification = "elite" })
+Everlook.world.store("npcs", { id = 9, classification = "rare" })
+check("a rare vignette does not undo an elite", Everlook.world.row("npcs", 9).classification == "elite")
+Everlook.world.store("npcs", { id = 10, name = "Wolf", classification = "normal" })
+Everlook.world.store("npcs", { id = 10, classification = "rare" })
+check("a creature can be read up to rare", Everlook.world.row("npcs", 10).classification == "rare")
+local stack
+Everlook.world.each("vendors", function(_, row)
+	stack = row.quantity
+end)
+check("a vendor's stack size is not summed like a counter", stack == 20)
+check("a vendor's price follows the later sighting", (function()
+	local price
+	Everlook.world.each("vendors", function(_, row)
+		price = row.price
+	end)
+	return price == 6
+end)())
+Everlook.world.reset()
+end)()
+
 ;(function()
 	local hash = load_addon().hash
 	check("SHA-256 empty input", hash.sha256("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")

@@ -72,7 +72,8 @@ function Everlook.recipes.scan()
 			local reagents = reagents_for(schematic)
 			local slots = type(schematic) == "table" and schematic.reagentSlotSchematics
 			local slots_ready = type(slots) == "table" and (#slots == 0 or reagents ~= nil)
-			if name and slots_ready and (crafted or reagents) then
+			-- A recipe read before its profession was known is read again, so the skill line fills in.
+			if name and skillLineId and slots_ready and (crafted or reagents) then
 				known[spellId] = true
 			end
 			if name then

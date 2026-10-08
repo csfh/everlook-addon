@@ -331,9 +331,76 @@ for bucket, fields in pairs(LOOKUP_FIELDS) do
 	end
 end
 
+-- A later sighting may know more than an earlier one, never less. Lists that a
+-- sighting read only in part do not replace a fuller list, an empty one never
+-- replaces anything, and a map such as a quest's rewards is merged field by field.
+local function is_list(value)
+	return type(value) == "table" and (next(value) == nil or value[1] ~= nil)
+end
+
+local function enrich(stored, incoming)
+	if type(stored) ~= "table" or type(incoming) ~= "table" then
+		return incoming
+	end
+	if is_list(stored) or is_list(incoming) then
+		if #incoming < #stored then
+			return stored
+		end
+		return incoming
+	end
+	local merged = {}
+	for key, value in pairs(stored) do
+		merged[key] = value
+	end
+	for key, value in pairs(incoming) do
+		merged[key] = enrich(stored[key], value)
+	end
+	return merged
+end
+
+-- Who starts or ends a quest accumulates: the same quest can be given by more than one creature or object.
+local function endpoint_key(endpoint)
+	return tostring(type(endpoint) == "table" and endpoint.type or "") .. ":" .. tostring(type(endpoint) == "table" and endpoint.id or "")
+end
+
+local function union_endpoints(stored, incoming)
+	if not is_list(stored) or not is_list(incoming) then
+		return incoming
+	end
+	local merged, known = {}, {}
+	for index = 1, #stored do
+		known[endpoint_key(stored[index])] = true
+		merged[#merged + 1] = stored[index]
+	end
+	for index = 1, #incoming do
+		local key = endpoint_key(incoming[index])
+		if not known[key] then
+			known[key] = true
+			merged[#merged + 1] = incoming[index]
+		end
+	end
+	return merged
+end
+
+-- "Unknown NPC 12" and "Talent 3" stand in until a name is read, so they never replace one.
+local function placeholder_name(value)
+	return type(value) == "string" and (value:match("^Unknown .+ %d+$") ~= nil or value:match("^Talent %d+$") ~= nil)
+end
+
+-- What a creature is only ever reads up: a vignette calls a creature rare, which must not undo an elite or a world boss.
+local CLASSIFICATION_RANK = { trivial = 0, minus = 1, normal = 2, rare = 3, elite = 4, rareelite = 5, worldboss = 6 }
+
+local function lowers_classification(stored, incoming)
+	local before, after = CLASSIFICATION_RANK[stored], CLASSIFICATION_RANK[incoming]
+	return before ~= nil and after ~= nil and after < before
+end
+
+-- Fields that look like counters but are plain values in these buckets.
+local PLAIN_VALUES = { vendors = { quantity = true } }
+
 -- Identical restatements must not mark the world dirty. A dirty flag rebuilds
 -- and compresses the whole saved document on the next flush.
-local function merge(target, source)
+local function merge(target, source, plain)
 	local changed = false
 	for key, value in pairs(source) do
 		if usable(value) then
@@ -355,7 +422,7 @@ local function merge(target, source)
 					target.maxLevel = next_level
 					changed = true
 				end
-			elseif COUNTERS[key] and type(value) == "number" and type(target[key]) == "number" then
+			elseif COUNTERS[key] and not (plain and plain[key]) and type(value) == "number" and type(target[key]) == "number" then
 				if value ~= 0 then
 					target[key] = target[key] + value
 					counts_dirty = true
@@ -382,8 +449,21 @@ local function merge(target, source)
 					changed = true
 				end
 			elseif type(value) == "string" then
-				if value ~= "" and target[key] ~= value then
+				local keeps_name = key == "name" and placeholder_name(value) and type(target.name) == "string" and target.name ~= "" and not placeholder_name(target.name)
+				local keeps_class = key == "classification" and lowers_classification(target.classification, value)
+				if value ~= "" and target[key] ~= value and not keeps_name and not keeps_class then
 					target[key] = value
+					changed = true
+				end
+			elseif type(value) == "table" then
+				local merged
+				if key == "starters" or key == "enders" then
+					merged = union_endpoints(target[key], value)
+				else
+					merged = enrich(target[key], value)
+				end
+				if not same(target[key], merged) then
+					target[key] = merged
 					changed = true
 				end
 			elseif not same(target[key], value) then
@@ -697,7 +777,7 @@ function Everlook.world.store(bucket, row)
 			shown_before[index] = existing[shown[index]]
 		end
 	end
-	local changed = merge(existing, row)
+	local changed = merge(existing, row, PLAIN_VALUES[bucket])
 	if changed then
 		dirty = true
 	end
