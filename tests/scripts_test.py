@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import zipfile
 import unittest
 
 
@@ -166,6 +167,22 @@ class AddonScriptsTest(unittest.TestCase):
         self.assertEqual(toc.count("## Version:"), 1)
         self.assertIn("## Interface: 16001\n## Version: 2.3.4\n", toc)
         self.assertNotIn("## Version", (self.module / "Everlook_SellJunk.toc").read_text())
+
+    def test_release_also_ships_a_zip_with_the_same_folders(self):
+        output = self.base / "release-zip"
+        self.pack(output, version="2.3.4").close()
+        for name in ("Everlook-2.3.4.zip", "Everlook-latest.zip"):
+            with zipfile.ZipFile(output / name) as archive:
+                names = archive.namelist()
+                self.assertIn("Everlook/Everlook.toc", names)
+                self.assertIn("Everlook/world.lua", names)
+                self.assertIn("Everlook/LICENSE", names)
+                self.assertIn("Everlook_SellJunk/sell_junk.lua", names)
+                # Windows Explorer needs forward slashes and no leading folder above the addons.
+                self.assertTrue(all("\\" not in entry and not entry.startswith("/") for entry in names))
+                toc = archive.read("Everlook_SellJunk/Everlook_SellJunk.toc").decode()
+            self.assertIn("## Version: 2.3.4", toc)
+        self.assertEqual((output / "Everlook-2.3.4.zip").read_bytes(), (output / "Everlook-latest.zip").read_bytes())
 
 
 class LayoutTest(unittest.TestCase):

@@ -62,6 +62,22 @@ archive="${outdir}/Everlook-${version}.tar.gz"
 tar -C "${stage}" -czf "${archive}" "${folders[@]}"
 cp "${archive}" "${outdir}/Everlook-latest.tar.gz"
 
+# Windows opens a .zip without extra tools, so every release carries the same folders as one.
+zip_archive="${outdir}/Everlook-${version}.zip"
+uv run --no-project python - "${stage}" "${zip_archive}" "${folders[@]}" <<'PY'
+import sys
+import zipfile
+from pathlib import Path
+
+stage, target, *folders = sys.argv[1:]
+with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+    for folder in folders:
+        for path in sorted(Path(stage, folder).rglob("*")):
+            if path.is_file():
+                archive.write(path, path.relative_to(stage).as_posix())
+PY
+cp "${zip_archive}" "${outdir}/Everlook-latest.zip"
+
 interface="$(awk -F': ' '/^## Interface:/{gsub("\r","",$2); print $2; exit}' "${core}/Everlook.toc")"
 title="$(awk -F': ' '/^## Title:/{gsub("\r","",$2); print $2; exit}' "${core}/Everlook.toc")"
 uv run --no-project python - "${outdir}/Everlook.json" "${title:-Everlook}" "${version}" "${interface}" <<'PY'
@@ -78,6 +94,14 @@ members="$(tar -tzf "${archive}")"
 for name in "${folders[@]}"; do
   if ! grep -Fx "${name}/${name}.toc" <<<"${members}" >/dev/null; then
     echo "Packed archive is missing ${name}/${name}.toc" >&2
+    exit 1
+  fi
+done
+
+zip_members="$(uv run --no-project python -c 'import sys, zipfile; print("\n".join(zipfile.ZipFile(sys.argv[1]).namelist()))' "${zip_archive}")"
+for name in "${folders[@]}"; do
+  if ! grep -Fx "${name}/${name}.toc" <<<"${zip_members}" >/dev/null; then
+    echo "Packed zip is missing ${name}/${name}.toc" >&2
     exit 1
   fi
 done

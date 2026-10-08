@@ -80,6 +80,9 @@ jobs:
           name="$(basename "${archive}")"
           aws s3 cp "${archive}" "s3://${ADDON_AWS_BUCKET}/${name}" --endpoint-url "${AWS_ENDPOINT}"
           aws s3 cp "${archive}" "s3://${ADDON_AWS_BUCKET}/Everlook-latest.tar.gz" --endpoint-url "${AWS_ENDPOINT}"
+          zip_archive="$(dirname "${archive}")/Everlook-${version}.zip"
+          aws s3 cp "${zip_archive}" "s3://${ADDON_AWS_BUCKET}/$(basename "${zip_archive}")" --endpoint-url "${AWS_ENDPOINT}"
+          aws s3 cp "${zip_archive}" "s3://${ADDON_AWS_BUCKET}/Everlook-latest.zip" --endpoint-url "${AWS_ENDPOINT}"
           aws s3 cp "$(dirname "${archive}")/Everlook.json" "s3://${ADDON_AWS_BUCKET}/Everlook.json" --endpoint-url "${AWS_ENDPOINT}" --content-type application/json
 
       - name: Commit version
@@ -119,7 +122,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "${tag}" -m "Everlook addon ${VERSION}"
           git push origin "${tag}"
-          gh release create "${tag}" "${{ steps.pack.outputs.archive }}" \
+          archive="${{ steps.pack.outputs.archive }}"
+          gh release create "${tag}" "${archive}" "${archive%.tar.gz}.zip" \
             --verify-tag \
             --title "Everlook addon ${VERSION}" \
             --notes-file "${RUNNER_TEMP}/notes.md"
