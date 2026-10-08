@@ -29,6 +29,7 @@ class AddonScriptsTest(unittest.TestCase):
         (self.core / "sign_template.lua").write_text(self.template)
         (self.core / "Everlook.toc").write_text("## Interface: 16001\n## Title: Everlook\n## Version: 0.1.0\n")
         (self.core / "world.lua").write_text("local _, Everlook = ...\n")
+        (self.addon / "LICENSE").write_text("MIT License\n")
         self.module = self.addon / "Everlook_SellJunk"
         self.module.mkdir()
         (self.module / "Everlook_SellJunk.toc").write_text(
@@ -140,6 +141,21 @@ class AddonScriptsTest(unittest.TestCase):
                     for member in archive.getmembers():
                         if member.isfile():
                             self.assertNotIn(b"never-package-me", archive.extractfile(member).read())
+
+    def test_release_carries_the_license_inside_the_core_folder(self):
+        with self.pack(self.base / "licensed") as archive:
+            self.assertEqual(archive.extractfile("Everlook/LICENSE").read().decode(), "MIT License\n")
+            self.assertNotIn("LICENSE", archive.getnames())
+
+    def test_pack_refuses_to_run_without_a_license(self):
+        (self.addon / "LICENSE").unlink()
+        result = subprocess.run(
+            ["bash", str(self.addon / "scripts" / "pack.sh"), "0.1.0", str(self.base / "unlicensed")],
+            capture_output=True, text=True,
+            env={**os.environ, "UV_CACHE_DIR": str(self.base / "uv-cache"), "UV_PYTHON": sys.executable},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Missing LICENSE", result.stderr)
 
     def test_release_ships_every_folder_with_the_core_version(self):
         with self.pack(self.base / "release", version="2.3.4") as archive:

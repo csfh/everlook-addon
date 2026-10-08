@@ -42,6 +42,13 @@ done
 # Releases always carry the clean stub, never the developer's local token.
 cp "${core}/sign_template.lua" "${stage}/Everlook/sign.lua"
 
+# The MIT license has to travel with every copy of the code.
+if [[ ! -f "${root}/LICENSE" ]]; then
+  echo "Missing LICENSE; the archive must carry it" >&2
+  exit 1
+fi
+cp "${root}/LICENSE" "${stage}/Everlook/LICENSE"
+
 # Module TOCs carry no version in the repository. Each release stamps the
 # core's version into them so the addon list shows one version for the set.
 for name in "${folders[@]}"; do
