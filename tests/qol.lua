@@ -2702,8 +2702,8 @@ return function(root, check)
 		for _, frame in ipairs(frames) do if frame.name == "EverlookIslandPinQuest" then pin_link = frame end end
 		check("the pin action shows while a quest is followed", pin_link.shown ~= false)
 		addon.module.set("smart_island", "quest_context", false)
-		check("turning quest tracking off takes the pin action away and shows how to turn it back on",
-			pin_link.shown == false and shown("Turn on Show active quest") ~= nil)
+		check("turning quest tracking off takes the pin action away and narrows the island",
+			pin_link.shown == false and addon.smart_island.view().width == 440)
 	end
 	do
 		local addon, env, _, state = quest_world()
@@ -2728,6 +2728,63 @@ return function(root, check)
 		check("the quest offset stops at the end of the card", addon.smart_island.view().quest_offset == view.quest_height - view.scroll_height)
 	end
 
+	do
+		local addon, env, event, state, _, _, frames = quest_world()
+		addon.module.set("smart_island", "quest_context", true)
+		state.guid, state.server = "Player-1-UI", 2000000
+		env.GetServerTime = function() return state.server end
+		env.UnitGUID = function() return state.guid end
+		env.GetXPExhaustion = function() return nil end
+		env.GetMaxPlayerLevel = function() return 60 end
+		state.xp = 600
+		event("PLAYER_XP_UPDATE")
+		addon.module.set("smart_island", "feed_experience", true)
+		env.everlook_smart_island_key("down")
+		local status, quests_heading, notices_heading, names, hour, quest_pane, notice_pane
+		for _, object in ipairs(frames) do
+			for _, region in ipairs(object.regions or {}) do
+				if region.shown ~= false then
+					if region.text == "STATUS" then status = region end
+					if region.text == "QUESTS" then quests_heading = region end
+					if region.text == "NOTIFICATIONS" then notices_heading = region end
+					if region.text and region.text:find("EXPERIENCE", 1, true) then names = region end
+					if region.text == "HOUR" then hour = region end
+				end
+			end
+			if object.scroll_child and object.point then
+				if object.point[4] == 0 then quest_pane = object else notice_pane = object end
+			end
+		end
+		-- 720 wide, split at 46%: the left column is 331 and the right begins there.
+		check("the island is two columns wide when there is a quest to show", addon.smart_island.view().width == 720)
+		check("the Experience table and the quests share the left column's edge", names and quests_heading
+			and names.point[4] == 12 and quests_heading.point[4] == 12)
+		check("Status and the notifications share the right column's edge", status and notices_heading
+			and status.point[4] == 331 + 12 and notices_heading.point[4] == 331 + 12)
+		check("the table and Status begin on one line", status and hour and hour.point[5] == status.point[5])
+		check("the two panes share a top and a height, and the left ends where the right begins",
+			quest_pane and notice_pane and quest_pane.point[5] == notice_pane.point[5] and quest_pane.height == notice_pane.height
+			and quest_pane.width == notice_pane.point[4] and quest_pane.width + notice_pane.width == 720)
+	end
+	do
+		local addon, env, event, state, _, _, frames = quest_world()
+		addon.module.set("smart_island", "quest_context", true)
+		env.everlook_smart_island_key("down")
+		check("with a quest the island is wide", addon.smart_island.view().width == 720)
+		state.quests, state.watched, state.selected = {}, {}, nil
+		event("QUEST_LOG_UPDATE")
+		check("with no quest to follow or suggest it narrows to the notifications alone", addon.smart_island.view().width == 440)
+		local pane
+		for _, object in ipairs(frames) do
+			-- The quests list is made before the notifications list.
+			if object.scroll_child and not pane then pane = object end
+		end
+		check("and the quests column is hidden", pane and pane.shown == false)
+		state.quests, state.watched, state.selected = { { questID = 21, title = "Back again", level = 12, distance = 100 } }, { 21 }, 21
+		state.quests[1].objectives = { { text = "Return", finished = false } }
+		event("QUEST_LOG_UPDATE")
+		check("a quest brings the column and the width back", addon.smart_island.view().width == 720 and pane.shown ~= false)
+	end
 	do
 		local function near(actual, expected)
 			return type(actual) == "number" and math.abs(actual - expected) < 1e-4
@@ -3818,7 +3875,7 @@ return function(root, check)
 		end
 		check("the island is its own mouse frame", pill ~= nil)
 		pill.scripts.OnEnter(pill)
-		check("hover opens a preview of the data bar", addon.smart_island.view().mode == "open" and addon.smart_island.view().hovering and addon.smart_island.view().width == 720)
+		check("hover opens a preview of the data bar", addon.smart_island.view().mode == "open" and addon.smart_island.view().hovering and addon.smart_island.view().width == 440)
 		pill.scripts.OnLeave(pill)
 		fire_after(afters, 0.1)
 		check("leaving a hover closes the island", addon.smart_island.view().mode == "closed" and not addon.smart_island.view().hovering)
@@ -5554,29 +5611,6 @@ return function(root, check)
 			check("the open island places the hour above money",
 				label and label.shown ~= false and label.text == "HOUR"
 				and money and money.point and label.point and label.point[5] > money.point[5])
-			local status, quests_heading, notices_heading, names, quest_pane, notice_pane
-			for _, object in ipairs(ui_frames) do
-				for _, region in ipairs(object.regions or {}) do
-					if region.shown ~= false then
-						if region.text == "STATUS" then status = region end
-						if region.text == "QUESTS" then quests_heading = region end
-						if region.text == "NOTIFICATIONS" then notices_heading = region end
-						if region.text == "> EXPERIENCE" then names = region end
-					end
-				end
-				if object.scroll_child and object.point then
-					if object.point[4] == 0 then quest_pane = object else notice_pane = object end
-				end
-			end
-			-- 720 wide, split at 46%: the left column is 331 and the right begins there.
-			check("the Experience table and the quests share the left column's edge", names and quests_heading
-				and names.point[4] == 12 and quests_heading.point[4] == 12)
-			check("Status and the notifications share the right column's edge", status and notices_heading
-				and status.point[4] == 331 + 12 and notices_heading.point[4] == 331 + 12)
-			check("the table and Status begin on one line", status and label.point[5] == status.point[5])
-			check("the two panes share a top and a height, and the left ends where the right begins",
-				quest_pane and notice_pane and quest_pane.point[5] == notice_pane.point[5] and quest_pane.height == notice_pane.height
-				and quest_pane.width == notice_pane.point[4] and quest_pane.width + notice_pane.width == 720)
 			ui.module.set("smart_island", "size", 150)
 			label, money = hour_label(), money_chip()
 			check("a larger island keeps the hour above money",

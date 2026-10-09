@@ -15,7 +15,8 @@ local QUEUE_MAX = 5
 local TOAST_GAP = 6
 local MOTION = { enter = 0.2, exit = 0.15, open = 0.15, close = 0.125, handoff = 0.125, complete = 0.15, level = 0.2 }
 local ENTER_TIME, EXIT_TIME = MOTION.enter, MOTION.exit
-local OPEN_W = 720
+-- Two columns when there is a quest to show beside the notifications, one when there is not.
+local OPEN_W, NARROW_W = 720, 440
 local COLORS = {
 	primary = { 245 / 255, 247 / 255, 250 / 255, 1 },
 	secondary = { 174 / 255, 182 / 255, 195 / 255, 1 },
@@ -721,7 +722,8 @@ local function edge_tracks(kind)
 end
 
 -- The open island is two columns that the summary and the panes share: the
--- left one runs to `left_w`, the right one begins there.
+-- left one runs to `left_w`, the right one begins there. With no left column
+-- (`left_w` is 0) the summary stacks: the table, then the status cells under it.
 local function layout_summary(width, left_w)
 	local space = shell.space
 	local edge = space.edge
@@ -748,18 +750,21 @@ local function layout_summary(width, left_w)
 	local block_top = (shell.rail_wanted() and rail_top + space.rail or edge + heading_height) + space.section
 	-- The Experience table takes the left column. Status takes the right, or
 	-- the whole width in one row when there is no table to sit beside.
-	local experience_bottom = block_top + experience_height(edge, left_w - 2 * edge, block_top)
-	local beside = experience_bottom > block_top
+	local stacked = left_w == 0
+	local experience_bottom = block_top + experience_height(edge, (stacked and width or left_w) - 2 * edge, block_top)
+	local has_table = experience_bottom > block_top
+	local beside = has_table and not stacked
 	local status_left = beside and left_w + edge or edge
 	local status_width = beside and width - left_w - 2 * edge or width - 2 * edge
-	local per_row = beside and 2 or 4
+	-- Two columns of cells, unless there is a whole row to spread four across.
+	local per_row = (beside or stacked) and 2 or 4
 	-- Money and position share a row, and the two gauges share the next, so the
 	-- gauges line up whichever readouts are missing.
-	local rows_of, shown = beside and { {}, {} } or { {} }, {}
+	local rows_of, shown = per_row == 2 and { {}, {} } or { {} }, {}
 	for index, metric in ipairs(values) do
 		if metric[2] and metric[2] ~= "" and metric_nodes[index] then
 			shown[#shown + 1] = index
-			local group = rows_of[beside and (index <= 2 and 1 or 2) or 1]
+			local group = rows_of[per_row == 2 and (index <= 2 and 1 or 2) or 1]
 			group[#group + 1] = index
 		end
 	end
@@ -767,7 +772,8 @@ local function layout_summary(width, left_w)
 	for _, group in ipairs(rows_of) do
 		if #group > 0 then grid[#grid + 1] = group end
 	end
-	local y = block_top
+	-- Under the table when stacked, level with it when beside.
+	local y = (stacked and has_table) and experience_bottom + space.section or block_top
 	call(shell.status_heading, #shown > 0 and "Show" or "Hide")
 	if #shown > 0 then
 		call(shell.status_heading, "ClearAllPoints")
@@ -1267,15 +1273,16 @@ end
 -- The open island is two columns, quests on the left and notifications on the
 -- right. The summary above them uses the same split, so what sits above a
 -- pane lines up with it.
-shell.panes = function(width)
+shell.panes = function(width, two)
+	if not two then return 0, width end
 	local left = math.floor(width * 0.46 + 0.5)
 	return left, width - left
 end
 
-local function layout_expanded(list, status, inspection_height)
+local function layout_expanded(list, status, inspection_height, two)
 	local space = shell.space
-	local width = math.max(CLOSED_W, math.min(OPEN_W, screen_size("GetWidth") - 32))
-	local left_w, right_w = shell.panes(width)
+	local width = math.max(CLOSED_W, math.min(two and OPEN_W or NARROW_W, screen_size("GetWidth") - 32))
+	local left_w, right_w = shell.panes(width, two)
 	layout_summary(width, left_w)
 	if status then
 		call(status_node.frame, "ClearAllPoints")
@@ -1310,7 +1317,7 @@ local function layout_expanded(list, status, inspection_height)
 			+ (call(shell.empty_hint, "GetStringHeight") or 12) + space.section
 	end
 	-- Both lists share one height, so the divider between them runs clean.
-	local quest_height = inspection_height or 0
+	local quest_height = two and inspection_height or 0
 	local room = math.max(space.pane_min, screen_size("GetHeight") - viewport_top - space.edge - 24)
 	scroll_height = math.min(math.max(content_height, quest_height, space.pane_min), space.pane_max, room)
 	if follow_end then
@@ -1345,14 +1352,14 @@ local function layout_expanded(list, status, inspection_height)
 	call(shell.quest_heading, "SetPoint", "LEFT", expanded, "TOPLEFT", space.edge, -(header_height + space.head / 2))
 	call(shell.notice_heading, "ClearAllPoints")
 	call(shell.notice_heading, "SetPoint", "LEFT", expanded, "TOPLEFT", left_w + space.edge, -(header_height + space.head / 2))
-	call(shell.quest_empty, "ClearAllPoints")
-	call(shell.quest_empty, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", space.edge, -(viewport_top + space.edge))
-	call(shell.quest_empty, "SetWidth", left_w - 2 * space.edge)
-	call(shell.quest_empty, quests_view and "Hide" or "Show")
 	for index, rule in ipairs({ shell.quest_rule, shell.notice_rule }) do
 		call(rule, "ClearAllPoints")
 		call(rule, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", (index == 1 and 0 or left_w) + space.edge, -viewport_top)
 		call(rule, "SetSize", (index == 1 and left_w or right_w) - 2 * space.edge, 1)
+	end
+	-- With no quest to show, the island is the notifications alone.
+	for _, part in ipairs({ quest_scroll, shell.quest_head, shell.quest_heading, shell.quest_rule, shell.pane_divider }) do
+		call(part, two and "Show" or "Hide")
 	end
 	local height = viewport_top + scroll_height + space.edge
 	call(shell.pane_divider, "ClearAllPoints")
@@ -1657,12 +1664,13 @@ paint = function(reason)
 	local width, height = CLOSED_W, CLOSED_H
 	local status = active_status()
 	local compact = status and status.capsule
-	local page_width = math.max(CLOSED_W, math.min(OPEN_W, screen_size("GetWidth") - 32))
+	local two = visual_open and quest_context.has_content()
+	local page_width = math.max(CLOSED_W, math.min(two and OPEN_W or NARROW_W, screen_size("GetWidth") - 32))
 	local available = math.max(64, screen_size("GetWidth") - 32)
 	local morphing = preview.phase == "opening" or preview.phase == "closing"
 	local face = quest_context.present({
 		status = status, closed = now == "closed" or morphing, visual_open = visual_open,
-		available = available, content_width = (shell.panes(page_width)), badge = shell.badge_text(), reserve = unread_count() > 0 and 14 or 0,
+		available = available, content_width = (shell.panes(page_width, two)), badge = shell.badge_text(), reserve = unread_count() > 0 and 14 or 0,
 	})
 	local quest = face.quest
 	local layout = compact and compact_api.layout(compact, measure_capsule, available) or nil
@@ -1686,7 +1694,7 @@ paint = function(reason)
 	if show_icon then paint_icon(capsule_icon, status.icon) end
 	call(closed_text, "ClearAllPoints")
 	call(closed_text, "SetPoint", "CENTER", shell.face or frame, "CENTER", status and not layout and 4 or -4, 0)
-	if visual_open then width, height = layout_expanded(list, status, face.inspection_height) end
+	if visual_open then width, height = layout_expanded(list, status, face.inspection_height, two) end
 	if now ~= "open" then
 		width, height = closed_w, closed_h
 		if not morphing then
@@ -1723,7 +1731,7 @@ paint = function(reason)
 	call(summary, visual_open and "Show" or "Hide")
 	call(status_node.frame, status and visual_open and "Show" or "Hide")
 	call(inbox, visual_open and "Show" or "Hide")
-	call(quest_scroll, visual_open and "Show" or "Hide")
+	call(quest_scroll, visual_open and two and "Show" or "Hide")
 	call(footer, visual_open and "Show" or "Hide")
 	if not visual_open then
 		shell.scroll_api.hide(shell.scrollbar)
@@ -2592,9 +2600,6 @@ local function ensure_frame()
 	shell.heading(shell.quest_heading, "Quests")
 	shell.notice_heading = make_label(panes_visual, "LEFT", "heading")
 	shell.heading(shell.notice_heading, "Notifications")
-	shell.quest_empty = make_label(panes_visual, "LEFT", true)
-	call(shell.quest_empty, "SetText", "Turn on Show active quest in the Smart island settings to follow a quest here.")
-	call(shell.quest_empty, "Hide")
 	shell.quest_head = CreateFrame("Frame", nil, expanded)
 	quest_scroll = CreateFrame("ScrollFrame", nil, expanded)
 	call(quest_scroll, "EnableMouseWheel", true)
