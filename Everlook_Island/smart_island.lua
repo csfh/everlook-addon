@@ -68,6 +68,10 @@ local island_inbox = Everlook.island_inbox
 local island_toasts = Everlook.island_toasts
 local shell = { stats = Everlook.island_stats, rim_api = Everlook.island_rim, scroll_api = Everlook.island_scroll, width = CLOSED_W, height = CLOSED_H, from_w = CLOSED_W, to_w = CLOSED_W, from_h = CLOSED_H, to_h = CLOSED_H }
 local resting_slots = {}
+-- The open summary spaces everything from these steps. A gap inside a group is
+-- `within`, a gap between siblings `near`, and a gap between groups `section`,
+-- which is at least twice the one inside. `edge` is the inset the rows below share.
+shell.space = { within = 4, near = 8, section = 16, edge = 12, rail = 3, gauge = 4, icon = 20 }
 local function refresh_quests(force)
 	quest_context.refresh(force)
 end
@@ -198,8 +202,8 @@ local function bound_history()
 	island_inbox.evict(notices, module.get(id, "inbox_size"))
 end
 
-local function make_label(parent, justify, secondary)
-	local label = call(parent, "CreateFontString", nil, "OVERLAY", secondary and "GameFontHighlight" or "GameFontHighlightMedium")
+local function make_label(parent, justify, secondary, caption)
+	local label = call(parent, "CreateFontString", nil, "OVERLAY", caption and "GameFontHighlightSmall" or secondary and "GameFontHighlight" or "GameFontHighlightMedium")
 	call(label, "SetJustifyH", justify or "LEFT")
 	call(label, "SetTextColor", unpack(secondary and COLORS.secondary or COLORS.primary))
 	call(label, "SetWordWrap", true)
@@ -605,6 +609,8 @@ local EXPERIENCE_COLUMN = 84
 local function experience_height(width, top)
 	local exp = shell.exp
 	if not exp then return 0 end
+	local space = shell.space
+	local edge = space.edge
 	local data = module.get(id, "feed_experience") and Everlook.island_experience and Everlook.island_experience.table
 		and Everlook.island_experience.table() or nil
 	if not data then
@@ -629,33 +635,32 @@ local function experience_height(width, top)
 		call(label, "SetText", text)
 		call(label, "Show")
 	end
-	place(exp.names, table.concat(names, "\n"), "TOPLEFT", 12, math.max(40, width - 24 - EXPERIENCE_COLUMN * 2 - 8))
-	place(exp.hour, table.concat(hours, "\n"), "TOPRIGHT", -(12 + EXPERIENCE_COLUMN + 8), EXPERIENCE_COLUMN)
-	place(exp.day, table.concat(days, "\n"), "TOPRIGHT", -12, EXPERIENCE_COLUMN)
-	local row_height = (call(exp.names, "GetLineHeight") or 14) + 4
+	place(exp.names, table.concat(names, "\n"), "TOPLEFT", edge, math.max(40, width - 2 * edge - EXPERIENCE_COLUMN * 2 - space.near))
+	place(exp.hour, table.concat(hours, "\n"), "TOPRIGHT", -(edge + EXPERIENCE_COLUMN + space.near), EXPERIENCE_COLUMN)
+	place(exp.day, table.concat(days, "\n"), "TOPRIGHT", -edge, EXPERIENCE_COLUMN)
+	local row_height = (call(exp.names, "GetLineHeight") or 14) + space.within
 	local height = (shown_rows + 1) * row_height
 	call(exp.toggle, "ClearAllPoints")
-	call(exp.toggle, "SetPoint", "TOPLEFT", summary, "TOPLEFT", 12, -top)
-	call(exp.toggle, "SetSize", math.max(1, width - 24), row_height)
+	call(exp.toggle, "SetPoint", "TOPLEFT", summary, "TOPLEFT", edge, -top)
+	call(exp.toggle, "SetSize", math.max(1, width - 2 * edge), row_height)
 	call(exp.toggle, expandable and "Show" or "Hide")
 	if data.footer then
 		call(exp.footer, "ClearAllPoints")
-		call(exp.footer, "SetPoint", "TOPLEFT", summary, "TOPLEFT", 12, -(top + height + 2))
-		call(exp.footer, "SetWidth", math.max(0, width - 24))
+		call(exp.footer, "SetPoint", "TOPLEFT", summary, "TOPLEFT", edge, -(top + height + space.within))
+		call(exp.footer, "SetWidth", math.max(0, width - 2 * edge))
 		call(exp.footer, "SetText", data.footer)
 		call(exp.footer, "Show")
-		height = height + (call(exp.footer, "GetStringHeight") or 14) + 6
+		height = height + space.within + (call(exp.footer, "GetStringHeight") or 14)
 	else
 		call(exp.footer, "Hide")
 	end
-	return height + 14
+	return height + space.section
 end
 
--- The open summary is a header, a Status heading and a two column grid. Each
--- cell has a mark, a name, the value on the right and, where it makes sense, a
--- thin fill underneath. The fill shows what is left, in the warning colors.
-local CELL_HEIGHT, CELL_GAP = 34, 6
-
+-- The open summary is a header, an Experience table and a Status heading over
+-- a two column grid. Each cell has a mark, a small name over its value and,
+-- where it makes sense, a thin fill underneath. The fill shows what is left,
+-- in the warning colors.
 local EDGE_OPTIONS = { top = "rim_top", bottom = "rim_bottom" }
 
 -- A figure on an edge bar needs no second fill inside its cell.
@@ -667,8 +672,11 @@ local function edge_tracks(kind)
 end
 
 local function layout_summary(width)
+	local space = shell.space
+	local edge = space.edge
 	local values = {
-		{ "Money", readout.money_text and vitals.rich(readout.money), readout.money_text, "money", nil, nil, nil, true },
+		{ "Money", readout.money_text and vitals.rich(readout.money), readout.money_text, "money" },
+		{ "Position", readout.coords_text, nil, nil, nil, nil, "Coordinates" },
 		{ "Gear", readout.durability_text, nil, "repair", not edge_tracks("durability") and readout.durability and readout.durability / 100 or nil,
 			readout.durability and (readout.durability <= 10 and "error" or readout.durability <= 30 and "warning" or "success"),
 			"Lowest durability" },
@@ -677,83 +685,102 @@ local function layout_summary(width)
 			not edge_tracks("bags") and readout.bags and readout.bags_total and readout.bags / readout.bags_total or nil,
 			readout.bags and (readout.bags == 0 and "error" or readout.bags <= module.get(id, "low_slots") and "warning" or "success"),
 			"Free slots" },
-		{ "Position", readout.coords_text, nil, nil, nil, nil, "Coordinates", true },
 	}
 	local heading_height = math.max(call(left_text, "GetStringHeight") or 0, call(right_text, "GetStringHeight") or 0,
 		call(left_text, "GetLineHeight") or 14, call(right_text, "GetLineHeight") or 14)
-	local rail_top = 12 + heading_height + 8
+	local rail_top = edge + heading_height + space.near
 	shell.rail_top = rail_top
-	local block_top = rail_top + 11
+	local block_top = rail_top + space.rail + space.section
 	local y = block_top + experience_height(width, block_top)
-	local column_width = math.floor((width - 24 - CELL_GAP) / 2)
-	local visible = 0
-	for _, metric in ipairs(values) do
-		if metric[2] and metric[2] ~= "" then visible = visible + 1 end
-	end
-	call(shell.status_heading, visible > 0 and "Show" or "Hide")
-	if visible > 0 then
-		call(shell.status_heading, "ClearAllPoints")
-		call(shell.status_heading, "SetPoint", "TOPLEFT", summary, "TOPLEFT", 12, -y)
-		call(shell.status_heading, "SetText", "Status")
-		y = y + (call(shell.status_heading, "GetLineHeight") or 14) + 6
-	end
-	-- Money and position run the full width: their values are the longest. The
-	-- rest pair up. Row and column advance as cells are placed.
-	local row, column, cell = 0, 0, 0
-	local cell_width = column_width
+	-- Money and position share a row, and the two gauges share the next, so the
+	-- gauges line up whichever readouts are missing.
+	local rows_of, shown = { {}, {} }, {}
 	for index, metric in ipairs(values) do
-		local node, value = metric_nodes[index], metric[2]
-		if node and value and value ~= "" then
-			node.tooltip = (metric[7] or metric[1]) .. ": " .. (metric[3] or value)
-			local wide = metric[8] == true
-			if wide and column == 1 then row, column = row + 1, 0 end
-			cell_width = wide and (width - 24) or column_width
-			local at_column, at_row = column, row
-			if wide then row, column = row + 1, 0
-			elseif column == 1 then row, column = row + 1, 0
-			else column = 1 end
-			cell = cell + 1
-			local lead = metric[4] and 18 or 0
+		if metric[2] and metric[2] ~= "" and metric_nodes[index] then
+			shown[#shown + 1] = index
+			local group = rows_of[index <= 2 and 1 or 2]
+			group[#group + 1] = index
+		end
+	end
+	local grid = {}
+	for _, group in ipairs(rows_of) do
+		if #group > 0 then grid[#grid + 1] = group end
+	end
+	call(shell.status_heading, #shown > 0 and "Show" or "Hide")
+	if #shown > 0 then
+		call(shell.status_heading, "ClearAllPoints")
+		call(shell.status_heading, "SetPoint", "TOPLEFT", summary, "TOPLEFT", edge, -y)
+		call(shell.status_heading, "SetText", "Status")
+		y = y + (call(shell.status_heading, "GetLineHeight") or 14) + space.near
+	end
+	-- Two columns of equal cells. A cell is a small name over its value, so the
+	-- value sits under the word that explains it. A row with a gauge is taller.
+	local column_width = math.floor((width - 2 * edge - space.near) / 2)
+	local label_height = call(metric_nodes[1].label, "GetLineHeight") or 12
+	local value_height = call(metric_nodes[1].value, "GetLineHeight") or 14
+	local text_height = label_height + space.within + value_height
+	local lead = 0
+	for _, index in ipairs(shown) do
+		if values[index][4] then lead = space.icon + space.near end
+	end
+	local row_heights, row_tops, grid_height = {}, {}, 0
+	local placed = {}
+	for row, group in ipairs(grid) do
+		local gauge = false
+		for column, index in ipairs(group) do
+			placed[index] = { row = row, column = column - 1 }
+			if values[index][5] then gauge = true end
+		end
+		row_heights[row] = text_height + (gauge and space.within + space.gauge or 0)
+		row_tops[row] = grid_height
+		grid_height = grid_height + row_heights[row] + (row < #grid and space.near or 0)
+	end
+	for index, metric in ipairs(values) do
+		local node = metric_nodes[index]
+		if node and placed[index] then
+			local column, row = placed[index].column, placed[index].row
+			node.tooltip = (metric[7] or metric[1]) .. ": " .. (metric[3] or metric[2])
 			if metric[4] then paint_icon(node.icon, metric[4]) end
 			call(node.icon, metric[4] and "Show" or "Hide")
+			call(node.icon, "ClearAllPoints")
+			call(node.icon, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", 0, -math.max(0, math.floor((text_height - space.icon) / 2)))
 			call(node.label, "SetText", metric[1])
 			call(node.label, "ClearAllPoints")
-			call(node.label, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", lead, -4)
-			call(node.value, "SetText", value)
+			call(node.label, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", lead, 0)
+			call(node.label, "SetWidth", math.max(1, column_width - lead))
+			call(node.value, "SetText", metric[2])
 			call(node.value, "ClearAllPoints")
-			call(node.value, "SetPoint", "TOPRIGHT", node.label_parent, "TOPRIGHT", -4, -4)
+			call(node.value, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", lead, -(label_height + space.within))
+			call(node.value, "SetWidth", math.max(1, column_width - lead))
 			call(node.frame, "ClearAllPoints")
-			call(node.frame, "SetPoint", "TOPLEFT", summary, "TOPLEFT", 12 + at_column * (column_width + CELL_GAP), -(y + at_row * (CELL_HEIGHT + CELL_GAP)))
-			call(node.frame, "SetSize", cell_width, CELL_HEIGHT)
+			call(node.frame, "SetPoint", "TOPLEFT", summary, "TOPLEFT", edge + column * (column_width + space.near), -(y + row_tops[row]))
+			call(node.frame, "SetSize", column_width, row_heights[row])
 			local fill_share = metric[5]
 			if fill_share then
-				call(node.track, "ClearAllPoints")
-				call(node.track, "SetPoint", "BOTTOMLEFT", node.label_parent, "BOTTOMLEFT", 4, 4)
-				call(node.track, "SetSize", math.max(1, cell_width - 8), 4)
-				call(node.bar, "ClearAllPoints")
-				call(node.bar, "SetPoint", "BOTTOMLEFT", node.label_parent, "BOTTOMLEFT", 4, 4)
-				call(node.bar, "SetSize", math.max(1, cell_width - 8), 4)
+				for _, part in ipairs({ node.track, node.bar }) do
+					call(part, "ClearAllPoints")
+					call(part, "SetPoint", "BOTTOMLEFT", node.label_parent, "BOTTOMLEFT", 0, 0)
+					call(part, "SetSize", column_width, space.gauge)
+				end
 				call(node.bar, "SetValue", math.max(0, math.min(1, fill_share)))
 				call(node.bar, "SetStatusBarColor", unpack(COLORS[metric[6]] or COLORS.secondary))
 			end
 			call(node.bar, fill_share and "Show" or "Hide")
 			call(node.track, fill_share and "Show" or "Hide")
 			call(node.frame, "Show")
-		else
-			if node then call(node.frame, "Hide") end
+		elseif node then
+			call(node.frame, "Hide")
 		end
 	end
-	local rows = row + (column > 0 and 1 or 0)
-	local grid_height = rows > 0 and rows * CELL_HEIGHT + (rows - 1) * CELL_GAP or 0
-	summary_height = y + grid_height + 12
+	summary_height = y + grid_height + edge
 	call(summary, "SetSize", width, summary_height)
 	call(shell.divider, "ClearAllPoints")
-	call(shell.divider, "SetPoint", "BOTTOMLEFT", summary, "BOTTOMLEFT", 12, 0)
-	call(shell.divider, "SetPoint", "BOTTOMRIGHT", summary, "BOTTOMRIGHT", -12, 0)
+	call(shell.divider, "SetPoint", "BOTTOMLEFT", summary, "BOTTOMLEFT", edge, 0)
+	call(shell.divider, "SetPoint", "BOTTOMRIGHT", summary, "BOTTOMRIGHT", -edge, 0)
 	call(shell.divider, "SetHeight", 1)
 	call(fill, "ClearAllPoints")
-	call(fill, "SetPoint", "TOPLEFT", summary, "TOPLEFT", 12, -rail_top)
-	call(fill, "SetSize", width - 24, 3)
+	call(fill, "SetPoint", "TOPLEFT", summary, "TOPLEFT", edge, -rail_top)
+	call(fill, "SetSize", width - 2 * edge, space.rail)
 end
 
 -- Each edge of the Island tracks one figure the player chose. Every reading is
@@ -1408,8 +1435,8 @@ shell.sample = function()
 		local y = motion.quest and y1 or (y0 + (y1 - y0) * travel)
 		call(fill, "SetParent", motion.quest and expanded or resting)
 		call(fill, "ClearAllPoints")
-		call(fill, "SetPoint", "TOPLEFT", motion.quest and expanded or resting, "TOPLEFT", 12, y)
-		call(fill, "SetSize", math.max(1, width - 24), 3)
+		call(fill, "SetPoint", "TOPLEFT", motion.quest and expanded or resting, "TOPLEFT", shell.space.edge, y)
+		call(fill, "SetSize", math.max(1, width - 2 * shell.space.edge), shell.space.rail)
 		call(fill, "SetAlpha", motion.quest and alpha or 1)
 		call(fill, "Show")
 	end
@@ -2329,9 +2356,9 @@ local function ensure_frame()
 	preview_controls[#preview_controls + 1] = activity
 	local header_visual = make_visual(summary, true)
 	left_text = make_label(header_visual, "LEFT")
-	call(left_text, "SetPoint", "TOPLEFT", header_visual, "TOPLEFT", 12, -12)
+	call(left_text, "SetPoint", "TOPLEFT", header_visual, "TOPLEFT", shell.space.edge, -shell.space.edge)
 	right_text = make_label(header_visual, "RIGHT", true)
-	call(right_text, "SetPoint", "TOPRIGHT", header_visual, "TOPRIGHT", -12, -12)
+	call(right_text, "SetPoint", "TOPRIGHT", header_visual, "TOPRIGHT", -shell.space.edge, -shell.space.edge)
 	shell.exp = {
 		names = make_label(header_visual, "LEFT", true),
 		hour = make_label(header_visual, "RIGHT", true),
@@ -2354,13 +2381,12 @@ local function ensure_frame()
 	for index = 1, 5 do
 		local target = CreateFrame("Button", nil, summary)
 		local visual = make_visual(target, true)
-		local node = { frame = target, label = make_label(visual, "LEFT", true), label_parent = visual }
-		call(node.label, "SetPoint", "TOPLEFT", visual, "TOPLEFT", 0, -4)
+		local node = { frame = target, label = make_label(visual, "LEFT", true, true), label_parent = visual }
 		node.icon = call(visual, "CreateTexture", nil, "OVERLAY")
-		call(node.icon, "SetSize", 14, 14)
-		call(node.icon, "SetPoint", "TOPLEFT", visual, "TOPLEFT", 0, -5)
+		call(node.icon, "SetSize", shell.space.icon, shell.space.icon)
 		call(node.icon, "Hide")
-		node.value = make_label(visual, "RIGHT")
+		node.value = make_label(visual, "LEFT")
+		call(node.value, "SetWordWrap", false)
 		node.track = call(visual, "CreateTexture", nil, "BACKGROUND")
 		call(node.track, "SetColorTexture", 1, 1, 1, 0.12)
 		call(node.track, "Hide")

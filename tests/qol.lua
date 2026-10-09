@@ -3837,7 +3837,7 @@ return function(root, check)
 		check("the island key does not reuse the radial menu binding", addon.smart_island.view().pinned)
 	end
 	do
-		local addon, env, event, state, afters = island_world()
+		local addon, env, event, state, afters, _, frames = island_world()
 		addon.module.set("smart_island", "enabled", true)
 		addon.module.set("smart_island", "source_money", true)
 		env.everlook_smart_island_key("down")
@@ -3861,6 +3861,17 @@ return function(root, check)
 		event("PLAYER_ENTERING_WORLD")
 		env.everlook_smart_island_key("down")
 		check("coordinates join the open bar only when that module is on", addon.smart_island.view().coords == "50.0, 25.0")
+		do
+			local position, money_cell
+			for _, object in ipairs(frames) do
+				for _, region in ipairs(object.regions or {}) do
+					if region.text == "Position" and region.shown ~= false then position = region.parent.parent end
+					if region.text == "Money" and region.shown ~= false then money_cell = region.parent.parent end
+				end
+			end
+			check("the position cell shares money's row, to its right",
+				position and money_cell and position.point[5] == money_cell.point[5] and position.point[4] == money_cell.point[4] + money_cell.width + 8)
+		end
 		addon.module.set("coordinates", "enabled", false)
 		event("PLAYER_ENTERING_WORLD")
 		check("clearing coordinates removes them from the island", addon.smart_island.view().coords == nil)
@@ -5455,6 +5466,14 @@ return function(root, check)
 			check("the open island places the hour above money",
 				label and label.shown ~= false and label.text:find("Hour|r", 1, true)
 				and money and money.point and label.point and label.point[5] > money.point[5])
+			local status
+			for _, object in ipairs(ui_frames) do
+				for _, region in ipairs(object.regions or {}) do
+					if region.text == "Status" and region.shown ~= false then status = region end
+				end
+			end
+			check("the table is set off from the Status heading by a section gap, not an inner one",
+				status and -status.point[5] >= -label.point[5] + 2 * 18 + 16)
 			ui.module.set("smart_island", "size", 150)
 			label, money = hour_label(), money_chip()
 			check("a larger island keeps the hour above money",

@@ -607,11 +607,21 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local function cell(text) local found = label(text); return found and found.parent and found.parent.parent end
 		check("the open summary has a Status heading", label("Status") ~= nil)
 		local money, gear, bags = cell("Money"), cell("Gear"), cell("Bags")
-		check("money runs the full width on its own row", money and money.width > gear.width * 1.5)
-		check("gear and bags share the next row, gear on the left",
-			gear.point[5] == bags.point[5] and gear.point[5] < money.point[5] and bags.point[4] > gear.point[4] and gear.point[4] == money.point[4])
+		-- Worked from the scale by hand: edge 12, a 14 high level line, 8 to the
+		-- rail, the 3 high rail, 16 to Status, 14 high Status, 8 to the cells.
+		local status = label("Status")
+		check("the Status heading is a section gap below the rail", -status.point[5] == 12 + 14 + 8 + 3 + 16)
+		check("the cells share one width and the summary's left edge",
+			money.width == gear.width and gear.width == bags.width and money.point[4] == 12 and gear.point[4] == 12)
+		check("the cells begin one step below the Status heading", -money.point[5] == -status.point[5] + 14 + 8)
+		check("gear and bags share the row below money, gear on the left",
+			gear.point[5] == bags.point[5] and gear.point[5] == money.point[5] - 32 - 8 and bags.point[4] == 12 + gear.width + 8)
+		local name, figure = label("Gear"), label("50%")
+		check("a value sits under its name on the cell's left edge",
+			name.point[4] == figure.point[4] and name.point[5] == 0 and figure.point[5] == -(14 + 4))
+		check("the summary ends one edge below the last row, with room for the gauges",
+			addon.smart_island.view().summary_height == -money.point[5] + 32 + 8 + 40 + 12)
 		check("the clock moved to the header beside the percent", label("14:05    45%") ~= nil and cell("Time") == nil)
-		check("each cell shows its value on the right", label("50%") ~= nil)
 	end
 	do
 		local addon, env, _, state, _, _, frames = quest_world()
