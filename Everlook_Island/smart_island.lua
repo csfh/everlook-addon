@@ -529,6 +529,7 @@ function island.view()
 		height = frame and frame.height,
 		summary_height = summary_height,
 		unread_count = unread_count(),
+		unread_below = shell.unread_below,
 		scroll_offset = scroll_offset,
 		scroll_height = scroll_height,
 		content_height = content_height,
@@ -1149,6 +1150,20 @@ local function clear_toasts()
 	active_toasts, toast_queue = kept, queue
 end
 
+-- The unread rows that start below the visible part of the list, and where the
+-- first of them sits. A row counts as seen once any of it shows, as in the read timer.
+shell.count_unread_below = function(list)
+	local count, first = 0, nil
+	for index, entry in ipairs(list) do
+		local node = history_nodes[index]
+		if node and entry.unread and node.y >= scroll_offset + scroll_height then
+			count, first = count + 1, first or node.y
+		end
+	end
+	shell.unread_below, shell.unread_first = count, first
+	return count
+end
+
 local function layout_expanded(list, status, inspection_height)
 	local width = math.max(CLOSED_W, math.min(OPEN_W, screen_size("GetWidth") - 32))
 	layout_summary(width)
@@ -1177,9 +1192,9 @@ local function layout_expanded(list, status, inspection_height)
 	end
 	if #list == 0 then content_height = content_height + (call(empty_text, "GetStringHeight") or 14) + 16 end
 	scroll_height = math.min(content_height, 240, math.max(32, screen_size("GetHeight") - header_height - 56))
-	local show_new = #notices > 0 and scroll_offset < content_height - scroll_height
+	local show_new = shell.count_unread_below(list) > 0
 	local footer_height = (#notices > 0 or undo_state) and 32 or 0
-	if (#notices > 0 and 108 or 0) + (undo_state and 56 or 0) + (show_new and 104 or 0) > width - 24 then footer_height = 64 end
+	if (#notices > 0 and 108 or 0) + (undo_state and 56 or 0) + (show_new and 132 or 0) > width - 24 then footer_height = 64 end
 	scroll_height = math.min(scroll_height, math.max(32, screen_size("GetHeight") - header_height - footer_height - 24))
 	if follow_end then
 		scroll_offset = content_height - scroll_height
@@ -1202,7 +1217,9 @@ local function layout_expanded(list, status, inspection_height)
 	call(undo_button, undo_state and "Show" or "Hide")
 	call(undo_button, "ClearAllPoints")
 	call(undo_button, "SetPoint", "TOPLEFT", footer, "TOPLEFT", #notices > 0 and 116 or 0, 0)
-	call(new_button, #notices > 0 and scroll_offset < content_height - scroll_height and "Show" or "Hide")
+	local unread_below = shell.count_unread_below(list)
+	call(new_button, unread_below > 0 and "Show" or "Hide")
+	shell.set_control_text(new_button, unread_below == 1 and "1 new notice" or unread_below .. " new notices")
 	call(new_button, "ClearAllPoints")
 	if footer_height == 64 then
 		call(new_button, "SetPoint", "TOPLEFT", footer, "TOPLEFT", 0, -32)
@@ -2208,9 +2225,18 @@ local function make_control(parent, name, title, width, callback)
 	call(label, "SetPoint", "CENTER")
 	call(label, "SetText", title)
 	call(button, "SetScript", "OnClick", callback)
-	hover_target(button, { tooltip = title })
+	button.label, button.background, button.hover = label, background, { tooltip = title }
+	hover_target(button, button.hover)
 	preview_controls[#preview_controls + 1] = button
 	return button
+end
+
+-- A control whose words change sizes itself to them.
+shell.set_control_text = function(button, text)
+	call(button.label, "SetText", text)
+	local width = math.max(48, math.ceil(call(button.label, "GetStringWidth") or 0) + 24)
+	call(button, "SetWidth", width)
+	island_surface.size(button.background, width, 28, 8)
 end
 
 local function ensure_frame()
@@ -2375,7 +2401,8 @@ local function ensure_frame()
 	call(clear_button, "SetPoint", "TOPLEFT", footer, "TOPLEFT", 0, 0)
 	undo_button = make_control(footer, "EverlookIslandUndo", "Undo", 48, island.undo_clear)
 	call(undo_button, "SetPoint", "LEFT", clear_button, "RIGHT", 8, 0)
-	new_button = make_control(footer, "EverlookIslandNewNotices", "New notices", 96, function() island.scroll_to(content_height) end)
+	new_button = make_control(footer, "EverlookIslandNewNotices", "New notices", 96, function() island.scroll_to(shell.unread_first or content_height) end)
+	new_button.hover.tooltip = "Go to the first unread notice"
 	call(new_button, "SetPoint", "RIGHT", footer, "RIGHT", 0, 0)
 	shell.scrollbar = shell.scroll_api.make(expanded, {
 		scroll_to = island.scroll_to,

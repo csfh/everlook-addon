@@ -3541,8 +3541,29 @@ return function(root, check)
 		for _, button in ipairs(frames) do if button.name then controls[button.name] = button end end
 		local view = addon.smart_island.view()
 		check("the inbox exposes overflow inside a bounded viewport", view.scroll_height <= 240 and view.content_height > view.scroll_height and view.height <= 400)
+		local function button_text()
+			for _, region in ipairs(controls.EverlookIslandNewNotices.regions or {}) do
+				if type(region.text) == "string" then return region.text end
+			end
+			for _, object in ipairs(frames) do
+				for _, region in ipairs(object.regions or {}) do
+					if type(region.text) == "string" and region.text:find(" new notice", 1, true) then return region.text end
+				end
+			end
+		end
+		check("the footer counts the unread rows below the visible ones", view.unread_below > 0 and view.unread_below < 10
+			and button_text() == view.unread_below .. " new notices" and controls.EverlookIslandNewNotices.shown ~= false)
+		local first_unread_below = view.unread_below
 		controls.EverlookIslandNewNotices.scripts.OnClick()
-		check("new notices can be reached without growing the panel", addon.smart_island.view().scroll_offset > 0)
+		view = addon.smart_island.view()
+		check("the button brings the first of them to the top, not just the bottom", view.scroll_offset > 0 and view.scroll_offset < view.content_height - view.scroll_height + 1
+			and view.unread_below < first_unread_below)
+		check("new notices can be reached without growing the panel", view.scroll_offset > 0)
+		for _ = 1, 10 do
+			if addon.smart_island.view().unread_below == 0 then break end
+			controls.EverlookIslandNewNotices.scripts.OnClick()
+		end
+		check("with nothing unread below, the button goes away", controls.EverlookIslandNewNotices.shown == false)
 		controls.EverlookIslandClearHistory.scripts.OnClick()
 		check("clear history acknowledges the inbox with Undo", #addon.smart_island.view().notices == 0 and addon.smart_island.view().can_undo)
 		env.Everlook.island.notify({ source = "New arrival", text = "Arrived after clear" })
