@@ -3846,7 +3846,7 @@ return function(root, check)
 		check("a row you have read steps back from one you have not", addon.smart_island.view().unread_count == 0 and row_label.color[1] < 0.75)
 		addon.smart_island.clear_history()
 		check("clearing history keeps Undo without a disabled Clear button", clear.shown == false and undo.shown)
-		check("Undo takes the right end of the notifications heading when Clear is gone", undo.point and undo.point[1] == "TOPRIGHT" and undo.point[2] == clear.parent)
+		check("Undo takes the right end of the notifications heading when Clear is gone", undo.point and undo.point[1] == "TOPRIGHT" and undo.point[2] == clear.parent and undo.point[5] == -4 and clear.point[5] == -4)
 		fire_after(afters, 5)
 		check("expired Undo returns to the compact empty state", clear.shown == false and undo.shown == false and addon.smart_island.view().height == empty_height)
 		state.time = state.time + 1

@@ -86,7 +86,7 @@ local resting_slots = {}
 -- The open summary spaces everything from these steps. A gap inside a group is
 -- `within`, a gap between siblings `near`, and a gap between groups `section`,
 -- which is at least twice the one inside. `edge` is the inset the rows below share.
-shell.space = { within = 4, near = 8, section = 16, edge = 12, ring = 28, icon = 14, mark = 16, capsule_ring = 24, head = 40, pane_min = 48, pane_max = 320 }
+shell.space = { within = 4, near = 8, section = 16, edge = 12, ring = 28, icon = 14, mark = 16, capsule_ring = 24, head = 32, pane_min = 48, pane_max = 320 }
 local function refresh_quests(force)
 	quest_context.refresh(force)
 end
@@ -1294,13 +1294,8 @@ local function layout_expanded(list, status, inspection_height, two)
 	call(shell.quest_heading, "SetPoint", "LEFT", expanded, "TOPLEFT", space.edge, -(header_height + space.head / 2))
 	call(shell.notice_heading, "ClearAllPoints")
 	call(shell.notice_heading, "SetPoint", "LEFT", expanded, "TOPLEFT", left_w + space.edge, -(header_height + space.head / 2))
-	for index, rule in ipairs({ shell.quest_rule, shell.notice_rule }) do
-		call(rule, "ClearAllPoints")
-		call(rule, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", (index == 1 and 0 or left_w) + space.edge, -viewport_top)
-		call(rule, "SetSize", (index == 1 and left_w or right_w) - 2 * space.edge, 1)
-	end
 	-- With no quest to show, the island is the notifications alone.
-	for _, part in ipairs({ quest_scroll, shell.quest_head, shell.quest_heading, shell.quest_rule, shell.pane_divider }) do
+	for _, part in ipairs({ quest_scroll, shell.quest_head, shell.quest_heading, shell.pane_divider }) do
 		call(part, two and "Show" or "Hide")
 	end
 	local height = viewport_top + scroll_height + space.edge
@@ -1315,7 +1310,7 @@ local function layout_expanded(list, status, inspection_height, two)
 	call(shell.quest_head, "SetSize", left_w, space.head)
 	for _, action in ipairs(quest_context.actions()) do
 		call(action, "ClearAllPoints")
-		call(action, "SetPoint", "TOPRIGHT", shell.quest_head, "TOPRIGHT", -space.edge, -space.near)
+		call(action, "SetPoint", "TOPRIGHT", shell.quest_head, "TOPRIGHT", -space.edge, -(space.head - 24) / 2)
 	end
 	call(clear_button, #notices > 0 and "Show" or "Hide")
 	call(undo_button, undo_state and "Show" or "Hide")
@@ -1323,7 +1318,7 @@ local function layout_expanded(list, status, inspection_height, two)
 	if #notices > 0 then
 		call(undo_button, "SetPoint", "RIGHT", clear_button, "LEFT", -space.near, 0)
 	else
-		call(undo_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -space.edge, -space.near)
+		call(undo_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -space.edge, -(space.head - 24) / 2)
 	end
 	local unread_below = shell.unread_below
 	call(new_button, show_new and "Show" or "Hide")
@@ -2481,10 +2476,6 @@ local function ensure_frame()
 	local panes_visual = make_visual(expanded, true)
 	shell.pane_divider = call(panes_visual, "CreateTexture", nil, "ARTWORK")
 	call(shell.pane_divider, "SetColorTexture", 1, 1, 1, 0.1)
-	shell.quest_rule = call(panes_visual, "CreateTexture", nil, "ARTWORK")
-	call(shell.quest_rule, "SetColorTexture", 1, 1, 1, 0.1)
-	shell.notice_rule = call(panes_visual, "CreateTexture", nil, "ARTWORK")
-	call(shell.notice_rule, "SetColorTexture", 1, 1, 1, 0.1)
 	shell.quest_heading = make_label(panes_visual, "LEFT", "heading")
 	shell.heading(shell.quest_heading, "Quests")
 	shell.notice_heading = make_label(panes_visual, "LEFT", "heading")
@@ -2525,7 +2516,7 @@ local function ensure_frame()
 	end
 	footer = CreateFrame("Frame", nil, expanded)
 	clear_button = shell.make_link(footer, "EverlookIslandClearHistory", "Clear history", island.clear_history)
-	call(clear_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -shell.space.edge, -shell.space.near)
+	call(clear_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -shell.space.edge, -((shell.space.head - 24) / 2))
 	undo_button = shell.make_link(footer, "EverlookIslandUndo", "Undo", island.undo_clear)
 	-- The pill floats over the foot of the list, so it sits above the edge fades.
 	new_button = make_control(expanded, "EverlookIslandNewNotices", "New notices", 96, function() island.scroll_to(shell.unread_first or content_height) end)
