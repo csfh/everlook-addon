@@ -1419,10 +1419,13 @@ end
 -- text measures the width. The coloured text is what shows.
 -- A quest capsule has no room for the level chip, so level and experience ride
 -- on it as a short badge.
+-- The level is white and the experience percent takes the accent of the bar that
+-- shows it, on the quest capsule and the level chip alike.
 shell.badge_text = function()
 	local level = island.format_level(readout.level)
 	if level == "" then return nil end
-	if module.get(id, "closed_xp") and readout.xp_text then return level .. "  " .. readout.xp_text end
+	level = "|cfff5f7fa" .. level .. "|r"
+	if module.get(id, "closed_xp") and readout.xp_text then return level .. "  |cffad76ef" .. readout.xp_text .. "|r" end
 	return level
 end
 
@@ -1432,7 +1435,7 @@ shell.closed_view = function(available)
 		plain[#plain + 1] = text
 		shown[#shown + 1] = "|cff" .. tone .. text .. "|r"
 	end
-	if module.get(id, "closed_xp") and readout.xp_text then add(readout.xp_text, "aeb6c3") end
+	if module.get(id, "closed_xp") and readout.xp_text then add(readout.xp_text, "ad76ef") end
 	if module.get(id, "closed_clock") and readout.clock_text and readout.clock_text ~= "" then add(readout.clock_text, "aeb6c3") end
 	local durability = readout.durability
 	if finite(durability) and durability <= 30 and module.get(id, "source_durability") then

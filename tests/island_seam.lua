@@ -580,6 +580,7 @@ return function(root, check, island_world, quest_world, secret_stat)
 		check("the closed pill is the level chip by default in these tests", face().width == 64)
 		addon.module.set("smart_island", "closed_xp", true)
 		check("the experience percent widens the pill", face().width > 64 and closed_text() and closed_text():find("45%", 1, true))
+		check("on the level chip too the percent is purple and the level white", closed_text():find("|cffad76ef45%|r", 1, true) and closed_text():find("|cfff5f7fa12|r", 1, true))
 		addon.module.set("smart_island", "closed_clock", true)
 		check("the clock joins it", closed_text():find("14:05", 1, true) ~= nil)
 		state.bags = { [0] = 1, [1] = 1 }
@@ -748,10 +749,10 @@ return function(root, check, island_world, quest_world, secret_stat)
 				end
 			end
 		end
-		check("the quest capsule carries the level as a badge", label("12") ~= nil)
+		check("the quest capsule carries the level as a badge, in white", label("|cfff5f7fa12|r") ~= nil)
 		local plain_width = addon.smart_island.view().width
 		addon.module.set("smart_island", "closed_xp", true)
-		check("and the experience percent when the pill shows it", label("12  45%") ~= nil)
+		check("and the experience percent in the bar's purple when the pill shows it", label("|cfff5f7fa12|r  |cffad76ef45%|r") ~= nil)
 		check("the capsule grows to make room", addon.smart_island.view().width > plain_width)
 	end
 	do
@@ -819,7 +820,7 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local function badge_point()
 			for _, frame in ipairs(frames) do
 				for _, region in ipairs(frame.regions or {}) do
-					if region.text == "12  45%" and region.shown ~= false then return region.point end
+					if region.text == "|cfff5f7fa12|r  |cffad76ef45%|r" and region.shown ~= false then return region.point end
 				end
 			end
 		end
