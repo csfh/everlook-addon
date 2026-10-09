@@ -1709,7 +1709,10 @@ return function(root, check)
 	check("subpage toggles retain saved preferences", registered.Everlook_QoL_quest_interface_enabled.get())
 	registered.Everlook_QoL_fonts_size_offset.set(100)
 	check("settings clamp font size to supported range", addon2.module.get("fonts", "size_offset") == 8)
-	check("a plain slider shows its number", sliders.Everlook_QoL_fonts_size_offset.format(3) == "3")
+	check("a slider that counts things shows its number", sliders.Everlook_QoL_smart_island_toast_count.format(3) == "3")
+	check("every text size is in points", sliders.Everlook_QoL_fonts_size_offset.format(3) == "3 pt" and sliders.Everlook_QoL_unit_names_extra.format(4) == "4 pt"
+		and sliders.Everlook_QoL_quest_interface_text_size.format(16) == "16 pt" and sliders.Everlook_QoL_quest_tracker_text_size.format(16) == "16 pt")
+	check("the Island's position is in pixels", sliders.Everlook_QoL_smart_island_position_x.format(-103) == "-103 px" and sliders.Everlook_QoL_smart_island_position_top.format(12) == "12 px")
 	check("a slider with a unit shows it after the number", sliders.Everlook_QoL_smart_island_size.format(105) == "105%" and sliders.Everlook_QoL_chat_tweaks_fade_seconds.format(120) == "120 s")
 	check("a label shows the step the value will be stored on", sliders.Everlook_QoL_smart_island_size.format(97) == "95%" and sliders.Everlook_QoL_smart_island_size.format(98) == "100%")
 	local scale = sliders.Everlook_QoL_swing_timers_scale

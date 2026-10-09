@@ -78,7 +78,7 @@ module.register({
 	name = "Unit frame names",
 	description = "Adds the points on Extra points to the player and target names on the default unit frames, and grows each name's region so the larger text is not clipped. Focus, target of target, and boss names stay as they are, the change waits until combat ends, a missing name is skipped, a font another addon set stays and the extra points sit on top of it, and turning this off puts back the size and the region height while each still shows what this set.",
 	options = {
-		extra = { name = "Extra points", default = 4, min = 1, max = 12, step = 1, description = "Adds this many points, from 1 to 12, to the player and target names, and grows each name's region so the larger text is not clipped. A missing name is skipped, Focus, target of target, and boss names stay as they are, a font another addon set stays and these points sit on top of it, the change waits until combat ends, and this number does nothing until Unit frame names is on." },
+		extra = { name = "Extra points", default = 4, min = 1, max = 12, step = 1, unit = " pt", description = "Adds this many points, from 1 to 12, to the player and target names, and grows each name's region so the larger text is not clipped. A missing name is skipped, Focus, target of target, and boss names stay as they are, a font another addon set stays and these points sit on top of it, the change waits until combat ends, and this number does nothing until Unit frame names is on." },
 	},
 	apply = apply,
 	out_of_combat = true,
