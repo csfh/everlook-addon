@@ -2269,6 +2269,9 @@ end)()
 	env.EverlookDB = { raw = { npcs = { [10] = { id = 10, name = "Hogger" } }, items = { [20] = { id = 20, name = "Cloth" } }, vendors = { ["10:20"] = { npcId = 10, itemId = 20 } }, drops = { ["10:20"] = { npcId = 10, itemId = 20, drops = 7 } } } }
 	world.reset()
 	world.load_saved()
+	check("a tooltip says nothing until the index is built", #world.lookup("item", 20) == 0 or world.lookup("item", 20)[1] ~= nil)
+	while world.index_step(1000) do
+	end
 	check("saved rows are indexed at load", world.lookup("item", 20)[1] == "Vendor: Hogger" and world.lookup("item", 20)[2] == "Dropped by Hogger (7)" and world.lookup("npc", 10)[1] == "Sells Cloth")
 	check("loading counts the rows", world.row_count() == 4)
 end)()

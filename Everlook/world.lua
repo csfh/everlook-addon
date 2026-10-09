@@ -856,11 +856,21 @@ function Everlook.world.row(bucket, id)
 end
 
 -- Tooltip lines come from small indexes kept as rows are stored. Each index
--- holds up to three rows per id, which is all a tooltip shows, and the line is
--- written when it is asked for, from the names the rows hold now. A tooltip
--- never walks the world, however much has been collected.
+-- holds up to three entries per id, which is all a tooltip shows, and the line
+-- is written when it is asked for, from the names the rows hold now. A tooltip
+-- never walks the world, however much has been collected. Where the collection
+-- is in pages, the indexes are pages of their own, so a tooltip reads one or
+-- two pages and nothing is rebuilt at login.
 local LOOKUP_LIMIT = 3
 local lookup = {}
+
+-- The bucket each index is kept in when pages are used.
+local INDEX_BUCKETS = {
+	item_vendors = "ixItemVendors", npc_sells = "ixNpcSells", item_drops = "ixItemDrops",
+	npc_casts = "ixNpcCasts", npc_quests = "ixNpcQuests", object_loot = "ixObjectLoot",
+}
+-- Bump this to have every index rebuilt from the rows next session.
+local INDEX_VERSION = 1
 
 function Everlook.world.forget_lookup()
 	lookup = {
@@ -870,10 +880,22 @@ end
 
 Everlook.world.forget_lookup()
 
+local function index_list(group, id)
+	if paged then
+		return Everlook.pages.get(INDEX_BUCKETS[group], id)
+	end
+	return lookup[group][id]
+end
+
 local function lookup_add(group, id, value)
-	local list = group[id]
+	local list = index_list(group, id)
 	if not list then
-		group[id] = { value }
+		list = { value }
+		if paged then
+			Everlook.pages.add(INDEX_BUCKETS[group], id, list)
+		else
+			lookup[group][id] = list
+		end
 		return
 	end
 	for index = 1, #list do
@@ -883,17 +905,23 @@ local function lookup_add(group, id, value)
 	end
 	if #list < LOOKUP_LIMIT then
 		list[#list + 1] = value
+		if paged then
+			Everlook.pages.touch(list)
+		end
 	end
 end
 
 local function lookup_remove(group, id, value)
-	local list = group[id]
+	local list = index_list(group, id)
 	if not list then
 		return
 	end
 	for index = 1, #list do
 		if list[index] == value then
 			table.remove(list, index)
+			if paged then
+				Everlook.pages.touch(list)
+			end
 			return
 		end
 	end
@@ -902,30 +930,35 @@ end
 local function lookup_index(bucket, row)
 	if bucket == "vendors" then
 		if type(row.itemId) == "number" and type(row.npcId) == "number" then
-			lookup_add(lookup.item_vendors, row.itemId, row.npcId)
-			lookup_add(lookup.npc_sells, row.npcId, row.itemId)
+			lookup_add("item_vendors", row.itemId, row.npcId)
+			lookup_add("npc_sells", row.npcId, row.itemId)
 		end
 	elseif bucket == "drops" then
 		if type(row.itemId) == "number" and type(row.npcId) == "number" then
-			lookup_add(lookup.item_drops, row.itemId, row_key("drops", row))
+			lookup_add("item_drops", row.itemId, row_key("drops", row))
 		end
 	elseif bucket == "npcSpells" then
 		if type(row.npcId) == "number" and type(row.spellId) == "number" then
-			lookup_add(lookup.npc_casts, row.npcId, row.spellId)
+			lookup_add("npc_casts", row.npcId, row.spellId)
 		end
 	elseif bucket == "quests" then
 		if type(row.giverId) == "number" then
-			lookup_add(lookup.npc_quests, row.giverId, row.id)
+			lookup_add("npc_quests", row.giverId, row.id)
 		end
 		if type(row.turnInId) == "number" then
-			lookup_add(lookup.npc_quests, row.turnInId, row.id)
+			lookup_add("npc_quests", row.turnInId, row.id)
 		end
 	elseif bucket == "objectLoot" then
 		if type(row.objectId) == "number" and type(row.itemId) == "number" then
-			lookup_add(lookup.object_loot, row.objectId, row.itemId)
+			lookup_add("object_loot", row.objectId, row.itemId)
 		end
 	end
 end
+
+-- Whether the paged indexes hold every row. They are built in the background the
+-- first time, and a tooltip says nothing until then.
+local index_ready = true
+local index_job
 
 local LOOKUP_BUCKETS = { vendors = true, drops = true, npcSpells = true, quests = true, objectLoot = true }
 
@@ -954,12 +987,15 @@ function Everlook.world.lookup(kind, id)
 	if type(kind) ~= "string" or type(id) ~= "number" or not usable(id) then
 		return lines
 	end
+	if paged and not index_ready then
+		return lines
+	end
 	if kind == "item" then
-		local vendors = lookup.item_vendors[id]
+		local vendors = index_list("item_vendors", id)
 		for index = 1, vendors and #vendors or 0 do
 			lines[#lines + 1] = "Vendor: " .. lookup_label("npcs", vendors[index])
 		end
-		local drops = lookup.item_drops[id]
+		local drops = index_list("item_drops", id)
 		for index = 1, drops and #drops or 0 do
 			local row = get_row("drops", drops[index])
 			if row then
@@ -968,21 +1004,21 @@ function Everlook.world.lookup(kind, id)
 			end
 		end
 	elseif kind == "npc" then
-		local sells = lookup.npc_sells[id]
+		local sells = index_list("npc_sells", id)
 		for index = 1, sells and #sells or 0 do
 			lines[#lines + 1] = "Sells " .. lookup_label("items", sells[index])
 		end
-		local casts = lookup.npc_casts[id]
+		local casts = index_list("npc_casts", id)
 		for index = 1, casts and #casts or 0 do
 			lines[#lines + 1] = "Casts " .. lookup_label("spells", casts[index])
 		end
-		local quests = lookup.npc_quests[id]
+		local quests = index_list("npc_quests", id)
 		for index = 1, quests and #quests or 0 do
 			local row = get_row("quests", quests[index])
 			lines[#lines + 1] = row and quest_line(row, id) or nil
 		end
 	elseif kind == "object" then
-		local loot = lookup.object_loot[id]
+		local loot = index_list("object_loot", id)
 		for index = 1, loot and #loot or 0 do
 			lines[#lines + 1] = "Contains " .. lookup_label("items", loot[index])
 		end
@@ -1049,10 +1085,10 @@ function Everlook.world.store(bucket, row)
 	if LOOKUP_BUCKETS[bucket] and (created or changed) then
 		if bucket == "quests" and not created then
 			if giver ~= existing.giverId and type(giver) == "number" then
-				lookup_remove(lookup.npc_quests, giver, existing.id)
+				lookup_remove("npc_quests", giver, existing.id)
 			end
 			if turn_in ~= existing.turnInId and type(turn_in) == "number" then
-				lookup_remove(lookup.npc_quests, turn_in, existing.id)
+				lookup_remove("npc_quests", turn_in, existing.id)
 			end
 		end
 		lookup_index(bucket, existing)
@@ -1649,13 +1685,6 @@ function Everlook.world.reindex()
 		local total = 0
 		if paged then
 			total = Everlook.pages.total(bucket)
-			if LOOKUP_BUCKETS[bucket] and total > 0 then
-				each_row(bucket, function(_, row)
-					if type(row) == "table" then
-						lookup_index(bucket, row)
-					end
-				end)
-			end
 		else
 			local bucket_rows = rows[bucket]
 			if bucket_rows then
@@ -1673,8 +1702,96 @@ function Everlook.world.reindex()
 		end
 	end
 	collected_version = collected_version + 1
+	if paged then
+		Everlook.world.start_index()
+	end
 	if Everlook.segments then
 		Everlook.segments.rebuild()
+	end
+end
+
+-- The paged indexes are built from the rows once, a page at a time in the
+-- background, and kept up to date as rows are stored.
+local INDEX_SOURCES = { "vendors", "drops", "npcSpells", "quests", "objectLoot" }
+
+function Everlook.world.start_index()
+	index_job = nil
+	index_ready = true
+	local db = EverlookDB
+	if type(db) == "table" and db.ixVersion == INDEX_VERSION then
+		return
+	end
+	local rows_to_read = 0
+	for index = 1, #INDEX_SOURCES do
+		rows_to_read = rows_to_read + Everlook.pages.total(INDEX_SOURCES[index])
+	end
+	if rows_to_read == 0 then
+		if type(db) == "table" then
+			db.ixVersion = INDEX_VERSION
+		end
+		return
+	end
+	index_ready = false
+	index_job = { source = 1, from = 0 }
+end
+
+function Everlook.world.index_pending()
+	return index_job ~= nil
+end
+
+-- Reads source pages until the time is up, a row or so at a time inside a page,
+-- so a page of a thousand rows is not read in one frame. True while more remain.
+function Everlook.world.index_step(limit_ms)
+	local job = index_job
+	if not job then
+		return false
+	end
+	local clock = debugprofilestop
+	local started = clock and clock() or 0
+	while true do
+		local bucket = INDEX_SOURCES[job.source]
+		if not bucket then
+			index_job = nil
+			index_ready = true
+			if type(EverlookDB) == "table" then
+				EverlookDB.ixVersion = INDEX_VERSION
+			end
+			return false
+		end
+		if not job.list then
+			local page = Everlook.pages.page_from(bucket, job.from)
+			if not page then
+				job.source = job.source + 1
+				job.from = 0
+			else
+				job.from = page.start + 1
+				if page.count > 0 then
+					local list = {}
+					for _, row in pairs(Everlook.pages.page_rows(page)) do
+						if type(row) == "table" then
+							list[#list + 1] = row
+						end
+					end
+					job.list, job.at = list, 1
+				end
+			end
+		else
+			local list = job.list
+			local last = job.at + 15
+			if last > #list then
+				last = #list
+			end
+			for index = job.at, last do
+				lookup_index(bucket, list[index])
+			end
+			job.at = last + 1
+			if job.at > #list then
+				job.list = nil
+			end
+		end
+		if not clock or clock() - started >= limit_ms then
+			return true
+		end
 	end
 end
 
@@ -1822,9 +1939,28 @@ local function prepare_saved()
 	end
 end
 
+-- What this addon holds, in KB, where the client says. Saved with the load and
+-- logout timings so a heavy collection can be read back from the file.
+function Everlook.world.memory_kb()
+	if type(UpdateAddOnMemoryUsage) == "function" and type(GetAddOnMemoryUsage) == "function" then
+		UpdateAddOnMemoryUsage()
+		return math.floor(GetAddOnMemoryUsage(addonName) or 0)
+	end
+	return nil
+end
+
 EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	prepare_saved()
+	local began = debugprofilestop and debugprofilestop() or nil
 	Everlook.world.load_saved()
+	if began then
+		EverlookDB.loadStats = {
+			loadMs = math.floor((debugprofilestop() - began) * 10 + 0.5) / 10,
+			rows = row_total,
+			memKB = Everlook.world.memory_kb(),
+			paged = paged,
+		}
+	end
 	Everlook.say(Everlook.world.load_message())
 	local ticker = CreateFrame("Frame")
 	ticker:RegisterEvent("PLAYER_LOGOUT")

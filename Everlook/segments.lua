@@ -170,7 +170,7 @@ function S.rebuild()
 	for _, page in pairs(P.all()) do
 		local name = segment_name(page)
 		local info = published[name]
-		if not info or info.rows ~= page.count or named[name] then
+		if not P.derived(page.bucket) and (not info or info.rows ~= page.count or named[name]) then
 			page.seg_dirty = true
 			P.on_dirty(page)
 		end
@@ -635,11 +635,16 @@ function S.tick()
 		return
 	end
 	local slow = type(GetFramerate) == "function" and (GetFramerate() or 60) < 30
-	if not work(slow and SLOW_WORK_MS or WORK_MS, false) then
+	local budget = slow and SLOW_WORK_MS or WORK_MS
+	-- Indexes still being built take the frame's time first.
+	if Everlook.world.index_step(budget) then
+		return
+	end
+	if not work(budget, false) then
 		if P.over() then
 			-- Pages left in memory once moving in was done go a few at a time.
 			P.trim()
-		elseif #queue == 0 and next(staged) == nil then
+		elseif #queue == 0 and next(staged) == nil and not Everlook.world.index_pending() then
 			if frame then
 				frame:Hide()
 			end
@@ -712,6 +717,7 @@ function S.finish()
 	local page_stats = P.stats()
 	stats.decodes, stats.decodeMs, stats.worstDecodeMs = page_stats.decodes, floor(page_stats.decodeMs * 10 + 0.5) / 10, floor(page_stats.worstDecodeMs * 10 + 0.5) / 10
 	stats.splits, stats.evictions = page_stats.splits, page_stats.evictions
+	stats.memKB = Everlook.world.memory_kb()
 	db.flushStats = stats
 	return true
 end

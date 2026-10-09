@@ -23,6 +23,15 @@ local CAP = {
 	taxiNodes = 256, taxiRoutes = 512,
 }
 
+-- Indexes kept beside the rows. They are rebuilt from the rows, so they are saved
+-- but never uploaded.
+local DERIVED = {
+	ixItemVendors = true, ixNpcSells = true, ixItemDrops = true, ixNpcCasts = true, ixNpcQuests = true, ixObjectLoot = true,
+}
+for name in pairs(DERIVED) do
+	CAP[name] = 2048
+end
+
 local MAX_LOADED = 48
 local LAST_KEY = 999999999
 
@@ -151,8 +160,30 @@ end
 function P.mark(page)
 	page.version = page.version + 1
 	page.raw_dirty = true
-	page.seg_dirty = true
+	page.seg_dirty = not DERIVED[page.bucket]
 	P.on_dirty(page)
+end
+
+function P.derived(bucket)
+	return DERIVED[bucket] == true
+end
+
+-- The first page whose range starts at or after `start`.
+function P.page_from(bucket, start)
+	local dir = dirs[bucket]
+	if not dir then
+		return nil
+	end
+	local low, high = 1, #dir.starts + 1
+	while low < high do
+		local middle = floor((low + high) / 2)
+		if dir.starts[middle] < start then
+			low = middle + 1
+		else
+			high = middle
+		end
+	end
+	return dir.pages[low]
 end
 
 local function forget(page)
@@ -165,8 +196,9 @@ local function forget(page)
 	stats.evictions = stats.evictions + 1
 end
 
--- Drops the pages used longest ago, never one with changes not yet saved and
--- never the one being walked. A few at a time, so a long list of pages that
+-- Drops the pages used longest ago, never one whose rows are not saved yet and
+-- never the one being walked. A page that only needs its upload segment built
+-- can go, since the segment is built from the saved copy. A few at a time, so a long list of pages that
 -- became free is let go over several saves and not in one frame.
 local EVICT_AT_ONCE = 32
 
@@ -178,7 +210,7 @@ local function make_room()
 	end
 	local candidates = {}
 	for _, page in pairs(by_name) do
-		if page.rows and page ~= pinned and not page.raw_dirty and not page.seg_dirty and not page.job then
+		if page.rows and page ~= pinned and not page.raw_dirty and not page.job then
 			candidates[#candidates + 1] = page
 		end
 	end

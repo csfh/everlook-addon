@@ -493,13 +493,13 @@ return function(root, check)
 	do
 		local addon, env = open({})
 		env.clock_now = 100
-		addon.world.store("drops", { npcId = 1, itemId = 2, drops = 1 })
+		addon.world.store("kills", { npcId = 1, kills = 1 })
 		env.clock_now = 500
 		addon.segments.step(0, false, false)
 		local _, _, running = addon.segments.pending()
 		check("a page past its longest wait is picked", running == true)
-		local scratch = { npcId = 1, itemId = 2, drops = 1 }
-		addon.world.count("drops", scratch)
+		local scratch = { npcId = 1, kills = 1 }
+		addon.world.count("kills", scratch)
 		while addon.segments.step(0, false, false) do
 			local _, _, still = addon.segments.pending()
 			if not still then
@@ -589,7 +589,7 @@ return function(root, check)
 		check("every entry is a name, a count and a digest", fine)
 	end
 
-	-- Tooltip lines follow rows that have been let go and read back.
+	-- Tooltip lines come from indexes saved as pages, built once and then only kept up to date.
 	do
 		local addon, env = open({})
 		addon.world.store("npcs", { id = 10, name = "Hogger" })
@@ -599,11 +599,72 @@ return function(root, check)
 		addon.world.store("quests", { id = 176, title = "Wanted", giverId = 10 })
 		env.clock_now = 5000
 		addon.world.flush(true)
-		local next_addon = open(env.EverlookDB)
+		local db = env.EverlookDB
+		check("the indexes are saved as pages and never uploaded", db.pages["ixItemVendors.0"] ~= nil and db.pages["ixNpcQuests.0"] ~= nil and db.segments["ixItemVendors.1.0"] == nil and not db.manifest:find("ix", 1, true) and db.ixVersion == 1)
+
+		local next_addon = open(db)
+		local at_login = next_addon.pages.stats().decodes
 		local lines = table.concat(next_addon.world.lookup("item", 20), "|")
 		check("a tooltip reads its lines from saved pages", lines:find("Vendor: Hogger", 1, true) and lines:find("Dropped by Hogger (4)", 1, true) and next_addon.world.lookup("npc", 10)[2] == "Quest: Wanted")
+		check("login reads no page to build them", at_login == 0 and not next_addon.world.index_pending())
 		next_addon.world.count("drops", { npcId = 10, itemId = 20, drops = 1 })
 		check("a count shows at once", table.concat(next_addon.world.lookup("item", 20), "|"):find("Dropped by Hogger (5)", 1, true) ~= nil)
+		next_addon.world.store("quests", { id = 176, giverId = 11 })
+		check("a quest that changes giver moves between saved indexes", #next_addon.world.lookup("npc", 10) == 1 and next_addon.world.lookup("npc", 11)[1] == "Quest: Wanted")
+		next_addon.world.store("items", { id = 21, name = "Wool" })
+		next_addon.world.store("vendors", { npcId = 10, itemId = 21 })
+		check("a new row is added to the saved index", next_addon.world.lookup("npc", 10)[1] == "Sells Cloth" and next_addon.world.lookup("npc", 10)[2] == "Sells Wool")
+	end
+
+	-- A collection saved before the indexes were pages gets them built in the background.
+	do
+		local addon, env = open({})
+		addon.world.store("npcs", { id = 10, name = "Hogger" })
+		addon.world.store("items", { id = 20, name = "Cloth" })
+		for id = 1, 3000 do
+			addon.world.store("vendors", { npcId = id, itemId = 20 })
+		end
+		env.clock_now = 5000
+		addon.world.flush(true)
+		local db = env.EverlookDB
+		db.ixVersion = nil
+		for name in pairs(db.pages) do
+			if name:sub(1, 2) == "ix" then
+				db.pages[name] = nil
+				db.pageCounts[name] = nil
+			end
+		end
+		local later, later_env = open(db)
+		check("an index not built yet says nothing and is being built", later.world.index_pending() and #later.world.lookup("npc", 10) == 0)
+		local rounds = 0
+		later_env.debugprofilestop = function()
+			rounds = rounds + 1
+			return rounds
+		end
+		later.segments.tick()
+		check("a frame builds only some of it", later.world.index_pending())
+		later_env.debugprofilestop = nil
+		while later.world.index_step(1000) do
+		end
+		check("the index is built from the rows", not later.world.index_pending() and db.ixVersion == 1 and table.concat(later.world.lookup("item", 20), "|"):find("Vendor: Creature", 1, true) == nil and #later.world.lookup("item", 20) == 3 and later.world.lookup("npc", 2000)[1] == "Sells Cloth")
+		later_env.clock_now = 9000
+		later.world.flush(true)
+		local third = open(db)
+		check("once built it is not built again", not third.world.index_pending() and third.world.lookup("npc", 2000)[1] == "Sells Cloth")
+	end
+
+	-- An entry whose row is gone is skipped.
+	do
+		local addon, env = open({})
+		addon.world.store("npcs", { id = 10, name = "Hogger" })
+		addon.world.store("drops", { npcId = 10, itemId = 20, drops = 4 })
+		env.clock_now = 5000
+		addon.world.flush(true)
+		local db = env.EverlookDB
+		db.pages["drops.0"] = nil
+		db.pageCounts["drops.0"] = nil
+		local later = open(db)
+		check("a tooltip skips an entry whose row is missing", #later.world.lookup("item", 20) == 0)
 	end
 
 	-- A client whose encoder cannot hand a page back whole keeps rows as tables.
