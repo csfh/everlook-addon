@@ -15,7 +15,7 @@ local QUEUE_MAX = 5
 local TOAST_GAP = 6
 local MOTION = { enter = 0.2, exit = 0.15, open = 0.15, close = 0.125, handoff = 0.125, complete = 0.15, level = 0.2 }
 local ENTER_TIME, EXIT_TIME = MOTION.enter, MOTION.exit
-local OPEN_W = 440
+local OPEN_W = 720
 local COLORS = {
 	primary = { 245 / 255, 247 / 255, 250 / 255, 1 },
 	secondary = { 174 / 255, 182 / 255, 195 / 255, 1 },
@@ -31,6 +31,7 @@ Everlook.smart_island = island
 
 local frame, summary, fill, closed_text, left_text, right_text, surface
 local inbox, inbox_content, footer, empty_text, unread_text
+local quest_scroll, quest_content
 local clear_button, undo_button, new_button
 local scroll_offset, scroll_height, content_height = 0, 0, 0
 local undo_state, close_token
@@ -66,12 +67,12 @@ local island_surface = Everlook.island_surface
 local island_notice = Everlook.island_notice
 local island_inbox = Everlook.island_inbox
 local island_toasts = Everlook.island_toasts
-local shell = { stats = Everlook.island_stats, rim_api = Everlook.island_rim, scroll_api = Everlook.island_scroll, width = CLOSED_W, height = CLOSED_H, from_w = CLOSED_W, to_w = CLOSED_W, from_h = CLOSED_H, to_h = CLOSED_H }
+local shell = { quest_offset = 0, quest_height = 0, stats = Everlook.island_stats, rim_api = Everlook.island_rim, scroll_api = Everlook.island_scroll, width = CLOSED_W, height = CLOSED_H, from_w = CLOSED_W, to_w = CLOSED_W, from_h = CLOSED_H, to_h = CLOSED_H }
 local resting_slots = {}
 -- The open summary spaces everything from these steps. A gap inside a group is
 -- `within`, a gap between siblings `near`, and a gap between groups `section`,
 -- which is at least twice the one inside. `edge` is the inset the rows below share.
-shell.space = { within = 4, near = 8, section = 16, edge = 12, rail = 3, gauge = 4, icon = 20 }
+shell.space = { within = 4, near = 8, section = 16, edge = 12, rail = 3, gauge = 4, icon = 20, head = 44, pane_min = 48, pane_max = 320 }
 local function refresh_quests(force)
 	quest_context.refresh(force)
 end
@@ -537,6 +538,8 @@ function island.view()
 		more_above = shell.scrollbar ~= nil and shell.scrollbar.above == true,
 		more_below = shell.scrollbar ~= nil and shell.scrollbar.below == true,
 		scroll_offset = scroll_offset,
+		quest_offset = shell.quest_offset,
+		quest_height = shell.quest_height,
 		scroll_height = scroll_height,
 		content_height = content_height,
 		can_undo = undo_state ~= nil,
@@ -606,11 +609,11 @@ end
 -- with an hour and a day column, then one footer line.
 local EXPERIENCE_COLUMN = 84
 
-local function experience_height(width, top)
+-- The table fills the column that starts at `left` and is `width` wide.
+local function experience_height(left, width, top)
 	local exp = shell.exp
 	if not exp then return 0 end
 	local space = shell.space
-	local edge = space.edge
 	local data = module.get(id, "feed_experience") and Everlook.island_experience and Everlook.island_experience.table
 		and Everlook.island_experience.table() or nil
 	if not data then
@@ -628,33 +631,33 @@ local function experience_height(width, top)
 		hours[#hours + 1] = row[2]
 		days[#days + 1] = row[3]
 	end
-	local function place(label, text, point, x, label_width)
+	local function place(label, text, x, label_width)
 		call(label, "ClearAllPoints")
-		call(label, "SetPoint", point, summary, point, x, -top)
+		call(label, "SetPoint", "TOPLEFT", summary, "TOPLEFT", x, -top)
 		call(label, "SetWidth", label_width)
 		call(label, "SetText", text)
 		call(label, "Show")
 	end
-	place(exp.names, table.concat(names, "\n"), "TOPLEFT", edge, math.max(40, width - 2 * edge - EXPERIENCE_COLUMN * 2 - space.near))
-	place(exp.hour, table.concat(hours, "\n"), "TOPRIGHT", -(edge + EXPERIENCE_COLUMN + space.near), EXPERIENCE_COLUMN)
-	place(exp.day, table.concat(days, "\n"), "TOPRIGHT", -edge, EXPERIENCE_COLUMN)
+	place(exp.names, table.concat(names, "\n"), left, math.max(40, width - EXPERIENCE_COLUMN * 2 - space.near))
+	place(exp.hour, table.concat(hours, "\n"), left + width - EXPERIENCE_COLUMN * 2 - space.near, EXPERIENCE_COLUMN)
+	place(exp.day, table.concat(days, "\n"), left + width - EXPERIENCE_COLUMN, EXPERIENCE_COLUMN)
 	local row_height = (call(exp.names, "GetLineHeight") or 14) + space.within
 	local height = (shown_rows + 1) * row_height
 	call(exp.toggle, "ClearAllPoints")
-	call(exp.toggle, "SetPoint", "TOPLEFT", summary, "TOPLEFT", edge, -top)
-	call(exp.toggle, "SetSize", math.max(1, width - 2 * edge), row_height)
+	call(exp.toggle, "SetPoint", "TOPLEFT", summary, "TOPLEFT", left, -top)
+	call(exp.toggle, "SetSize", math.max(1, width), row_height)
 	call(exp.toggle, expandable and "Show" or "Hide")
 	if data.footer then
 		call(exp.footer, "ClearAllPoints")
-		call(exp.footer, "SetPoint", "TOPLEFT", summary, "TOPLEFT", edge, -(top + height + space.within))
-		call(exp.footer, "SetWidth", math.max(0, width - 2 * edge))
+		call(exp.footer, "SetPoint", "TOPLEFT", summary, "TOPLEFT", left, -(top + height + space.within))
+		call(exp.footer, "SetWidth", math.max(0, width))
 		call(exp.footer, "SetText", data.footer)
 		call(exp.footer, "Show")
 		height = height + space.within + (call(exp.footer, "GetStringHeight") or 14)
 	else
 		call(exp.footer, "Hide")
 	end
-	return height + space.section
+	return height
 end
 
 -- The open summary is a header, an Experience table and a Status heading over
@@ -671,7 +674,9 @@ local function edge_tracks(kind)
 	return false
 end
 
-local function layout_summary(width)
+-- The open island is two columns that the summary and the panes share: the
+-- left one runs to `left_w`, the right one begins there.
+local function layout_summary(width, left_w)
 	local space = shell.space
 	local edge = space.edge
 	local values = {
@@ -691,14 +696,20 @@ local function layout_summary(width)
 	local rail_top = edge + heading_height + space.near
 	shell.rail_top = rail_top
 	local block_top = (shell.rail_wanted() and rail_top + space.rail or edge + heading_height) + space.section
-	local y = block_top + experience_height(width, block_top)
+	-- The Experience table takes the left column. Status takes the right, or
+	-- the whole width in one row when there is no table to sit beside.
+	local experience_bottom = block_top + experience_height(edge, left_w - 2 * edge, block_top)
+	local beside = experience_bottom > block_top
+	local status_left = beside and left_w + edge or edge
+	local status_width = beside and width - left_w - 2 * edge or width - 2 * edge
+	local per_row = beside and 2 or 4
 	-- Money and position share a row, and the two gauges share the next, so the
 	-- gauges line up whichever readouts are missing.
-	local rows_of, shown = { {}, {} }, {}
+	local rows_of, shown = beside and { {}, {} } or { {} }, {}
 	for index, metric in ipairs(values) do
 		if metric[2] and metric[2] ~= "" and metric_nodes[index] then
 			shown[#shown + 1] = index
-			local group = rows_of[index <= 2 and 1 or 2]
+			local group = rows_of[beside and (index <= 2 and 1 or 2) or 1]
 			group[#group + 1] = index
 		end
 	end
@@ -706,16 +717,17 @@ local function layout_summary(width)
 	for _, group in ipairs(rows_of) do
 		if #group > 0 then grid[#grid + 1] = group end
 	end
+	local y = block_top
 	call(shell.status_heading, #shown > 0 and "Show" or "Hide")
 	if #shown > 0 then
 		call(shell.status_heading, "ClearAllPoints")
-		call(shell.status_heading, "SetPoint", "TOPLEFT", summary, "TOPLEFT", edge, -y)
+		call(shell.status_heading, "SetPoint", "TOPLEFT", summary, "TOPLEFT", status_left, -y)
 		call(shell.status_heading, "SetText", "Status")
 		y = y + (call(shell.status_heading, "GetLineHeight") or 14) + space.near
 	end
-	-- Two columns of equal cells. A cell is a small name over its value, so the
+	-- Equal columns of cells. A cell is a small name over its value, so the
 	-- value sits under the word that explains it. A row with a gauge is taller.
-	local column_width = math.floor((width - 2 * edge - space.near) / 2)
+	local column_width = math.floor((status_width - (per_row - 1) * space.near) / per_row)
 	local label_height = call(metric_nodes[1].label, "GetLineHeight") or 12
 	local value_height = call(metric_nodes[1].value, "GetLineHeight") or 14
 	local text_height = label_height + space.within + value_height
@@ -753,7 +765,7 @@ local function layout_summary(width)
 			call(node.value, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", lead, -(label_height + space.within))
 			call(node.value, "SetWidth", math.max(1, column_width - lead))
 			call(node.frame, "ClearAllPoints")
-			call(node.frame, "SetPoint", "TOPLEFT", summary, "TOPLEFT", edge + column * (column_width + space.near), -(y + row_tops[row]))
+			call(node.frame, "SetPoint", "TOPLEFT", summary, "TOPLEFT", status_left + column * (column_width + space.near), -(y + row_tops[row]))
 			call(node.frame, "SetSize", column_width, row_heights[row])
 			local fill_share = metric[5]
 			if fill_share then
@@ -772,7 +784,7 @@ local function layout_summary(width)
 			call(node.frame, "Hide")
 		end
 	end
-	summary_height = y + grid_height + edge
+	summary_height = math.max(experience_bottom, y + grid_height) + edge
 	call(summary, "SetSize", width, summary_height)
 	call(shell.divider, "ClearAllPoints")
 	call(shell.divider, "SetPoint", "BOTTOMLEFT", summary, "BOTTOMLEFT", edge, 0)
@@ -1202,9 +1214,19 @@ shell.count_unread_below = function(list)
 	return count
 end
 
+-- The open island is two columns, quests on the left and notifications on the
+-- right. The summary above them uses the same split, so what sits above a
+-- pane lines up with it.
+shell.panes = function(width)
+	local left = math.floor(width * 0.46 + 0.5)
+	return left, width - left
+end
+
 local function layout_expanded(list, status, inspection_height)
+	local space = shell.space
 	local width = math.max(CLOSED_W, math.min(OPEN_W, screen_size("GetWidth") - 32))
-	layout_summary(width)
+	local left_w, right_w = shell.panes(width)
+	layout_summary(width, left_w)
 	if status then
 		call(status_node.frame, "ClearAllPoints")
 		call(status_node.frame, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", 0, -summary_height)
@@ -1212,10 +1234,11 @@ local function layout_expanded(list, status, inspection_height)
 		status_node.tooltip = root_hover.tooltip
 	end
 	local header_height = summary_height + status_height
-	content_height = inspection_height or 0
+	local viewport_top = header_height + space.head
+	content_height = 0
 	call(empty_text, "ClearAllPoints")
-	call(empty_text, "SetPoint", "TOPLEFT", inbox_content, "TOPLEFT", 12, -content_height - 8)
-	call(empty_text, "SetWidth", width - 48)
+	call(empty_text, "SetPoint", "TOPLEFT", inbox_content, "TOPLEFT", space.edge, -content_height - space.near)
+	call(empty_text, "SetWidth", right_w - 2 * space.edge)
 	call(empty_text, "SetText", "No notifications yet")
 	for index, entry in ipairs(list) do
 		local node = history_nodes[index]
@@ -1225,15 +1248,14 @@ local function layout_expanded(list, status, inspection_height)
 					(entry.frozen and "" or "\nRight-click to dismiss"), entry, content_height
 			call(node.frame, "ClearAllPoints")
 			call(node.frame, "SetPoint", "TOPLEFT", inbox_content, "TOPLEFT", 0, -content_height)
-			content_height = content_height + content_size(node, entry, width - 24)
+			content_height = content_height + content_size(node, entry, right_w)
 		end
 	end
-	if #list == 0 then content_height = content_height + (call(empty_text, "GetStringHeight") or 14) + 16 end
-	scroll_height = math.min(content_height, 240, math.max(32, screen_size("GetHeight") - header_height - 56))
-	local show_new = shell.count_unread_below(list) > 0
-	local footer_height = (#notices > 0 or undo_state) and 32 or 0
-	if (#notices > 0 and 108 or 0) + (undo_state and 56 or 0) + (show_new and 132 or 0) > width - 24 then footer_height = 64 end
-	scroll_height = math.min(scroll_height, math.max(32, screen_size("GetHeight") - header_height - footer_height - 24))
+	if #list == 0 then content_height = content_height + (call(empty_text, "GetStringHeight") or 14) + 2 * space.section end
+	-- Both lists share one height, so the divider between them runs clean.
+	local quest_height = inspection_height or 0
+	local room = math.max(space.pane_min, screen_size("GetHeight") - viewport_top - space.edge - 24)
+	scroll_height = math.min(math.max(content_height, quest_height, space.pane_min), space.pane_max, room)
 	if follow_end then
 		scroll_offset = content_height - scroll_height
 	elseif scroll_anchor then
@@ -1243,29 +1265,60 @@ local function layout_expanded(list, status, inspection_height)
 	end
 	scroll_anchor, follow_end = nil, nil
 	scroll_offset = math.max(0, math.min(scroll_offset, content_height - scroll_height))
-	call(inbox_content, "SetSize", width - 24, content_height)
+	-- Counted only now, against the offset the list will really show.
+	local show_new = shell.count_unread_below(list) > 0
+	-- A different quest starts at its top, and the card never follows the end of the notices.
+	local quests_view = quest_context.view()
+	local quest_id = quests_view and quests_view.current and quests_view.current.id
+	if quest_id ~= shell.quest_shown then shell.quest_offset, shell.quest_shown = 0, quest_id end
+	shell.quest_height = quest_height
+	shell.quest_offset = math.max(0, math.min(shell.quest_offset, quest_height - scroll_height))
+	call(inbox_content, "SetSize", right_w, content_height)
 	call(inbox, "ClearAllPoints")
-	call(inbox, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", 0, -header_height)
-	call(inbox, "SetSize", width - 24, scroll_height)
+	call(inbox, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", left_w, -viewport_top)
+	call(inbox, "SetSize", right_w, scroll_height)
 	call(inbox, "SetVerticalScroll", scroll_offset)
+	call(quest_content, "SetSize", left_w, math.max(1, quest_height))
+	call(quest_scroll, "ClearAllPoints")
+	call(quest_scroll, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", 0, -viewport_top)
+	call(quest_scroll, "SetSize", left_w, scroll_height)
+	call(quest_scroll, "SetVerticalScroll", shell.quest_offset)
+	-- Each pane has a heading row. The notifications' also holds its controls.
+	call(shell.quest_heading, "ClearAllPoints")
+	call(shell.quest_heading, "SetPoint", "LEFT", expanded, "TOPLEFT", space.edge, -(header_height + space.head / 2))
+	call(shell.notice_heading, "ClearAllPoints")
+	call(shell.notice_heading, "SetPoint", "LEFT", expanded, "TOPLEFT", left_w + space.edge, -(header_height + space.head / 2))
+	call(shell.quest_empty, "ClearAllPoints")
+	call(shell.quest_empty, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", space.edge, -(viewport_top + space.edge))
+	call(shell.quest_empty, "SetWidth", left_w - 2 * space.edge)
+	call(shell.quest_empty, quests_view and "Hide" or "Show")
+	for index, rule in ipairs({ shell.quest_rule, shell.notice_rule }) do
+		call(rule, "ClearAllPoints")
+		call(rule, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", (index == 1 and 0 or left_w) + space.edge, -viewport_top)
+		call(rule, "SetSize", (index == 1 and left_w or right_w) - 2 * space.edge, 1)
+	end
+	local height = viewport_top + scroll_height + space.edge
+	call(shell.pane_divider, "ClearAllPoints")
+	call(shell.pane_divider, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", left_w, -header_height)
+	call(shell.pane_divider, "SetSize", 1, height - header_height)
 	call(footer, "ClearAllPoints")
-	call(footer, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", 12, -header_height - scroll_height - 4)
-	call(footer, "SetSize", width - 24, footer_height)
+	call(footer, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", left_w, -header_height)
+	call(footer, "SetSize", right_w, space.head)
 	call(clear_button, #notices > 0 and "Show" or "Hide")
 	call(undo_button, undo_state and "Show" or "Hide")
 	call(undo_button, "ClearAllPoints")
-	call(undo_button, "SetPoint", "TOPLEFT", footer, "TOPLEFT", #notices > 0 and 116 or 0, 0)
-	local unread_below = shell.count_unread_below(list)
-	call(new_button, unread_below > 0 and "Show" or "Hide")
+	if #notices > 0 then
+		call(undo_button, "SetPoint", "RIGHT", clear_button, "LEFT", -space.near, 0)
+	else
+		call(undo_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -space.edge, -space.near)
+	end
+	local unread_below = shell.unread_below
+	call(new_button, show_new and "Show" or "Hide")
 	shell.set_control_text(new_button, unread_below == 1 and "1 new notice" or unread_below .. " new notices")
 	call(new_button, "ClearAllPoints")
-	if footer_height == 64 then
-		call(new_button, "SetPoint", "TOPLEFT", footer, "TOPLEFT", 0, -32)
-	else
-		call(new_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", 0, 0)
-	end
-	shell.scroll_api.layout(shell.scrollbar, header_height, scroll_height, content_height, scroll_offset, width - 24)
-	local height = header_height + scroll_height + footer_height + 12
+	call(new_button, "SetPoint", "BOTTOMRIGHT", inbox, "BOTTOMRIGHT", -(space.edge + space.near), space.near)
+	shell.scroll_api.layout(shell.scrollbar, left_w, viewport_top, scroll_height, content_height, scroll_offset, right_w)
+	shell.scroll_api.layout(shell.quest_scrollbar, 0, viewport_top, scroll_height, quest_height, shell.quest_offset, left_w)
 	call(expanded, "SetSize", width, height)
 	island_surface.size(expanded_surface, width, height, 12)
 	return width, height
@@ -1545,7 +1598,7 @@ paint = function(reason)
 	local morphing = preview.phase == "opening" or preview.phase == "closing"
 	local face = quest_context.present({
 		status = status, closed = now == "closed" or morphing, visual_open = visual_open,
-		available = available, content_width = page_width - 24, badge = shell.badge_text(), reserve = unread_count() > 0 and 14 or 0,
+		available = available, content_width = (shell.panes(page_width)), badge = shell.badge_text(), reserve = unread_count() > 0 and 14 or 0,
 	})
 	local quest = face.quest
 	local layout = compact and compact_api.layout(compact, measure_capsule, available) or nil
@@ -1606,8 +1659,12 @@ paint = function(reason)
 	call(summary, visual_open and "Show" or "Hide")
 	call(status_node.frame, status and visual_open and "Show" or "Hide")
 	call(inbox, visual_open and "Show" or "Hide")
-	call(footer, visual_open and (#notices > 0 or undo_state) and "Show" or "Hide")
-	if not visual_open then shell.scroll_api.hide(shell.scrollbar) end
+	call(quest_scroll, visual_open and "Show" or "Hide")
+	call(footer, visual_open and "Show" or "Hide")
+	if not visual_open then
+		shell.scroll_api.hide(shell.scrollbar)
+		shell.scroll_api.hide(shell.quest_scrollbar)
+	end
 	for _, control in ipairs(preview_controls) do call(control, "EnableMouse", now == "open") end
 	show_label(empty_text, visual_open and #list == 0, "No notifications yet")
 	show_label(unread_text, (now == "closed" or morphing) and not layout and unread_count() > 0, tostring(unread_count()))
@@ -1722,6 +1779,12 @@ end
 function island.scroll_to(offset)
 	if not usable(offset) or type(offset) ~= "number" or not opened() then return end
 	scroll_offset = math.max(0, math.min(offset, content_height - scroll_height))
+	paint()
+end
+
+function island.scroll_quests(offset)
+	if not usable(offset) or type(offset) ~= "number" or not opened() then return end
+	shell.quest_offset = math.max(0, math.min(offset, shell.quest_height - scroll_height))
 	paint()
 end
 
@@ -2109,6 +2172,7 @@ local function hide()
 	statuses = {}
 	undo_state, close_token, scroll_anchor, follow_end = nil, nil, nil, nil
 	scroll_offset, scroll_height, content_height = 0, 0, 0
+	shell.quest_offset, shell.quest_height, shell.quest_shown = 0, 0, nil
 	pinned, hovering, holding, hold_was_pinned, hold_at, was_open = nil, nil, nil, nil, nil, nil
 	notices, readout = kept, {}
 	vitals.follow("hide")
@@ -2411,11 +2475,38 @@ local function ensure_frame()
 		call(target, "SetScript", "OnClick", on_click)
 		preview_controls[#preview_controls + 1] = target
 	end
+	-- The two lists and what frames them: a heading row and a rule over each, and
+	-- a divider between. They sit in one layer so the open motion moves them together.
+	local panes_visual = make_visual(expanded, true)
+	shell.pane_divider = call(panes_visual, "CreateTexture", nil, "ARTWORK")
+	call(shell.pane_divider, "SetColorTexture", 1, 1, 1, 0.1)
+	shell.quest_rule = call(panes_visual, "CreateTexture", nil, "ARTWORK")
+	call(shell.quest_rule, "SetColorTexture", 1, 1, 1, 0.1)
+	shell.notice_rule = call(panes_visual, "CreateTexture", nil, "ARTWORK")
+	call(shell.notice_rule, "SetColorTexture", 1, 1, 1, 0.1)
+	shell.quest_heading = make_label(panes_visual, "LEFT", true)
+	call(shell.quest_heading, "SetText", "Quests")
+	shell.notice_heading = make_label(panes_visual, "LEFT", true)
+	call(shell.notice_heading, "SetText", "Notifications")
+	shell.quest_empty = make_label(panes_visual, "LEFT", true)
+	call(shell.quest_empty, "SetText", "Turn on Show active quest in the Smart island settings to follow a quest here.")
+	call(shell.quest_empty, "Hide")
+	quest_scroll = CreateFrame("ScrollFrame", nil, expanded)
+	call(quest_scroll, "EnableMouseWheel", true)
+	preview_controls[#preview_controls + 1] = quest_scroll
+	quest_content = CreateFrame("Frame", nil, quest_scroll)
+	call(quest_content, "SetSize", OPEN_W / 2, 1)
+	call(quest_content, "SetPoint", "TOPLEFT", quest_scroll, "TOPLEFT", 0, 0)
+	call(quest_scroll, "SetScrollChild", quest_content)
+	call(quest_scroll, "SetScript", "OnMouseWheel", function(_, delta)
+		if usable(delta) and type(delta) == "number" then island.scroll_quests(shell.quest_offset - delta * 40) end
+	end)
+	hover_target(quest_scroll, {})
 	inbox = CreateFrame("ScrollFrame", nil, expanded)
 	call(inbox, "EnableMouseWheel", true)
 	preview_controls[#preview_controls + 1] = inbox
 	inbox_content = CreateFrame("Frame", nil, inbox)
-	call(inbox_content, "SetSize", OPEN_W - 24, 1)
+	call(inbox_content, "SetSize", OPEN_W / 2, 1)
 	call(inbox_content, "SetPoint", "TOPLEFT", inbox, "TOPLEFT", 0, 0)
 	call(inbox, "SetScrollChild", inbox_content)
 	call(inbox, "SetScript", "OnMouseWheel", function(_, delta)
@@ -2434,18 +2525,18 @@ local function ensure_frame()
 	end
 	footer = CreateFrame("Frame", nil, expanded)
 	clear_button = make_control(footer, "EverlookIslandClearHistory", "Clear history", 108, island.clear_history)
-	call(clear_button, "SetPoint", "TOPLEFT", footer, "TOPLEFT", 0, 0)
+	call(clear_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -shell.space.edge, -shell.space.near)
 	undo_button = make_control(footer, "EverlookIslandUndo", "Undo", 48, island.undo_clear)
-	call(undo_button, "SetPoint", "LEFT", clear_button, "RIGHT", 8, 0)
-	new_button = make_control(footer, "EverlookIslandNewNotices", "New notices", 96, function() island.scroll_to(shell.unread_first or content_height) end)
+	-- The pill floats over the foot of the list, so it sits above the edge fades.
+	new_button = make_control(expanded, "EverlookIslandNewNotices", "New notices", 96, function() island.scroll_to(shell.unread_first or content_height) end)
+	call(new_button, "SetFrameLevel", 64)
 	new_button.hover.tooltip = "Go to the first unread notice"
-	call(new_button, "SetPoint", "RIGHT", footer, "RIGHT", 0, 0)
-	shell.scrollbar = shell.scroll_api.make(expanded, {
-		scroll_to = island.scroll_to,
-		ratio = function() return (call(UIParent, "GetEffectiveScale") or 1) * (module.get(id, "size") / 100) end,
-	})
+	local function drag_ratio() return (call(UIParent, "GetEffectiveScale") or 1) * (module.get(id, "size") / 100) end
+	shell.scrollbar = shell.scroll_api.make(expanded, { scroll_to = island.scroll_to, ratio = drag_ratio })
 	preview_controls[#preview_controls + 1] = shell.scrollbar.thumb
-	quest_context.ensure_ui({ root = shell.face, content = inbox_content, label = make_label, visual = make_visual,
+	shell.quest_scrollbar = shell.scroll_api.make(expanded, { name = "EverlookIslandQuestScrollThumb", scroll_to = island.scroll_quests, ratio = drag_ratio })
+	preview_controls[#preview_controls + 1] = shell.quest_scrollbar.thumb
+	quest_context.ensure_ui({ root = shell.face, content = quest_content, label = make_label, visual = make_visual,
 		control = make_control, hover = hover_target, controls = preview_controls, pin = island.pin_quest,
 		repaint = function() paint() end })
 	preview_group = call(expanded, "CreateAnimationGroup")

@@ -2669,6 +2669,29 @@ return function(root, check)
 	end
 
 	do
+		local addon, env, _, state = quest_world()
+		addon.module.set("smart_island", "quest_context", true)
+		addon.module.set("smart_island", "quest_plan", true)
+		env.everlook_smart_island_key("down")
+		local view = addon.smart_island.view()
+		check("the quest card starts at its top beside an empty notice list", #view.notices == 0 and view.quest_height > 0 and view.quest_offset == 0)
+		check("a typical card with its route fits without scrolling", view.quest_height <= view.scroll_height)
+		-- On a short screen the panes lose height and the card has to scroll.
+		env.UIParent.GetHeight = function() return 400 end
+		env.Everlook.island.notify({ text = "A notice" })
+		view = addon.smart_island.view()
+		check("a tall card scrolls on its own, and the notices stay where they were",
+			view.quest_height > view.scroll_height and view.quest_offset == 0 and view.scroll_offset == 0)
+		addon.smart_island.scroll_quests(80)
+		view = addon.smart_island.view()
+		check("scrolling the quests moves only the quests", view.quest_offset == 80 and view.scroll_offset == 0)
+		env.Everlook.island.notify({ text = "Another notice" })
+		check("a new notice does not drag the card down", addon.smart_island.view().quest_offset == 80)
+		addon.smart_island.scroll_quests(100000)
+		check("the quest offset stops at the end of the card", addon.smart_island.view().quest_offset == view.quest_height - view.scroll_height)
+	end
+
+	do
 		local function near(actual, expected)
 			return type(actual) == "number" and math.abs(actual - expected) < 1e-4
 		end
@@ -3586,6 +3609,14 @@ return function(root, check)
 		check("a list scrolled to its end fades only at its top", addon.smart_island.view().more_above and not addon.smart_island.view().more_below and #shown_fades() == 1
 			and shown_fades()[1].gradient.high.a > 0.9 and shown_fades()[1].gradient.low.a == 0)
 		check("with nothing unread below, the button goes away", controls.EverlookIslandNewNotices.shown == false)
+		-- Room for one more, so the list grows and the new row starts below the old end.
+		addon.module.set("smart_island", "inbox_size", 30)
+		local before_arrival = addon.smart_island.view().content_height
+		env.Everlook.island.notify({ text = "Arrives while you are at the end" })
+		view = addon.smart_island.view()
+		check("a notice that arrives under your eyes is not counted as below them", view.content_height > before_arrival and view.unread_below == 0 and controls.EverlookIslandNewNotices.shown == false
+			and view.scroll_offset == view.content_height - view.scroll_height)
+		addon.module.set("smart_island", "inbox_size", 10)
 		controls.EverlookIslandClearHistory.scripts.OnClick()
 		check("clear history acknowledges the inbox with Undo", #addon.smart_island.view().notices == 0 and addon.smart_island.view().can_undo)
 		env.Everlook.island.notify({ source = "New arrival", text = "Arrived after clear" })
@@ -3684,16 +3715,16 @@ return function(root, check)
 		check("the open bar shows the phrased experience", experience ~= nil)
 		check("expanded XP rail clears the level text", rail_top >= -heading.point[5] + heading:GetStringHeight() + 6)
 		check("expanded metrics begin below the XP rail", -metric.parent.parent.point[5] >= rail_top + bar.height + 6)
-		check("empty history has no disabled footer taking up space", clear.parent.shown == false)
-		check("empty history is measured as one line with padding", addon.smart_island.view().scroll_height <= 32)
+		check("empty history has no disabled Clear button", clear.shown == false)
+		check("an empty island holds its panes at their minimum height", addon.smart_island.view().scroll_height == 48)
 		local empty_height = addon.smart_island.view().height
 		env.Everlook.island.notify({ text = "A notice to clear" })
-		check("history controls return when there is a notice", clear.parent.shown and clear.shown ~= false and addon.smart_island.view().height > empty_height)
+		check("history controls return when there is a notice", clear.shown ~= false and addon.smart_island.view().height > empty_height)
 		addon.smart_island.clear_history()
-		check("clearing history keeps Undo without a disabled Clear button", clear.parent.shown and clear.shown == false and undo.shown)
-		check("Undo occupies the first footer position", undo.point and undo.point[2] == clear.parent and undo.point[4] == 0)
+		check("clearing history keeps Undo without a disabled Clear button", clear.shown == false and undo.shown)
+		check("Undo takes the right end of the notifications heading when Clear is gone", undo.point and undo.point[1] == "TOPRIGHT" and undo.point[2] == clear.parent)
 		fire_after(afters, 5)
-		check("expired Undo returns to the compact empty state", clear.parent.shown == false and addon.smart_island.view().height == empty_height)
+		check("expired Undo returns to the compact empty state", clear.shown == false and undo.shown == false and addon.smart_island.view().height == empty_height)
 		state.time = state.time + 1
 		env.everlook_smart_island_key("up")
 		check("closing returns the XP rail to the capsule bounds", bar.point and bar.width < addon.smart_island.view().width and -bar.point[5] + bar.height <= addon.smart_island.view().height)
@@ -3740,7 +3771,7 @@ return function(root, check)
 		end
 		check("the island is its own mouse frame", pill ~= nil)
 		pill.scripts.OnEnter(pill)
-		check("hover opens a preview of the data bar", addon.smart_island.view().mode == "open" and addon.smart_island.view().hovering and addon.smart_island.view().width == 440)
+		check("hover opens a preview of the data bar", addon.smart_island.view().mode == "open" and addon.smart_island.view().hovering and addon.smart_island.view().width == 720)
 		pill.scripts.OnLeave(pill)
 		fire_after(afters, 0.1)
 		check("leaving a hover closes the island", addon.smart_island.view().mode == "closed" and not addon.smart_island.view().hovering)
@@ -5476,14 +5507,29 @@ return function(root, check)
 			check("the open island places the hour above money",
 				label and label.shown ~= false and label.text:find("Hour|r", 1, true)
 				and money and money.point and label.point and label.point[5] > money.point[5])
-			local status
+			local status, quests_heading, notices_heading, names, quest_pane, notice_pane
 			for _, object in ipairs(ui_frames) do
 				for _, region in ipairs(object.regions or {}) do
-					if region.text == "Status" and region.shown ~= false then status = region end
+					if region.shown ~= false then
+						if region.text == "Status" then status = region end
+						if region.text == "Quests" then quests_heading = region end
+						if region.text == "Notifications" then notices_heading = region end
+						if region.text and region.text:find("Experience|r", 1, true) then names = region end
+					end
+				end
+				if object.scroll_child and object.point then
+					if object.point[4] == 0 then quest_pane = object else notice_pane = object end
 				end
 			end
-			check("the table is set off from the Status heading by a section gap, not an inner one",
-				status and -status.point[5] >= -label.point[5] + 2 * 18 + 16)
+			-- 720 wide, split at 46%: the left column is 331 and the right begins there.
+			check("the Experience table and the quests share the left column's edge", names and quests_heading
+				and names.point[4] == 12 and quests_heading.point[4] == 12)
+			check("Status and the notifications share the right column's edge", status and notices_heading
+				and status.point[4] == 331 + 12 and notices_heading.point[4] == 331 + 12)
+			check("the table and Status begin on one line", status and label.point[5] == status.point[5])
+			check("the two panes share a top and a height, and the left ends where the right begins",
+				quest_pane and notice_pane and quest_pane.point[5] == notice_pane.point[5] and quest_pane.height == notice_pane.height
+				and quest_pane.width == notice_pane.point[4] and quest_pane.width + notice_pane.width == 720)
 			ui.module.set("smart_island", "size", 150)
 			label, money = hour_label(), money_chip()
 			check("a larger island keeps the hour above money",

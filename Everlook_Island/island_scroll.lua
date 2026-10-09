@@ -1,13 +1,13 @@
 local Everlook = Everlook
 
--- A slim scroll bar for the inbox: a dim track and a thumb you can drag. The
--- mouse wheel still works. The bar sits in the right margin of the open
--- island, so it never covers a row.
+-- A slim scroll bar for one list of the open island: a dim track and a thumb
+-- you can drag. The mouse wheel still works. The bar sits in the list's right
+-- padding, so it never covers a row.
 local scroll = {}
 Everlook.island_scroll = scroll
 
--- The thumb sits inside the experience rim, in the margin the quest panel leaves.
-local THUMB_MIN, WIDTH, OFFSET = 24, 6, 14
+-- The thumb sits this far in from the list's right edge, inside its padding.
+local THUMB_MIN, WIDTH, OFFSET = 24, 6, 4
 -- A fade this tall tells you the list goes on past that edge. It sits above the
 -- rows and below the thumb.
 local FADE_HEIGHT, FADE_LEVEL = 20, 58
@@ -18,13 +18,14 @@ local function call(object, method, ...)
 end
 
 -- options.scroll_to(offset) moves the list. options.ratio() is screen pixels
--- per Island unit, so a drag follows the pointer at any scale.
+-- per Island unit, so a drag follows the pointer at any scale. options.name
+-- names the thumb, so two lists keep two frames.
 function scroll.make(parent, options)
 	local handle = { parent = parent, options = options, travel = 0, range = 0, offset = 0 }
 	handle.track = call(parent, "CreateTexture", nil, "ARTWORK")
 	call(handle.track, "SetColorTexture", 1, 1, 1, 0.1)
 	call(handle.track, "Hide")
-	handle.thumb = CreateFrame("Button", "EverlookIslandScrollThumb", parent)
+	handle.thumb = CreateFrame("Button", options.name or "EverlookIslandScrollThumb", parent)
 	call(handle.thumb, "SetFrameLevel", 60)
 	call(handle.thumb, "RegisterForClicks", "LeftButtonUp")
 	local face = call(handle.thumb, "CreateTexture", nil, "OVERLAY")
@@ -78,7 +79,7 @@ end
 
 -- One edge's fade: dark at the edge it sits on, clear toward the rows. The
 -- colour is the surface's own, so the rows seem to slide under it.
-local function fade(handle, texture, edge, top, view_height, width, visible)
+local function fade(handle, texture, edge, left, top, view_height, width, visible)
 	if not visible then
 		call(texture, "Hide")
 		return
@@ -87,24 +88,25 @@ local function fade(handle, texture, edge, top, view_height, width, visible)
 	local dark, clear = CreateColor(red, green, blue, alpha), CreateColor(red, green, blue, 0)
 	call(texture, "ClearAllPoints")
 	if edge == "top" then
-		call(texture, "SetPoint", "TOPLEFT", handle.parent, "TOPLEFT", 12, -top)
+		call(texture, "SetPoint", "TOPLEFT", handle.parent, "TOPLEFT", left, -top)
 		call(texture, "SetGradient", "VERTICAL", clear, dark)
 	else
-		call(texture, "SetPoint", "TOPLEFT", handle.parent, "TOPLEFT", 12, -(top + view_height - math.min(FADE_HEIGHT, view_height / 3)))
+		call(texture, "SetPoint", "TOPLEFT", handle.parent, "TOPLEFT", left, -(top + view_height - math.min(FADE_HEIGHT, view_height / 3)))
 		call(texture, "SetGradient", "VERTICAL", dark, clear)
 	end
 	call(texture, "SetSize", width, math.min(FADE_HEIGHT, view_height / 3))
 	call(texture, "Show")
 end
 
--- width is the list's width. Each edge fades while there is more past it.
-function scroll.layout(handle, top, view_height, content_height, offset, width)
+-- The list sits at `left`, `top`, `width` wide. Each edge fades while there is
+-- more past it.
+function scroll.layout(handle, left, top, view_height, content_height, offset, width)
 	if not handle then return end
 	local m = scroll.metrics(view_height, content_height, offset)
 	handle.above = m ~= nil and offset > 0.5
 	handle.below = m ~= nil and offset < m.range - 0.5
-	fade(handle, handle.fade_top, "top", top, view_height, width or 0, handle.above)
-	fade(handle, handle.fade_bottom, "bottom", top, view_height, width or 0, handle.below)
+	fade(handle, handle.fade_top, "top", left, top, view_height, width, handle.above)
+	fade(handle, handle.fade_bottom, "bottom", left, top, view_height, width, handle.below)
 	if not m then
 		call(handle.track, "Hide")
 		call(handle.thumb, "Hide")
@@ -113,11 +115,12 @@ function scroll.layout(handle, top, view_height, content_height, offset, width)
 	end
 	handle.travel, handle.range, handle.offset = m.travel, m.range, offset
 	call(handle.track, "ClearAllPoints")
-	call(handle.track, "SetPoint", "TOPRIGHT", handle.parent, "TOPRIGHT", -OFFSET, -top)
+	local thumb_left = left + width - OFFSET - WIDTH
+	call(handle.track, "SetPoint", "TOPLEFT", handle.parent, "TOPLEFT", thumb_left, -top)
 	call(handle.track, "SetSize", WIDTH, view_height)
 	call(handle.track, "Show")
 	call(handle.thumb, "ClearAllPoints")
-	call(handle.thumb, "SetPoint", "TOPRIGHT", handle.parent, "TOPRIGHT", -OFFSET, -(top + m.at))
+	call(handle.thumb, "SetPoint", "TOPLEFT", handle.parent, "TOPLEFT", thumb_left, -(top + m.at))
 	call(handle.thumb, "SetSize", WIDTH, m.thumb)
 	call(handle.thumb, "Show")
 end

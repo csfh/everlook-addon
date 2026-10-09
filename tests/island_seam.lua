@@ -613,16 +613,18 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local status = label("Status")
 		check("the Status heading is a section gap below the level line, with no room kept for a hidden rail",
 			-status.point[5] == 12 + 14 + 16)
-		check("the cells share one width and the summary's left edge",
-			money.width == gear.width and gear.width == bags.width and money.point[4] == 12 and gear.point[4] == 12)
+		-- With no Experience table to sit beside, the cells share one row across
+		-- the whole width: 696 wide, three gaps of 8, so four columns of 168.
+		check("the cells share one width, one row and the summary's left edge",
+			money.width == 168 and gear.width == 168 and bags.width == 168 and money.point[4] == 12
+			and gear.point[5] == money.point[5] and bags.point[5] == money.point[5])
+		check("each column follows the last by its width and one gap", gear.point[4] == 12 + 168 + 8 and bags.point[4] == 12 + 2 * (168 + 8))
 		check("the cells begin one step below the Status heading", -money.point[5] == -status.point[5] + 14 + 8)
-		check("gear and bags share the row below money, gear on the left",
-			gear.point[5] == bags.point[5] and gear.point[5] == money.point[5] - 32 - 8 and bags.point[4] == 12 + gear.width + 8)
 		local name, figure = label("Gear"), label("50%")
 		check("a value sits under its name on the cell's left edge",
 			name.point[4] == figure.point[4] and name.point[5] == 0 and figure.point[5] == -(14 + 4))
-		check("the summary ends one edge below the last row, with room for the gauges",
-			addon.smart_island.view().summary_height == -money.point[5] + 32 + 8 + 40 + 12)
+		check("the summary ends one edge below the row, with room for the gauges",
+			addon.smart_island.view().summary_height == -money.point[5] + 32 + 8 + 12)
 		check("the clock moved to the header beside the percent", label("14:05    45%") ~= nil and cell("Time") == nil)
 	end
 	do
