@@ -37,6 +37,7 @@ local ROLES = {
 	heading = { "GameFontHighlightSmall", COLORS.muted },
 }
 local ART = "Interface\\AddOns\\Everlook_Island\\assets\\"
+local EMPTY_HINT = "Loot, mail, quests and warnings from Everlook and other addons collect here."
 
 local island = {}
 Everlook.smart_island = island
@@ -241,9 +242,20 @@ local function make_visual(parent, belongs_to_preview)
 	return visual
 end
 
-local function make_content(parent, belongs_to_preview)
+-- A row in the notifications list is set smaller than a toast, which is read at a glance,
+-- and lights up under the pointer.
+local function make_content(parent, belongs_to_preview, row)
 	local visual = make_visual(parent, belongs_to_preview)
-	local node = { frame = parent, visual = visual, label = make_label(visual), detail = make_label(visual, "LEFT", true), meta = make_label(visual, "LEFT", true) }
+	local node = { frame = parent, visual = visual, label = make_label(visual, "LEFT", row and "text"),
+		detail = make_label(visual, "LEFT", row and "caption" or true), meta = make_label(visual, "LEFT", row and "caption" or true), row = row }
+	if row then
+		local wash = call(visual, "CreateTexture", nil, "BACKGROUND")
+		call(wash, "SetPoint", "TOPLEFT", visual, "TOPLEFT", 4, -2)
+		call(wash, "SetPoint", "BOTTOMRIGHT", visual, "BOTTOMRIGHT", -4, 2)
+		call(wash, "SetColorTexture", 1, 1, 1, 0.06)
+		call(wash, "Hide")
+		node.on_hover = function(inside) call(wash, inside and "Show" or "Hide") end
+	end
 	-- A slim bar down the left edge carries the severity, so a warning reads at a
 	-- glance without leaning on the text colour.
 	node.accent = call(visual, "CreateTexture", nil, "ARTWORK")
@@ -287,6 +299,8 @@ local function content_size(node, entry, width, compact, activity)
 	local primary = entry.runs and compact_api.compile(entry.runs, vitals.rich) or entry.text
 	if (entry.count or 1) > 1 then primary = (primary or "") .. " ×" .. entry.count end
 	call(node.label, "SetText", primary or entry.text)
+	-- A row you have read steps back from one you have not.
+	if node.row then call(node.label, "SetTextColor", unpack(entry.unread and COLORS.primary or COLORS.secondary)) end
 	local primary_height = call(node.label, "GetStringHeight") or 14
 	local foreign_source = type(entry.source) == "string" and entry.source:find("^smart_island") == nil and entry.source:find("^everlook") == nil
 	-- A toast from Everlook itself does not name its source. The inbox row does.
@@ -339,7 +353,7 @@ local function content_size(node, entry, width, compact, activity)
 		call(node.meta, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 40, -y)
 		call(node.meta, "SetWidth", text_width)
 		call(node.meta, "SetText", metadata)
-		call(node.meta, "SetTextColor", unpack(COLORS[entry.severity] or COLORS.secondary))
+		call(node.meta, "SetTextColor", unpack(COLORS[entry.severity] or (node.row and COLORS.muted or COLORS.secondary)))
 		local metadata_height = call(node.meta, "GetStringHeight") or 12
 		y = y + metadata_height + 10
 	end
@@ -1276,6 +1290,10 @@ local function layout_expanded(list, status, inspection_height)
 	call(empty_text, "SetPoint", "TOPLEFT", inbox_content, "TOPLEFT", space.edge, -content_height - space.near)
 	call(empty_text, "SetWidth", right_w - 2 * space.edge)
 	call(empty_text, "SetText", "No notifications yet")
+	call(shell.empty_hint, "ClearAllPoints")
+	call(shell.empty_hint, "SetPoint", "TOPLEFT", inbox_content, "TOPLEFT", space.edge, -content_height - space.near - (call(empty_text, "GetStringHeight") or 14) - space.within)
+	call(shell.empty_hint, "SetWidth", right_w - 2 * space.edge)
+	call(shell.empty_hint, "SetText", EMPTY_HINT)
 	for index, entry in ipairs(list) do
 		local node = history_nodes[index]
 		if node then
@@ -1287,7 +1305,10 @@ local function layout_expanded(list, status, inspection_height)
 			content_height = content_height + content_size(node, entry, right_w)
 		end
 	end
-	if #list == 0 then content_height = content_height + (call(empty_text, "GetStringHeight") or 14) + 2 * space.section end
+	if #list == 0 then
+		content_height = content_height + space.near + (call(empty_text, "GetStringHeight") or 14) + space.within
+			+ (call(shell.empty_hint, "GetStringHeight") or 12) + space.section
+	end
 	-- Both lists share one height, so the divider between them runs clean.
 	local quest_height = inspection_height or 0
 	local room = math.max(space.pane_min, screen_size("GetHeight") - viewport_top - space.edge - 24)
@@ -1710,6 +1731,7 @@ paint = function(reason)
 	end
 	for _, control in ipairs(preview_controls) do call(control, "EnableMouse", now == "open") end
 	show_label(empty_text, visual_open and #list == 0, "No notifications yet")
+	show_label(shell.empty_hint, visual_open and #list == 0, EMPTY_HINT)
 	show_label(unread_text, (now == "closed" or morphing) and not layout and unread_count() > 0, tostring(unread_count()))
 	local unread_warning = false
 	for _, entry in ipairs(notices) do
@@ -2596,11 +2618,12 @@ local function ensure_frame()
 	end)
 	hover_target(inbox, {})
 	local empty_visual = make_visual(inbox_content, true)
-	empty_text = make_label(empty_visual, "LEFT", true)
+	empty_text = make_label(empty_visual, "LEFT", "text")
 	call(empty_text, "SetPoint", "TOPLEFT", empty_visual, "TOPLEFT", 12, -12)
+	shell.empty_hint = make_label(empty_visual, "LEFT", "caption")
 	for index = 1, LIST_MAX do
 		local target = CreateFrame("Button", nil, inbox_content)
-		local node = make_content(target, true)
+		local node = make_content(target, true, true)
 		history_nodes[index] = node
 		hover_target(target, node)
 		preview_controls[#preview_controls + 1] = target

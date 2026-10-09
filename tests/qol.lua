@@ -3747,10 +3747,20 @@ return function(root, check)
 		check("expanded XP rail clears the level text", rail_top >= -heading.point[5] + heading:GetStringHeight() + 6)
 		check("expanded metrics begin below the XP rail", -metric.parent.parent.point[5] >= rail_top + bar.height + 6)
 		check("empty history has no disabled Clear button", clear.shown == false)
-		check("an empty island holds its panes at their minimum height", addon.smart_island.view().scroll_height == 48)
+		check("an empty island holds its panes to the height of its empty message", addon.smart_island.view().scroll_height >= 48 and addon.smart_island.view().scroll_height <= 80)
 		local empty_height = addon.smart_island.view().height
 		env.Everlook.island.notify({ text = "A notice to clear" })
-		check("history controls return when there is a notice", clear.shown ~= false and addon.smart_island.view().height > empty_height)
+		check("history controls return when there is a notice", clear.shown ~= false and #addon.smart_island.view().notices == 1)
+		local row_label
+		for _, object in ipairs(frames) do
+			for _, region in ipairs(object.regions or {}) do
+				if region.text == "A notice to clear" and region.font == "GameFontHighlight" then row_label = region end
+			end
+		end
+		check("a row is set in text type, smaller than the toast it came from, and bright while unread",
+			row_label and row_label.shown ~= false and row_label.color[1] > 0.9)
+		fire_after(afters, 0.75)
+		check("a row you have read steps back from one you have not", addon.smart_island.view().unread_count == 0 and row_label.color[1] < 0.75)
 		addon.smart_island.clear_history()
 		check("clearing history keeps Undo without a disabled Clear button", clear.shown == false and undo.shown)
 		check("Undo takes the right end of the notifications heading when Clear is gone", undo.point and undo.point[1] == "TOPRIGHT" and undo.point[2] == clear.parent)

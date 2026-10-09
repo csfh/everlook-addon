@@ -615,6 +615,8 @@ return function(root, check, island_world, quest_world, secret_stat)
 			-status.point[5] == 12 + 14 + 16)
 		-- With no Experience table to sit beside, the cells share one row across
 		-- the whole width: 696 wide, three gaps of 8, so four columns of 168.
+		check("an empty list says what belongs there and not only that it is empty",
+			label("No notifications yet") and label("Loot, mail, quests and warnings from Everlook and other addons collect here."))
 		local level, caption = label("Level 12"), label("Gear")
 		check("the level is the largest type, a heading is small and dimmer than a caption, and neither is body size",
 			level.font == "GameFontHighlightLarge" and status.font == "GameFontHighlightSmall" and caption.font == "GameFontHighlightSmall"
