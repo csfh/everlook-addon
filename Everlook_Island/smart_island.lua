@@ -22,7 +22,8 @@ local COLORS = {
 	secondary = { 174 / 255, 182 / 255, 195 / 255, 1 },
 	accent = { 173 / 255, 118 / 255, 239 / 255, 1 },
 	success = { 0.5, 0.9, 0.65, 1 },
-	warning = { 1, 0.83, 0.4, 1 },
+	-- Amber, so a warning is not mistaken for the gold of a quest.
+	warning = { 1, 0.62, 0.25, 1 },
 	error = { 1, 0.5, 0.5, 1 },
 	muted = { 136 / 255, 145 / 255, 160 / 255, 1 },
 }
@@ -1475,11 +1476,11 @@ shell.closed_view = function(available)
 	if module.get(id, "closed_clock") and readout.clock_text and readout.clock_text ~= "" then add(readout.clock_text, "aeb6c3") end
 	local durability = readout.durability
 	if finite(durability) and durability <= 30 and module.get(id, "source_durability") then
-		add("Gear " .. readout.durability_text, durability <= 10 and "ff8080" or "ffd466")
+		add("Gear " .. readout.durability_text, shell.tone(durability <= 10 and COLORS.error or COLORS.warning):sub(5))
 	end
 	local slots = readout.bags
 	if finite(slots) and module.get(id, "source_bags") and slots <= module.get(id, "low_slots") then
-		add("Bags " .. slots, slots == 0 and "ff8080" or "ffd466")
+		add("Bags " .. slots, shell.tone(slots == 0 and COLORS.error or COLORS.warning):sub(5))
 	elseif finite(slots) and module.get(id, "closed_bags") then
 		add(slots .. " free", "aeb6c3")
 	end

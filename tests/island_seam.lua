@@ -776,7 +776,7 @@ return function(root, check, island_world, quest_world, secret_stat)
 		check("an info toast has no severity bar", #accents() == 0)
 		addon.island.notify({ source = "Test", key = "careful", text = "Careful", severity = "warning" })
 		local bars = accents()
-		check("a warning toast has a bar in the warning colour", #bars == 1 and bars[1][1] == 1 and bars[1][2] == 0.83)
+		check("a warning toast has a bar in the warning colour", #bars == 1 and bars[1][1] == 1 and bars[1][2] == 0.62)
 	end
 	do
 		local addon, env, event, state, _, _, frames = island_world()
@@ -907,9 +907,9 @@ return function(root, check, island_world, quest_world, secret_stat)
 		for _, color in ipairs(swipes()) do check("a healthy ring is the neutral grey", color[1] < 0.75) end
 		state.slots[1] = { 10, 50 }
 		event("UPDATE_INVENTORY_DURABILITY")
-		check("a low figure takes the warning yellow", text_of("|cffffd46620%|r") ~= nil)
+		check("a low figure takes the warning amber", text_of("|cffff9e4020%|r") ~= nil)
 		local warned = false
-		for _, color in ipairs(swipes()) do if color[1] == 1 and color[2] > 0.8 and color[3] < 0.5 then warned = true end end
+		for _, color in ipairs(swipes()) do if color[1] == 1 and color[2] == 0.62 and color[3] == 0.25 then warned = true end end
 		check("and so does its ring", warned)
 		state.slots[1] = { 2, 50 }
 		event("UPDATE_INVENTORY_DURABILITY")

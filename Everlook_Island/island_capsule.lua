@@ -30,7 +30,7 @@ local TONES = {
 	secondary = "ffaeb6c3",
 	accent = "ffad76ef",
 	success = "ff80e6a6",
-	warning = "ffffd466",
+	warning = "ffff9e40",
 	error = "ffff8080",
 }
 local CAPSULE_KEYS = { text = true, icon = true, trailing = true, progress = true }
