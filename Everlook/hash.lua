@@ -28,14 +28,16 @@ local function xor_lua(left, right)
 	return value
 end
 
-local bxor = native and native.bxor or xor_lua
-local band = native and native.band or function(left, right)
+-- These carry the portable path and the key padding. They never use the bit
+-- library, so a library that misbehaves cannot reach the fallback.
+local bxor = xor_lua
+local function band(left, right)
 	return ((left % modulus) + (right % modulus) - xor_lua(left, right)) / 2
 end
-local bnot = native and native.bnot or function(value)
+local function bnot(value)
 	return modulus - 1 - value % modulus
 end
-local rshift = native and native.rshift or function(value, count)
+local function rshift(value, count)
 	return floor((value % modulus) / 2 ^ count)
 end
 
@@ -61,15 +63,17 @@ local function word_bytes(value)
 	return string.char(floor(value / 16777216), floor(value / 65536) % 256, floor(value / 256) % 256, value % 256)
 end
 
-local function sha256_bytes(message)
-	local length = #message * 8
-	local padded = message .. "\128" .. string.rep("\0", (55 - #message) % 64)
-		.. word_bytes(floor(length / modulus)) .. word_bytes(length)
-	local state = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 }
-	local words = {}
-	for offset = 1, #padded, 64 do
+local function initial_state()
+	return { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 }
+end
+
+local words = {}
+
+-- Without a bit library the arithmetic helpers above carry the work.
+local function compress_portable(state, text, first, last)
+	for offset = first, last, 64 do
 		for index = 1, 16 do
-			local a, b, c, d = padded:byte(offset + (index - 1) * 4, offset + index * 4 - 1)
+			local a, b, c, d = text:byte(offset + (index - 1) * 4, offset + index * 4 - 1)
 			words[index] = a * 16777216 + b * 65536 + c * 256 + d
 		end
 		for index = 17, 64 do
@@ -82,22 +86,97 @@ local function sha256_bytes(message)
 		for index = 1, 64 do
 			local sigma1 = bxor(bxor(rotate(e, 6), rotate(e, 11)), rotate(e, 25))
 			local choice = bxor(band(e, f), band(bnot(e), g))
-			local first = (h + sigma1 + choice + constants[index] + words[index]) % modulus
+			local first_sum = (h + sigma1 + choice + constants[index] + words[index]) % modulus
 			local sigma0 = bxor(bxor(rotate(a, 2), rotate(a, 13)), rotate(a, 22))
 			local majority = bxor(bxor(band(a, b), band(a, c)), band(b, c))
-			local second = (sigma0 + majority) % modulus
-			h, g, f, e, d, c, b, a = g, f, e, (d + first) % modulus, c, b, a, (first + second) % modulus
+			local second_sum = (sigma0 + majority) % modulus
+			h, g, f, e, d, c, b, a = g, f, e, (d + first_sum) % modulus, c, b, a, (first_sum + second_sum) % modulus
 		end
 		local compressed = { a, b, c, d, e, f, g, h }
 		for index = 1, 8 do
 			state[index] = (state[index] + compressed[index]) % modulus
 		end
 	end
+end
+
+-- With a bit library every rotate is two shifts and an or, and the sums stay
+-- in doubles until a round ends. Only the two-argument form of each function
+-- is used, and only the ones Blizzard's own code calls.
+local compress = compress_portable
+
+if native and native.bxor and native.band and native.bor and native.bnot and native.lshift and native.rshift then
+	local nxor, nand, nor, nnot, nshl, nshr = native.bxor, native.band, native.bor, native.bnot, native.lshift, native.rshift
+	local byte = string.byte
+	compress = function(state, text, first, last)
+		local w = words
+		local k = constants
+		for offset = first, last, 64 do
+			for index = 0, 15 do
+				local at = offset + index * 4
+				local b1, b2, b3, b4 = byte(text, at, at + 3)
+				w[index + 1] = b1 * 16777216 + b2 * 65536 + b3 * 256 + b4
+			end
+			for index = 17, 64 do
+				local left, right = w[index - 15], w[index - 2]
+				local sigma0 = nxor(nxor(nor(nshr(left, 7), nshl(left, 25)), nor(nshr(left, 18), nshl(left, 14))), nshr(left, 3))
+				local sigma1 = nxor(nxor(nor(nshr(right, 17), nshl(right, 15)), nor(nshr(right, 19), nshl(right, 13))), nshr(right, 10))
+				w[index] = (w[index - 16] + sigma0 + w[index - 7] + sigma1) % modulus
+			end
+			local a, b, c, d, e, f, g, h = state[1], state[2], state[3], state[4], state[5], state[6], state[7], state[8]
+			for index = 1, 64 do
+				local sigma1 = nxor(nxor(nor(nshr(e, 6), nshl(e, 26)), nor(nshr(e, 11), nshl(e, 21))), nor(nshr(e, 25), nshl(e, 7)))
+				local choice = nxor(g, nand(e, nxor(f, g)))
+				local first_sum = h + sigma1 + choice + k[index] + w[index]
+				local sigma0 = nxor(nxor(nor(nshr(a, 2), nshl(a, 30)), nor(nshr(a, 13), nshl(a, 19))), nor(nshr(a, 22), nshl(a, 10)))
+				local ab = nor(a, b)
+				local majority = nor(nand(a, b), nand(c, ab))
+				h, g, f, e, d, c, b, a = g, f, e, (d + first_sum) % modulus, c, b, a, (first_sum + sigma0 + majority) % modulus
+			end
+			state[1] = (state[1] + a) % modulus
+			state[2] = (state[2] + b) % modulus
+			state[3] = (state[3] + c) % modulus
+			state[4] = (state[4] + d) % modulus
+			state[5] = (state[5] + e) % modulus
+			state[6] = (state[6] + f) % modulus
+			state[7] = (state[7] + g) % modulus
+			state[8] = (state[8] + h) % modulus
+		end
+	end
+end
+
+-- The fast path is trusted only after it hashes "abc" correctly. A bit library
+-- that rounds, wraps or signs differently would otherwise make every signature
+-- wrong, and nothing in game would show it.
+if compress ~= compress_portable then
+	local state = initial_state()
+	compress(state, "abc\128" .. string.rep("\0", 52) .. "\0\0\0\0\0\0\0\24", 1, 64)
+	if state[1] ~= 0xba7816bf or state[2] ~= 0x8f01cfea or state[5] ~= 0xf61f2001 or state[8] ~= 0xf20015ad then
+		compress = compress_portable
+	end
+end
+
+-- Whole blocks are read in place. Only the tail is copied to be padded, so a
+-- large message is never copied to be hashed. `prefix` counts bytes already
+-- fed to the state, as when HMAC feeds its key block first.
+local function finish(state, message, prefix)
+	local length = #message
+	local whole = length - length % 64
+	if whole > 0 then
+		compress(state, message, 1, whole - 63)
+	end
+	local bits = (prefix + length) * 8
+	local tail = message:sub(whole + 1) .. "\128" .. string.rep("\0", (55 - length) % 64)
+		.. word_bytes(floor(bits / modulus)) .. word_bytes(bits)
+	compress(state, tail, 1, #tail - 63)
 	local digest = {}
 	for index = 1, 8 do
 		digest[index] = word_bytes(state[index])
 	end
 	return table.concat(digest)
+end
+
+local function sha256_bytes(message)
+	return finish(initial_state(), message, 0)
 end
 
 local function hex(bytes)
@@ -122,5 +201,8 @@ function Everlook.hash.hmac_sha256(key, message)
 		inner[index] = string.char(bxor(key:byte(index), 0x36))
 		outer[index] = string.char(bxor(key:byte(index), 0x5c))
 	end
-	return hex(sha256_bytes(table.concat(outer) .. sha256_bytes(table.concat(inner) .. message)))
+	local state = initial_state()
+	compress(state, table.concat(inner), 1, 1)
+	local inner_digest = finish(state, message, 64)
+	return hex(sha256_bytes(table.concat(outer) .. inner_digest))
 end

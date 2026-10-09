@@ -1839,8 +1839,11 @@ return function(root, check)
 		end,
 	}
 	addon3.world = {
-		collected = function()
-			return { { bucket = "npcs", label = "Creatures", count = 1, records = { { id = "448", text = "Hogger" } } } }
+		collected_buckets = function()
+			return { { bucket = "npcs", label = "Creatures", count = 1 } }
+		end,
+		collected_records = function()
+			return { { id = "448", text = "Hogger", key = "hogger" } }
 		end,
 		row = function(bucket, id)
 			if bucket == "maps" and id == 37 then
@@ -1862,7 +1865,7 @@ return function(root, check)
 	browser:Show()
 	check("collected browser retains bucket and record providers", frames3[before + 2].entries[1].bucket == "npcs" and frames3[before + 4].entries[1].text == "Hogger")
 	check("the selected record shows its map location", frames3[before + 4].buttons[1].detail.text == "Elwynn Forest 50.0, 25.0 giver")
-	addon3.world.collected = function() return {} end
+	addon3.world.collected_buckets = function() return {} end
 	browser:Show()
 	check("showing the page again refreshes the browser", not frames3[before + 2].shown and #frames3 == before + 6)
 

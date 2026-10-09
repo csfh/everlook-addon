@@ -17,9 +17,13 @@ function Everlook.collected.filter(records, query)
 	local needle = query:lower()
 	local matches = {}
 	for index = 1, #records do
-		local text = records[index].text
-		if type(text) == "string" and text:lower():find(needle, 1, true) then
-			matches[#matches + 1] = records[index]
+		local record = records[index]
+		local lowered = record.key
+		if type(lowered) ~= "string" and type(record.text) == "string" then
+			lowered = record.text:lower()
+		end
+		if type(lowered) == "string" and lowered:find(needle, 1, true) then
+			matches[#matches + 1] = record
 		end
 	end
 	return matches
@@ -117,22 +121,16 @@ local function refresh()
 	if not bucket_box then
 		return
 	end
-	local collected = Everlook.world.collected()
-	local entries = {}
+	-- Only the chosen bucket is listed and sorted. The others show a count.
+	local entries = Everlook.world.collected_buckets()
 	local still
-	for index = 1, #collected do
-		local entry = collected[index]
-		entries[index] = {
-			bucket = entry.bucket,
-			label = entry.label,
-			count = entry.count,
-		}
-		if entry.bucket == selected_bucket then
-			still = entry
+	for index = 1, #entries do
+		if entries[index].bucket == selected_bucket then
+			still = entries[index]
 		end
 	end
 	if not still then
-		still = collected[1]
+		still = entries[1]
 		selected_bucket = still and still.bucket or nil
 	end
 	local shown = #entries > 0
@@ -144,7 +142,7 @@ local function refresh()
 	if not shown then
 		return
 	end
-	local records = Everlook.collected.filter(still.records, search_text)
+	local records = Everlook.collected.filter(Everlook.world.collected_records(selected_bucket), search_text)
 	local record = records[1]
 	if selected_record_id then
 		local found = false

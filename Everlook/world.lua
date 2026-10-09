@@ -14,7 +14,11 @@ local dirty = false
 local counts_dirty = false
 local session_new = 0
 local session_reported = 0
-local lookup_stale = true
+local row_total = 0
+local bucket_totals = {}
+-- Bumped when a row appears or a name a listing prints changes. The collected
+-- listings are rebuilt only when it moves.
+local collected_version = 0
 
 local BUCKETS = {
 	"maps", "factions", "spells", "skillLines", "currencies", "items", "objects", "npcs", "quests", "talents",
@@ -159,6 +163,61 @@ local function same_pin(left, right)
 		and (left.role or "") == (right.role or "")
 end
 
+-- A short list is quicker to scan than to index. A long one gets an index of
+-- its pins, so a sighting costs one lookup however many places a row holds.
+-- The index lives beside the list in a weak table. It is never saved.
+local PIN_SCAN_LIMIT = 12
+local pin_indexes = setmetatable({}, { __mode = "k" })
+
+local function pin_key(location)
+	local map_id, x, y = location.mapId, location.x, location.y
+	if type(map_id) == "number" and type(x) == "number" and type(y) == "number"
+		and map_id >= 0 and map_id < 100000 and x >= 0 and x <= 1000 and y >= 0 and y <= 1000
+		and x % 1 == 0 and y % 1 == 0 then
+		return map_id * 1002001 + x * 1001 + y
+	end
+	return tostring(map_id) .. ":" .. (type(x) == "number" and string.format("%.17g", x) or tostring(x))
+		.. ":" .. (type(y) == "number" and string.format("%.17g", y) or tostring(y))
+end
+
+local function pin_index(list)
+	local index = pin_indexes[list]
+	if index and index.count == #list then
+		return index
+	end
+	index = { count = 0 }
+	for position = 1, #list do
+		local pin = list[position]
+		if type(pin) == "table" then
+			local role = pin.role or ""
+			local by_role = index[role]
+			if not by_role then
+				by_role = {}
+				index[role] = by_role
+			end
+			local key = pin_key(pin)
+			if by_role[key] == nil then
+				by_role[key] = pin
+			end
+		end
+	end
+	index.count = #list
+	pin_indexes[list] = index
+	return index
+end
+
+local function find_pin(list, index, location)
+	if index then
+		local by_role = index[location.role or ""]
+		return by_role and by_role[pin_key(location)]
+	end
+	for position = 1, #list do
+		if same_pin(list[position], location) then
+			return list[position]
+		end
+	end
+end
+
 -- Repeat pins only add to seen. That count is updated in place so a sighting
 -- does not copy the whole list.
 local function merge_locations(existing, incoming)
@@ -172,13 +231,8 @@ local function merge_locations(existing, incoming)
 	for i = 1, #incoming do
 		local location = incoming[i]
 		if type(location) == "table" and usable(location.mapId) then
-			local found
-			for j = 1, #existing do
-				if same_pin(existing[j], location) then
-					found = existing[j]
-					break
-				end
-			end
+			local index = #existing > PIN_SCAN_LIMIT and pin_index(existing) or nil
+			local found = find_pin(existing, index, location)
 			if found then
 				local bump = location.seen or 1
 				if bump ~= 0 then
@@ -192,6 +246,16 @@ local function merge_locations(existing, incoming)
 				if copy then
 					existing[#existing + 1] = copy
 					kind = "place"
+					if index then
+						local role = copy.role or ""
+						local by_role = index[role]
+						if not by_role then
+							by_role = {}
+							index[role] = by_role
+						end
+						by_role[pin_key(copy)] = copy
+						index.count = #existing
+					end
 				end
 			end
 		end
@@ -306,29 +370,6 @@ local function merge_areas(existing, incoming)
 	add(existing, false)
 	local grew = add(incoming, true)
 	return list, grew
-end
-
--- Names, quest titles, givers, turn-ins, and drop counts rebuild the tooltip
--- lookup when they change, and so does a new row in any listed bucket.
--- Vendors, casts, and object drops list no fields, so only a new row rebuilds
--- them. A creature seen in a new place, or a repeat cast, does not.
-local LOOKUP_FIELDS = {
-	npcs = { "name" },
-	items = { "name" },
-	spells = { "name" },
-	quests = { "title", "giverId", "turnInId" },
-	vendors = {},
-	drops = { "drops" },
-	npcSpells = {},
-	objectLoot = {},
-}
-
-local LOOKUP_SHOWN = {}
-for bucket, fields in pairs(LOOKUP_FIELDS) do
-	LOOKUP_SHOWN[bucket] = {}
-	for index = 1, #fields do
-		LOOKUP_SHOWN[bucket][fields[index]] = true
-	end
 end
 
 -- A later sighting may know more than an earlier one, never less. Lists that a
@@ -639,30 +680,57 @@ local function record_text(bucket, row)
 end
 
 local function compare_records(left, right)
-	local left_text = left.text:lower()
-	local right_text = right.text:lower()
-	if left_text == right_text then
+	if left.key == right.key then
 		return left.id < right.id
 	end
-	return left_text < right_text
+	return left.key < right.key
+end
+
+-- A listing is rebuilt only after a row appears or a printed name changes. The
+-- sort keys are lowered once, so the comparator does no string work.
+local collected_cache = {}
+
+function Everlook.world.collected_records(bucket)
+	local cached = collected_cache[bucket]
+	if cached and cached.version == collected_version then
+		return cached.records
+	end
+	local records = {}
+	local bucket_rows = rows[bucket]
+	if bucket_rows then
+		for _, row in pairs(bucket_rows) do
+			local text = record_text(bucket, row)
+			local key = row_key(bucket, row)
+			if text and key ~= nil then
+				records[#records + 1] = { text = text, key = text:lower(), id = tostring(key) }
+			end
+		end
+		table.sort(records, compare_records)
+	end
+	collected_cache[bucket] = { version = collected_version, records = records }
+	return records
+end
+
+-- Counts come from the running totals, so asking costs nothing.
+function Everlook.world.collected_buckets()
+	local listed = {}
+	for i = 1, #BUCKETS do
+		local bucket = BUCKETS[i]
+		local count = bucket_totals[bucket]
+		if count and count > 0 then
+			listed[#listed + 1] = { bucket = bucket, label = LIST_LABELS[bucket] or bucket, count = count }
+		end
+	end
+	return listed
 end
 
 function Everlook.world.collected()
 	local listed = {}
 	for i = 1, #BUCKETS do
 		local bucket = BUCKETS[i]
-		local bucket_rows = rows[bucket]
-		if bucket_rows then
-			local records = {}
-			for _, row in pairs(bucket_rows) do
-				local text = record_text(bucket, row)
-				local key = row_key(bucket, row)
-				if text and key ~= nil then
-					records[#records + 1] = { text = text, id = tostring(key) }
-				end
-			end
+		if bucket_totals[bucket] and bucket_totals[bucket] > 0 then
+			local records = Everlook.world.collected_records(bucket)
 			if #records > 0 then
-				table.sort(records, compare_records)
 				listed[#listed + 1] = {
 					bucket = bucket,
 					label = LIST_LABELS[bucket] or bucket,
@@ -681,7 +749,10 @@ function Everlook.world.reset()
 	counts_dirty = false
 	session_new = 0
 	session_reported = 0
-	lookup_stale = true
+	row_total = 0
+	bucket_totals = {}
+	collected_version = collected_version + 1
+	Everlook.world.forget_lookup()
 end
 
 function Everlook.world.session_new()
@@ -702,16 +773,7 @@ function Everlook.world.report_zone(zone)
 end
 
 function Everlook.world.row_count()
-	local total = 0
-	for index = 1, #BUCKETS do
-		local bucket_rows = rows[BUCKETS[index]]
-		if bucket_rows then
-			for _ in pairs(bucket_rows) do
-				total = total + 1
-			end
-		end
-	end
-	return total
+	return row_total
 end
 
 function Everlook.world.load_message()
@@ -748,8 +810,140 @@ function Everlook.world.row(bucket, id)
 	return bucket_rows[id]
 end
 
--- Reused by every store, so checking the shown fields allocates nothing.
-local shown_before = {}
+-- Tooltip lines come from small indexes kept as rows are stored. Each index
+-- holds up to three rows per id, which is all a tooltip shows, and the line is
+-- written when it is asked for, from the names the rows hold now. A tooltip
+-- never walks the world, however much has been collected.
+local LOOKUP_LIMIT = 3
+local lookup = {}
+
+function Everlook.world.forget_lookup()
+	lookup = {
+		item_vendors = {}, npc_sells = {}, item_drops = {}, npc_casts = {}, npc_quests = {}, object_loot = {},
+	}
+end
+
+Everlook.world.forget_lookup()
+
+local function lookup_add(group, id, value)
+	local list = group[id]
+	if not list then
+		group[id] = { value }
+		return
+	end
+	for index = 1, #list do
+		if list[index] == value then
+			return
+		end
+	end
+	if #list < LOOKUP_LIMIT then
+		list[#list + 1] = value
+	end
+end
+
+local function lookup_remove(group, id, value)
+	local list = group[id]
+	if not list then
+		return
+	end
+	for index = 1, #list do
+		if list[index] == value then
+			table.remove(list, index)
+			return
+		end
+	end
+end
+
+local function lookup_index(bucket, row)
+	if bucket == "vendors" then
+		if type(row.itemId) == "number" and type(row.npcId) == "number" then
+			lookup_add(lookup.item_vendors, row.itemId, row.npcId)
+			lookup_add(lookup.npc_sells, row.npcId, row.itemId)
+		end
+	elseif bucket == "drops" then
+		if type(row.itemId) == "number" and type(row.npcId) == "number" then
+			lookup_add(lookup.item_drops, row.itemId, row)
+		end
+	elseif bucket == "npcSpells" then
+		if type(row.npcId) == "number" and type(row.spellId) == "number" then
+			lookup_add(lookup.npc_casts, row.npcId, row.spellId)
+		end
+	elseif bucket == "quests" then
+		if type(row.giverId) == "number" then
+			lookup_add(lookup.npc_quests, row.giverId, row)
+		end
+		if type(row.turnInId) == "number" then
+			lookup_add(lookup.npc_quests, row.turnInId, row)
+		end
+	elseif bucket == "objectLoot" then
+		if type(row.objectId) == "number" and type(row.itemId) == "number" then
+			lookup_add(lookup.object_loot, row.objectId, row.itemId)
+		end
+	end
+end
+
+local LOOKUP_BUCKETS = { vendors = true, drops = true, npcSpells = true, quests = true, objectLoot = true }
+
+local function lookup_label(bucket, id)
+	local row = rows[bucket] and rows[bucket][id]
+	if type(row) == "table" then
+		if type(row.name) == "string" and row.name ~= "" then
+			return row.name
+		end
+		if type(row.title) == "string" and row.title ~= "" then
+			return row.title
+		end
+	end
+	return tostring(id)
+end
+
+local function quest_line(row, npc_id)
+	local title = type(row.title) == "string" and row.title ~= "" and row.title or nil
+	if title and (row.giverId == npc_id or row.turnInId == npc_id) then
+		return "Quest: " .. title
+	end
+end
+
+function Everlook.world.lookup(kind, id)
+	local lines = {}
+	if type(kind) ~= "string" or type(id) ~= "number" or not usable(id) then
+		return lines
+	end
+	if kind == "item" then
+		local vendors = lookup.item_vendors[id]
+		for index = 1, vendors and #vendors or 0 do
+			lines[#lines + 1] = "Vendor: " .. lookup_label("npcs", vendors[index])
+		end
+		local drops = lookup.item_drops[id]
+		for index = 1, drops and #drops or 0 do
+			local row = drops[index]
+			local count = type(row.drops) == "number" and row.drops or 0
+			lines[#lines + 1] = "Dropped by " .. lookup_label("npcs", row.npcId) .. " (" .. count .. ")"
+		end
+	elseif kind == "npc" then
+		local sells = lookup.npc_sells[id]
+		for index = 1, sells and #sells or 0 do
+			lines[#lines + 1] = "Sells " .. lookup_label("items", sells[index])
+		end
+		local casts = lookup.npc_casts[id]
+		for index = 1, casts and #casts or 0 do
+			lines[#lines + 1] = "Casts " .. lookup_label("spells", casts[index])
+		end
+		local quests = lookup.npc_quests[id]
+		for index = 1, quests and #quests or 0 do
+			lines[#lines + 1] = quest_line(quests[index], id)
+		end
+	elseif kind == "object" then
+		local loot = lookup.object_loot[id]
+		for index = 1, loot and #loot or 0 do
+			lines[#lines + 1] = "Contains " .. lookup_label("items", loot[index])
+		end
+	end
+	while #lines > LOOKUP_LIMIT do
+		lines[#lines] = nil
+	end
+	return lines
+end
 
 function Everlook.world.store(bucket, row)
 	if type(row) ~= "table" then
@@ -771,10 +965,11 @@ function Everlook.world.store(bucket, row)
 		bucket_rows[key] = existing
 		created = true
 	end
-	local shown = LOOKUP_FIELDS[bucket]
-	if shown and not created then
-		for index = 1, #shown do
-			shown_before[index] = existing[shown[index]]
+	local giver, turn_in, name, title, area_name
+	if not created then
+		name, title, area_name = existing.name, existing.title, existing.areaName
+		if bucket == "quests" then
+			giver, turn_in = existing.giverId, existing.turnInId
 		end
 	end
 	local changed = merge(existing, row, PLAIN_VALUES[bucket])
@@ -783,23 +978,27 @@ function Everlook.world.store(bucket, row)
 	end
 	if created then
 		session_new = session_new + 1
+		row_total = row_total + 1
+		bucket_totals[bucket] = (bucket_totals[bucket] or 0) + 1
+		collected_version = collected_version + 1
+	elseif changed and (existing.name ~= name or existing.title ~= title or existing.areaName ~= area_name) then
+		collected_version = collected_version + 1
 	end
 	if (changed or created) and pin_buckets[bucket] then
 		for index = 1, #pin_watchers do
 			pin_watchers[index](bucket)
 		end
 	end
-	if shown then
-		if created then
-			lookup_stale = true
-		else
-			for index = 1, #shown do
-				if existing[shown[index]] ~= shown_before[index] then
-					lookup_stale = true
-				end
-				shown_before[index] = nil
+	if LOOKUP_BUCKETS[bucket] and (created or changed) then
+		if bucket == "quests" and not created then
+			if giver ~= existing.giverId and type(giver) == "number" then
+				lookup_remove(lookup.npc_quests, giver, existing)
+			end
+			if turn_in ~= existing.turnInId and type(turn_in) == "number" then
+				lookup_remove(lookup.npc_quests, turn_in, existing)
 			end
 		end
+		lookup_index(bucket, existing)
 	end
 	return changed
 end
@@ -843,9 +1042,6 @@ function Everlook.world.count(bucket, row)
 		if COUNTERS[field] and type(amount) == "number" and amount ~= 0 and usable(amount) then
 			existing[field] = existing[field] + amount
 			counts_dirty = true
-			if LOOKUP_SHOWN[bucket] and LOOKUP_SHOWN[bucket][field] then
-				lookup_stale = true
-			end
 		end
 	end
 end
@@ -1276,106 +1472,6 @@ local function replace_strings(value, indexes, named)
 	end
 end
 
-local lookup_lines
-
-local function lookup_name(bucket, id)
-	local row = rows[bucket] and rows[bucket][id]
-	if type(row) == "table" then
-		if type(row.name) == "string" and row.name ~= "" then
-			return row.name
-		end
-		if type(row.title) == "string" and row.title ~= "" then
-			return row.title
-		end
-	end
-	return tostring(id)
-end
-
-local function lookup_add(group, id, text)
-	local lines = group[id]
-	if not lines then
-		lines = {}
-		group[id] = lines
-	end
-	if #lines >= 3 then
-		return
-	end
-	lines[#lines + 1] = text
-end
-
-local function build_lookup()
-	local item, npc, object = {}, {}, {}
-	local vendor_rows = rows.vendors
-	if vendor_rows then
-		for _, row in pairs(vendor_rows) do
-			if type(row.itemId) == "number" and type(row.npcId) == "number" then
-				lookup_add(item, row.itemId, "Vendor: " .. lookup_name("npcs", row.npcId))
-				lookup_add(npc, row.npcId, "Sells " .. lookup_name("items", row.itemId))
-			end
-		end
-	end
-	local drop_rows = rows.drops
-	if drop_rows then
-		for _, row in pairs(drop_rows) do
-			if type(row.itemId) == "number" and type(row.npcId) == "number" then
-				local count = type(row.drops) == "number" and row.drops or 0
-				lookup_add(item, row.itemId, "Dropped by " .. lookup_name("npcs", row.npcId) .. " (" .. count .. ")")
-			end
-		end
-	end
-	local cast_rows = rows.npcSpells
-	if cast_rows then
-		for _, row in pairs(cast_rows) do
-			if type(row.npcId) == "number" and type(row.spellId) == "number" then
-				lookup_add(npc, row.npcId, "Casts " .. lookup_name("spells", row.spellId))
-			end
-		end
-	end
-	local quest_rows = rows.quests
-	if quest_rows then
-		for _, row in pairs(quest_rows) do
-			local title = type(row.title) == "string" and row.title ~= "" and row.title or nil
-			if title then
-				if type(row.giverId) == "number" then
-					lookup_add(npc, row.giverId, "Quest: " .. title)
-				end
-				if type(row.turnInId) == "number" and row.turnInId ~= row.giverId then
-					lookup_add(npc, row.turnInId, "Quest: " .. title)
-				end
-			end
-		end
-	end
-	local loot_rows = rows.objectLoot
-	if loot_rows then
-		for _, row in pairs(loot_rows) do
-			if type(row.objectId) == "number" and type(row.itemId) == "number" then
-				lookup_add(object, row.objectId, "Contains " .. lookup_name("items", row.itemId))
-			end
-		end
-	end
-	lookup_lines = { item = item, npc = npc, object = object }
-	lookup_stale = false
-end
-
-function Everlook.world.lookup(kind, id)
-	if type(kind) ~= "string" or type(id) ~= "number" or not usable(id) then
-		return {}
-	end
-	if lookup_stale or not lookup_lines then
-		build_lookup()
-	end
-	local group = lookup_lines[kind]
-	local lines = group and group[id]
-	if not lines then
-		return {}
-	end
-	local copy = {}
-	for index = 1, #lines do
-		copy[index] = lines[index]
-	end
-	return copy
-end
-
 function Everlook.world.document()
 	local build, toc = "", 0
 	if GetBuildInfo then
@@ -1421,26 +1517,49 @@ function Everlook.world.document()
 	return document
 end
 
+-- Milliseconds each step of the last flush took, saved with the world so a
+-- slow logout can be read back from the SavedVariables file.
+local flush_stats
+
+local function stamp(name, started)
+	if not started or not flush_stats then
+		return nil
+	end
+	local now = debugprofilestop()
+	flush_stats[name] = math.floor((now - started) * 10 + 0.5) / 10
+	return now
+end
+
 local function encode_world()
 	if not C_EncodingUtil or not C_EncodingUtil.SerializeCBOR then
 		return nil
 	end
-	local cbor = C_EncodingUtil.SerializeCBOR(Everlook.world.document(), { ignoreSerializationErrors = true })
+	local clock = debugprofilestop and debugprofilestop() or nil
+	local document = Everlook.world.document()
+	clock = stamp("document", clock)
+	local cbor = C_EncodingUtil.SerializeCBOR(document, { ignoreSerializationErrors = true })
+	clock = stamp("cbor", clock)
 	if type(cbor) ~= "string" then
 		return nil
 	end
 	local raw = "1r." .. C_EncodingUtil.EncodeBase64(cbor)
+	clock = stamp("base64", clock)
 	local packed = raw
 	if C_EncodingUtil.CompressString then
 		local method = Enum and Enum.CompressionMethod and Enum.CompressionMethod.Deflate or 0
 		local level = Enum and Enum.CompressionLevel and Enum.CompressionLevel.OptimizeForSize or 2
 		local compressed = C_EncodingUtil.CompressString(cbor, method, level)
+		clock = stamp("compress", clock)
 		if type(compressed) == "string" then
 			local deflated = "1c." .. C_EncodingUtil.EncodeBase64(compressed)
+			stamp("base64Compressed", clock)
 			if #deflated < #raw then
 				packed = deflated
 			end
 		end
+	end
+	if flush_stats then
+		flush_stats.cborBytes = #cbor
 	end
 	return packed
 end
@@ -1450,11 +1569,42 @@ local function note_flush_size(payload)
 	EverlookDB.worldBytes = type(payload) == "string" and #payload or 0
 end
 
+-- One pass over the saved rows at load, while the loading screen is up, sets
+-- the running totals and the tooltip indexes that play then keeps current.
+function Everlook.world.reindex()
+	row_total = 0
+	bucket_totals = {}
+	Everlook.world.forget_lookup()
+	for index = 1, #BUCKETS do
+		local bucket = BUCKETS[index]
+		local bucket_rows = rows[bucket]
+		if bucket_rows then
+			local total = 0
+			if LOOKUP_BUCKETS[bucket] then
+				for _, row in pairs(bucket_rows) do
+					total = total + 1
+					if type(row) == "table" then
+						lookup_index(bucket, row)
+					end
+				end
+			else
+				for _ in pairs(bucket_rows) do
+					total = total + 1
+				end
+			end
+			bucket_totals[bucket] = total
+			row_total = row_total + total
+		end
+	end
+	collected_version = collected_version + 1
+end
+
 function Everlook.world.load_saved()
 	if not EverlookDB or type(EverlookDB.raw) ~= "table" then
 		return false
 	end
 	rows = EverlookDB.raw
+	Everlook.world.reindex()
 	return true
 end
 
@@ -1472,16 +1622,25 @@ function Everlook.world.flush(include_counts)
 		end
 		return
 	end
+	flush_stats = debugprofilestop and {} or nil
 	local payload = encode_world()
 	note_flush_size(payload)
 	if payload then
 		EverlookDB.world = payload
+		local clock = flush_stats and debugprofilestop() or nil
 		if Everlook.config and Everlook.config.sign then
 			Everlook.config.sign(payload)
 		end
+		stamp("sign", clock)
 		dirty = false
 		counts_dirty = false
+		if flush_stats then
+			flush_stats.rows = row_total
+			flush_stats.bytes = #payload
+			EverlookDB.flushStats = flush_stats
+		end
 	end
+	flush_stats = nil
 end
 
 local function prepare_saved()

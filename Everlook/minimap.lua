@@ -80,13 +80,8 @@ local function CreateButton()
 			local _, line, r, g, b = Everlook.config.describe()
 			GameTooltip:AddLine(line, r, g, b, true)
 		end
-		if Everlook.world and Everlook.world.session_new and Everlook.world.collected then
-			local total = 0
-			local collected = Everlook.world.collected()
-			for index = 1, #collected do
-				total = total + (collected[index].count or 0)
-			end
-			GameTooltip:AddLine(Everlook.world.session_new() .. " new this session. " .. total .. " rows.", 0.8, 0.8, 0.8)
+		if Everlook.world and Everlook.world.session_new and Everlook.world.row_count then
+			GameTooltip:AddLine(Everlook.world.session_new() .. " new this session. " .. Everlook.world.row_count() .. " rows.", 0.8, 0.8, 0.8)
 		end
 		GameTooltip:AddLine("Click to open the settings.", 0.8, 0.8, 0.8)
 		GameTooltip:Show()

@@ -2145,6 +2145,87 @@ end)())
 Everlook.world.reset()
 end)()
 
+-- Play must never walk the world. These hold the costs that grew with the data.
+;(function()
+	local world = load_addon().world
+	world.reset()
+	check("a fresh world counts no rows", world.row_count() == 0)
+	world.store("npcs", { id = 1, name = "Zebra" })
+	world.store("npcs", { id = 2, name = "apple" })
+	world.store("npcs", { id = 3, name = "Mango" })
+	world.store("npcs", { id = 3, name = "Mango", minLevel = 4 })
+	world.store("items", { id = 9, name = "Sword" })
+	check("the row count follows stores, and a repeat adds none", world.row_count() == 4)
+	local buckets = world.collected_buckets()
+	check("bucket counts come from the running totals", #buckets == 2 and buckets[1].bucket == "items" and buckets[1].count == 1 and buckets[2].bucket == "npcs" and buckets[2].count == 3)
+	local records = world.collected_records("npcs")
+	check("a listing sorts without regard to case", records[1].text == "apple" and records[2].text == "Mango" and records[3].text == "Zebra")
+	check("a listing carries its lowered sort key", records[1].key == "apple" and records[3].key == "zebra")
+	check("a listing is reused until a row appears", world.collected_records("npcs") == records)
+	world.store("npcs", { id = 3, name = "Mango", maxLevel = 9 })
+	check("a store that changes no printed text keeps the listing", world.collected_records("npcs") == records)
+	world.store("npcs", { id = 4, name = "Bear" })
+	local grown = world.collected_records("npcs")
+	check("a new row rebuilds the listing", grown ~= records and #grown == 4 and grown[2].text == "Bear")
+	world.store("npcs", { id = 4, name = "Aardvark" })
+	check("a rename rebuilds the listing", world.collected_records("npcs")[1].text == "Aardvark")
+	check("collected still lists every bucket with its records", #world.collected() == 2 and world.collected()[2].count == 4)
+end)()
+
+;(function()
+	local world = load_addon().world
+	world.reset()
+	local expected = {}
+	for step = 1, 40 do
+		local pin = { mapId = 37 + step % 3, x = 100 + step, y = 200 + step % 7, role = step % 2 == 0 and 4 or nil }
+		world.store("npcs", { id = 1, name = "Boar", locations = { pin } })
+		expected[#expected + 1] = pin
+	end
+	local row = world.row("npcs", 1)
+	check("every distinct pin of a long list is kept", #row.locations == 40)
+	world.store("npcs", { id = 1, locations = { { mapId = 38, x = 101, y = 201 } } })
+	local before = 0
+	for index = 1, #row.locations do
+		before = before + (row.locations[index].seen or 1)
+	end
+	check("a repeat pin in a long list only adds to seen", #row.locations == 40 and before == 41)
+	world.store("npcs", { id = 1, locations = { { mapId = 38, x = 101, y = 201, role = 4 } } })
+	check("the same spot with another role is its own pin", #row.locations == 41)
+	world.store("npcs", { id = 1, locations = { { mapId = 38, x = 101.5, y = 201 } } })
+	world.store("npcs", { id = 1, locations = { { mapId = 38, x = 101.5, y = 201 } } })
+	check("a fractional spot is told apart and matched again", #row.locations == 42 and row.locations[42].seen == 2)
+	world.store("npcs", { id = 1, locations = { { mapId = 38, x = 0, y = 0 } } })
+	world.store("npcs", { id = 1, locations = { { mapId = 38 } } })
+	check("a pin without coordinates is not the origin", #row.locations == 44)
+	local saved = load_addon()
+	saved.world.reset()
+	local env_db = { raw = { npcs = { [1] = row } } }
+	local loaded, loaded_env = load_addon()
+	loaded_env.EverlookDB = env_db
+	loaded.world.load_saved()
+	loaded.world.store("npcs", { id = 1, locations = { { mapId = 38, x = 101, y = 201 } } })
+	check("a list loaded from saved rows matches its pins too", #loaded.world.row("npcs", 1).locations == 44)
+end)()
+
+;(function()
+	local addon, env = load_addon()
+	local world = addon.world
+	world.reset()
+	world.store("npcs", { id = 10, name = "Hogger" })
+	world.store("npcs", { id = 11, name = "Marshal" })
+	world.store("quests", { id = 176, title = "Wanted", giverId = 10 })
+	check("a giver lists its quest", world.lookup("npc", 10)[1] == "Quest: Wanted")
+	world.store("quests", { id = 176, giverId = 11 })
+	check("a new giver takes the quest from the old one", #world.lookup("npc", 10) == 0 and world.lookup("npc", 11)[1] == "Quest: Wanted")
+	world.store("quests", { id = 176, turnInId = 10 })
+	check("a turn-in lists the quest too", world.lookup("npc", 10)[1] == "Quest: Wanted")
+	env.EverlookDB = { raw = { npcs = { [10] = { id = 10, name = "Hogger" } }, items = { [20] = { id = 20, name = "Cloth" } }, vendors = { ["10:20"] = { npcId = 10, itemId = 20 } }, drops = { ["10:20"] = { npcId = 10, itemId = 20, drops = 7 } } } }
+	world.reset()
+	world.load_saved()
+	check("saved rows are indexed at load", world.lookup("item", 20)[1] == "Vendor: Hogger" and world.lookup("item", 20)[2] == "Dropped by Hogger (7)" and world.lookup("npc", 10)[1] == "Sells Cloth")
+	check("loading counts the rows", world.row_count() == 4)
+end)()
+
 ;(function()
 	local hash = load_addon().hash
 	check("SHA-256 empty input", hash.sha256("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
@@ -2154,6 +2235,96 @@ end)()
 	check("HMAC-SHA-256 RFC case 1", hash.hmac_sha256(string.rep("\11", 20), "Hi There") == "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")
 	check("HMAC-SHA-256 RFC case 2", hash.hmac_sha256("Jefe", "what do ya want for nothing?") == "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")
 	check("HMAC-SHA-256 RFC case 6", hash.hmac_sha256(string.rep("\170", 131), "Test Using Larger Than Block-Size Key - Hash Key First") == "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54")
+end)()
+
+-- A slow logout can be read back from the saved file.
+;(function()
+	local addon, env = load_addon()
+	local ticks = 0
+	env.debugprofilestop = function()
+		ticks = ticks + 2
+		return ticks
+	end
+	env.EverlookDB = {}
+	env.C_EncodingUtil = {
+		SerializeCBOR = function() return "cbor" end,
+		EncodeBase64 = function(value) return value end,
+		CompressString = function() return "z" end,
+	}
+	addon.world.reset()
+	addon.world.store("npcs", { id = 1, name = "A" })
+	addon.world.flush(true)
+	local stats = env.EverlookDB.flushStats
+	check("a flush saves how long each step took", type(stats) == "table" and stats.document and stats.cbor and stats.base64 and stats.compress and stats.sign and stats.rows == 1 and stats.bytes == #env.EverlookDB.world)
+	env.debugprofilestop = nil
+	env.EverlookDB = {}
+	addon.world.store("npcs", { id = 2, name = "B" })
+	addon.world.flush(true)
+	check("a client without the clock still flushes", env.EverlookDB.world ~= nil and env.EverlookDB.flushStats == nil)
+end)()
+
+-- The game has a bit library, and the hash takes a faster path when it does.
+-- This one follows LuaBitOp: every result is a signed 32-bit number.
+;(function()
+	local range = 4294967296
+	local function signed(value)
+		value = value % range
+		if value >= 2147483648 then
+			value = value - range
+		end
+		return value
+	end
+	local function combine(left, right, keep)
+		left, right = left % range, right % range
+		local result, place = 0, 1
+		for _ = 1, 32 do
+			if keep(left % 2, right % 2) then
+				result = result + place
+			end
+			left, right, place = (left - left % 2) / 2, (right - right % 2) / 2, place * 2
+		end
+		return signed(result)
+	end
+	local shim = {
+		band = function(left, right) return combine(left, right, function(a, b) return a == 1 and b == 1 end) end,
+		bor = function(left, right) return combine(left, right, function(a, b) return a == 1 or b == 1 end) end,
+		bxor = function(left, right) return combine(left, right, function(a, b) return a ~= b end) end,
+		bnot = function(value) return signed(-1 - value) end,
+		lshift = function(value, count) return signed((value % range) * 2 ^ (count % 32)) end,
+		rshift = function(value, count) return signed(math.floor((value % range) / 2 ^ (count % 32))) end,
+	}
+	_G.bit = shim
+	local fast = load_addon().hash
+	_G.bit = nil
+	local slow = load_addon().hash
+	check("SHA-256 abc with a bit library", fast.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+	check("SHA-256 empty with a bit library", fast.sha256("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+	check("SHA-256 multi-block with a bit library", fast.sha256("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") == "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1")
+	check("HMAC-SHA-256 RFC case 2 with a bit library", fast.hmac_sha256("Jefe", "what do ya want for nothing?") == "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")
+	check("HMAC-SHA-256 RFC case 6 with a bit library", fast.hmac_sha256(string.rep("\170", 131), "Test Using Larger Than Block-Size Key - Hash Key First") == "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54")
+	-- Lengths around the block and padding edges, and a body of several blocks.
+	local agree = true
+	for _, length in ipairs({ 55, 56, 63, 64, 65, 119, 120, 128, 200 }) do
+		local body = {}
+		for index = 1, length do
+			body[index] = string.char((index * 37 + length) % 256)
+		end
+		body = table.concat(body)
+		if fast.sha256(body) ~= slow.sha256(body) or fast.hmac_sha256("key", body) ~= slow.hmac_sha256("key", body) then
+			agree = false
+		end
+	end
+	check("both hash paths agree at every padding edge", agree)
+	-- A bit library that does not behave must not reach the signature.
+	_G.bit = { band = shim.band, bor = shim.bor, bxor = function(left, right) return shim.bxor(left, right) + 1 end, bnot = shim.bnot, lshift = shim.lshift, rshift = shim.rshift }
+	local broken = load_addon().hash
+	_G.bit = nil
+	check("a misbehaving bit library falls back to the portable hash", broken.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" and broken.hmac_sha256("Jefe", "what do ya want for nothing?") == "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")
+	-- bit32 hands back unsigned numbers.
+	_G.bit32 = { band = function(a, b) return shim.band(a, b) % range end, bor = function(a, b) return shim.bor(a, b) % range end, bxor = function(a, b) return shim.bxor(a, b) % range end, bnot = function(a) return shim.bnot(a) % range end, lshift = function(a, n) return shim.lshift(a, n) % range end, rshift = function(a, n) return shim.rshift(a, n) % range end }
+	local unsigned = load_addon().hash
+	_G.bit32 = nil
+	check("an unsigned bit library hashes the same", unsigned.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" and unsigned.hmac_sha256(string.rep("\170", 131), "Test Using Larger Than Block-Size Key - Hash Key First") == "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54")
 end)()
 
 assert(loadfile(root .. "/tests/module.lua"))()(root, check)
