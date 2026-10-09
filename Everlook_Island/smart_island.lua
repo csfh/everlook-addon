@@ -2429,6 +2429,7 @@ shell.make_link = function(parent, name, title, callback)
 	end }
 	hover_target(button, button.hover)
 	preview_controls[#preview_controls + 1] = button
+	shell.set_control_text(button, title)
 	return button
 end
 
@@ -2630,10 +2631,8 @@ local function ensure_frame()
 	end
 	footer = CreateFrame("Frame", nil, expanded)
 	clear_button = shell.make_link(footer, "EverlookIslandClearHistory", "Clear history", island.clear_history)
-	shell.set_control_text(clear_button, "Clear history")
 	call(clear_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -shell.space.edge, -shell.space.near)
 	undo_button = shell.make_link(footer, "EverlookIslandUndo", "Undo", island.undo_clear)
-	shell.set_control_text(undo_button, "Undo")
 	-- The pill floats over the foot of the list, so it sits above the edge fades.
 	new_button = make_control(expanded, "EverlookIslandNewNotices", "New notices", 96, function() island.scroll_to(shell.unread_first or content_height) end)
 	call(new_button, "SetFrameLevel", 64)
@@ -2644,7 +2643,7 @@ local function ensure_frame()
 	shell.quest_scrollbar = shell.scroll_api.make(expanded, { name = "EverlookIslandQuestScrollThumb", scroll_to = island.scroll_quests, ratio = drag_ratio })
 	preview_controls[#preview_controls + 1] = shell.quest_scrollbar.thumb
 	quest_context.ensure_ui({ root = shell.face, content = quest_content, label = make_label, visual = make_visual,
-		head = shell.quest_head, link = shell.make_link, size_link = shell.set_control_text, space = shell.space, heading = shell.heading,
+		head = shell.quest_head, link = shell.make_link, space = shell.space, heading = shell.heading,
 		tones = { primary = COLORS.primary, muted = COLORS.muted }, hover = hover_target, controls = preview_controls, pin = island.pin_quest,
 		repaint = function() paint() end })
 	preview_group = call(expanded, "CreateAnimationGroup")

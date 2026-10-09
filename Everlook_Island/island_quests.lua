@@ -693,7 +693,6 @@ function quests.ensure_ui(adapter)
 		if view and view.current then adapter.pin(view.current.id) end
 	end)
 	ui.release = adapter.link(adapter.head, "EverlookIslandReleaseQuest", "Release pin", function() adapter.pin(nil) end)
-	for _, link in ipairs({ ui.pin, ui.release }) do adapter.size_link(link, link.label.text) end
 	ui.plan_heading = adapter.label(ui.visual, "LEFT", "heading")
 	ui.plan_reason = adapter.label(ui.visual, "LEFT", "caption")
 	for index = 1, 3 do
@@ -784,6 +783,8 @@ function quests.inspection(view, visible, width)
 	local space, tones = adapter.space, adapter.tones
 	local edge = space.edge
 	call(ui.panel, visible and view and "Show" or "Hide")
+	-- The actions live in the heading row, so the panel does not hide them.
+	for _, link in ipairs({ ui.pin, ui.release }) do call(link, "Hide") end
 	if not view then quests.aim(); return 0 end
 	for _, label in ipairs(ui.objectives) do call(label, "Hide") end
 	for _, meter in ipairs(ui.meters) do

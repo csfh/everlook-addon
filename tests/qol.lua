@@ -2698,6 +2698,12 @@ return function(root, check)
 		end
 		check("a finished objective steps back and draws no fill, one still to do stays bright and has one",
 			done and todo and done.color[1] < 0.6 and todo.color[1] > 0.9 and meters == 1)
+		local pin_link
+		for _, frame in ipairs(frames) do if frame.name == "EverlookIslandPinQuest" then pin_link = frame end end
+		check("the pin action shows while a quest is followed", pin_link.shown ~= false)
+		addon.module.set("smart_island", "quest_context", false)
+		check("turning quest tracking off takes the pin action away and shows how to turn it back on",
+			pin_link.shown == false and shown("Turn on Show active quest") ~= nil)
 	end
 	do
 		local addon, env, _, state = quest_world()
