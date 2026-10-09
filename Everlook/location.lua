@@ -28,9 +28,41 @@ local function copy(location)
 	}
 end
 
+-- The areas a map already holds, and the last spot that was read. A sighting
+-- where the player has already been asks the game nothing and stores nothing.
+local known_areas = {}
+local last_noted
+
+function Everlook.location.forget()
+	known_areas = {}
+	last_noted = nil
+end
+
+local function areas_of(map_id)
+	local set = known_areas[map_id]
+	if set then
+		return set
+	end
+	set = {}
+	known_areas[map_id] = set
+	local row = Everlook.world.row and Everlook.world.row("maps", map_id)
+	local areas = type(row) == "table" and row.areas or nil
+	for index = 1, type(areas) == "table" and #areas or 0 do
+		local area = areas[index]
+		if type(area) == "table" and type(area.id) == "number" then
+			set[area.id] = true
+		end
+	end
+	return set
+end
+
 function Everlook.location.note_area(map_id, x, y, name)
 	local reader = C_MapExplorationInfo and C_MapExplorationInfo.GetExploredAreaIDsAtPosition
 	if type(reader) ~= "function" or type(map_id) ~= "number" or type(x) ~= "number" or type(y) ~= "number" then
+		return
+	end
+	local spot = map_id * 1002001 + x * 1001 + y
+	if spot == last_noted then
 		return
 	end
 	local nx, ny = x / 1000, y / 1000
@@ -58,6 +90,12 @@ function Everlook.location.note_area(map_id, x, y, name)
 	if type(area_name) ~= "string" or area_name == "" or not Everlook.world.usable(area_name) then
 		return
 	end
+	last_noted = spot
+	local known = areas_of(map_id)
+	if known[area_id] then
+		return
+	end
+	known[area_id] = true
 	Everlook.world.store("maps", {
 		id = map_id,
 		areas = { { id = area_id, name = area_name } },

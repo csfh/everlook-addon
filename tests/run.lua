@@ -2237,6 +2237,89 @@ end)()
 	check("HMAC-SHA-256 RFC case 6", hash.hmac_sha256(string.rep("\170", 131), "Test Using Larger Than Block-Size Key - Hash Key First") == "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54")
 end)()
 
+-- A sighting where the player already stood asks the game nothing and stores nothing.
+;(function()
+	local addon = load_addon()
+	addon.world.reset()
+	local reads, stores = 0, 0
+	_G.C_MapExplorationInfo = { GetExploredAreaIDsAtPosition = function() reads = reads + 1 return { 87 } end }
+	_G.C_Map = { GetAreaInfo = function() return "Northshire Valley" end }
+	local store = addon.world.store
+	addon.world.store = function(bucket, row)
+		stores = stores + 1
+		return store(bucket, row)
+	end
+	addon.location.note_area(12, 100, 200, "Nowhere")
+	addon.location.note_area(12, 100, 200, "Nowhere")
+	check("the same spot is read once", reads == 1 and stores == 1)
+	addon.location.note_area(12, 101, 200, "Nowhere")
+	check("a known area is read again but not stored again", reads == 2 and stores == 1)
+	addon.world.store = store
+	addon.world.reset()
+	_G.EverlookDB = nil
+	local fresh, fresh_env = load_addon()
+	fresh_env.EverlookDB = { raw = { maps = { [12] = { id = 12, areas = { { id = 87, name = "Northshire Valley" } } } } } }
+	fresh.world.load_saved()
+	local saved_stores = 0
+	local fresh_store = fresh.world.store
+	fresh.world.store = function(bucket, row)
+		saved_stores = saved_stores + 1
+		return fresh_store(bucket, row)
+	end
+	fresh.location.note_area(12, 100, 200, "Nowhere")
+	check("an area saved last session is not stored again", saved_stores == 0)
+	_G.C_MapExplorationInfo = nil
+	_G.C_Map = nil
+end)()
+
+-- An empty name map is a miss that is not retried on every item.
+;(function()
+	_G.ITEM_REQ_REPUTATION = "Requires %s - %s"
+	local calls = 0
+	_G.C_Reputation = { GetFactionDataByID = function() calls = calls + 1 end }
+	local now = 100
+	_G.GetTime = function() return now end
+	_G.C_Item = { GetItemInfo = function(id) return "Item " .. id end }
+	_G.C_TooltipInfo = { GetItemByID = function() return { lines = { { leftText = "Requires Stormwind - Honored" } } } end }
+	_G.FACTION_STANDING_LABEL6 = "Honored"
+	local addon = load_addon()
+	addon.world.reset()
+	addon.items.record(1, "bag")
+	local first = calls
+	addon.items.record(2, "bag")
+	check("an empty faction map is scanned once", first == 2500 and calls == first)
+	now = 140
+	addon.items.record(3, "bag")
+	check("an empty faction map is scanned again after a wait", calls == first * 2)
+	_G.ITEM_REQ_REPUTATION, _G.C_Reputation, _G.GetTime, _G.C_Item, _G.C_TooltipInfo, _G.FACTION_STANDING_LABEL6 = nil, nil, nil, nil, nil, nil
+end)()
+
+-- A loot window or a vendor hands over many unread items. They are read a few a frame.
+;(function()
+	local timers = {}
+	_G.C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+	local ticks = 0
+	_G.debugprofilestop = function() ticks = ticks + 0.6 return ticks end
+	_G.C_Item = { GetItemInfo = function(id) return "Item " .. id end }
+	local addon = load_addon()
+	addon.world.reset()
+	for id = 1, 5 do
+		addon.items.record(id, "loot")
+	end
+	addon.items.record(1, "loot")
+	check("unread items wait for their turn", addon.world.row("items", 1) == nil and #timers == 1)
+	local before = addon.world.row_count()
+	timers[1]()
+	check("a frame reads only what fits the budget", addon.world.row_count() - before == 2 and #timers == 2)
+	while #timers > 0 do
+		table.remove(timers, 1)()
+	end
+	check("every queued item is read once", addon.world.row_count() == 5 and addon.world.row("items", 5).name == "Item 5")
+	addon.items.record(6, "loot")
+	check("a later item starts the queue again", #timers == 1)
+	_G.C_Timer, _G.debugprofilestop, _G.C_Item = nil, nil, nil
+end)()
+
 -- A slow logout can be read back from the saved file.
 ;(function()
 	local addon, env = load_addon()

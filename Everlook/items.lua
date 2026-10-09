@@ -337,13 +337,27 @@ local function restrictions_from(list, ids)
 	return found
 end
 
+-- A scan of every id is thousands of calls. When it finds nothing, the data
+-- has not loaded, and asking again on every item would repeat it. Wait first.
+local RESCAN_SECONDS = 30
+
+local function too_soon(missed_at)
+	local now = type(GetTime) == "function" and GetTime() or nil
+	return type(missed_at) == "number" and type(now) == "number" and now - missed_at < RESCAN_SECONDS, now
+end
+
 local faction_names
+local faction_missed
 
 local function faction_ids_by_name()
 	if faction_names then
 		return faction_names
 	end
 	local map = {}
+	local waiting, now = too_soon(faction_missed)
+	if waiting then
+		return map
+	end
 	local reader = C_Reputation and C_Reputation.GetFactionDataByID or GetFactionInfoByID
 	if type(reader) ~= "function" then
 		return map
@@ -357,6 +371,8 @@ local function faction_ids_by_name()
 	end
 	if next(map) ~= nil then
 		faction_names = map
+	else
+		faction_missed = now
 	end
 	return map
 end
@@ -371,12 +387,17 @@ local function standing_id(name)
 end
 
 local skill_names
+local skill_missed
 
 local function skill_ids_by_name()
 	if skill_names then
 		return skill_names
 	end
 	local map = {}
+	local waiting, now = too_soon(skill_missed)
+	if waiting then
+		return map
+	end
 	local reader = C_TradeSkillUI and C_TradeSkillUI.GetProfessionInfoBySkillLineID
 	if type(reader) ~= "function" then
 		return map
@@ -390,6 +411,8 @@ local function skill_ids_by_name()
 	end
 	if next(map) ~= nil then
 		skill_names = map
+	else
+		skill_missed = now
 	end
 	return map
 end
@@ -692,7 +715,70 @@ local function request(id)
 	end
 end
 
-function Everlook.items.record(id, source, name, startsQuestId)
+-- An item the addon has not read yet costs a tooltip and a pass over its
+-- lines. A loot window, a vendor or a bag scan can hand over dozens at once,
+-- so they wait in line and are read a millisecond at a time. Without a timer
+-- the item is read on the spot.
+local WORK_MS = 1
+local waiting = {}
+local waiting_first = 1
+local waiting_last = 0
+local waiting_sources = {}
+local draining = false
+
+local function drain()
+	local started = debugprofilestop and debugprofilestop() or nil
+	while waiting_first <= waiting_last do
+		local job = waiting[waiting_first]
+		waiting[waiting_first] = nil
+		waiting_first = waiting_first + 1
+		local by_source = waiting_sources[job[1]]
+		if by_source then
+			by_source[job[2]] = nil
+			if next(by_source) == nil then
+				waiting_sources[job[1]] = nil
+			end
+		end
+		Everlook.items.record(job[1], job[2], job[3], job[4], true)
+		if not started or debugprofilestop() - started >= WORK_MS then
+			break
+		end
+	end
+	if waiting_first > waiting_last then
+		waiting_first, waiting_last = 1, 0
+		draining = false
+		return
+	end
+	C_Timer.After(0, drain)
+end
+
+local function wait_for_turn(id, source, name, startsQuestId)
+	if not (C_Timer and C_Timer.After) then
+		return false
+	end
+	local by_source = waiting_sources[id]
+	local queued = by_source and by_source[source]
+	if queued then
+		queued[3] = queued[3] or name
+		queued[4] = queued[4] or startsQuestId
+		return true
+	end
+	if not by_source then
+		by_source = {}
+		waiting_sources[id] = by_source
+	end
+	local job = { id, source, name, startsQuestId }
+	by_source[source] = job
+	waiting_last = waiting_last + 1
+	waiting[waiting_last] = job
+	if not draining then
+		draining = true
+		C_Timer.After(0, drain)
+	end
+	return true
+end
+
+function Everlook.items.record(id, source, name, startsQuestId, now)
 	if type(id) ~= "number" then
 		return
 	end
@@ -717,6 +803,9 @@ function Everlook.items.record(id, source, name, startsQuestId)
 			row.startsQuestId = startsQuestId
 		end
 		Everlook.world.store("items", row)
+		return
+	end
+	if not now and wait_for_turn(id, source, name, startsQuestId) then
 		return
 	end
 	local observation, loaded, line_count = item_info(id)

@@ -165,9 +165,11 @@ end
 
 -- A short list is quicker to scan than to index. A long one gets an index of
 -- its pins, so a sighting costs one lookup however many places a row holds.
--- The index lives beside the list in a weak table. It is never saved.
+-- The index lives beside the list, never in it, so it is never saved. The
+-- table is not weak: the collector would have to sweep a weak table in one
+-- step at the end of every garbage cycle, and the lists live all session.
 local PIN_SCAN_LIMIT = 12
-local pin_indexes = setmetatable({}, { __mode = "k" })
+local pin_indexes = {}
 
 local function pin_key(location)
 	local map_id, x, y = location.mapId, location.x, location.y
@@ -751,8 +753,12 @@ function Everlook.world.reset()
 	session_reported = 0
 	row_total = 0
 	bucket_totals = {}
+	pin_indexes = {}
 	collected_version = collected_version + 1
 	Everlook.world.forget_lookup()
+	if Everlook.location and Everlook.location.forget then
+		Everlook.location.forget()
+	end
 end
 
 function Everlook.world.session_new()
@@ -1574,6 +1580,7 @@ end
 function Everlook.world.reindex()
 	row_total = 0
 	bucket_totals = {}
+	pin_indexes = {}
 	Everlook.world.forget_lookup()
 	for index = 1, #BUCKETS do
 		local bucket = BUCKETS[index]
