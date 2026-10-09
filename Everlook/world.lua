@@ -9,6 +9,11 @@ Everlook.world = {}
 
 local NULL = {}
 local rows = {}
+-- True once the collection lives in pages. `rows` is then empty, or while an
+-- older whole-collection copy is still the saved one, that copy.
+local paged = false
+-- True when the saved pages cannot be read this session, so the saved upload is left as it is.
+local keep_upload = false
 local dirty = false
 -- Tallies ride along on the next real edit, or on logout when the file is written.
 local counts_dirty = false
@@ -144,6 +149,27 @@ local function usable(value)
 	return Everlook.world.usable(value)
 end
 
+local function get_row(bucket, key)
+	if paged then
+		return Everlook.pages.get(bucket, key)
+	end
+	local bucket_rows = rows[bucket]
+	return bucket_rows and bucket_rows[key]
+end
+
+local function each_row(bucket, visitor)
+	if paged then
+		Everlook.pages.each(bucket, visitor)
+		return
+	end
+	local bucket_rows = rows[bucket]
+	if bucket_rows then
+		for key, row in pairs(bucket_rows) do
+			visitor(key, row)
+		end
+	end
+end
+
 local function copy_location(location)
 	if type(location) ~= "table" or not usable(location.mapId) then
 		return nil
@@ -185,8 +211,14 @@ local function pin_key(location)
 		.. ":" .. (type(y) == "number" and string.format("%.17g", y) or tostring(y))
 end
 
-local function pin_index(list)
-	local index = pin_indexes[list]
+local function pin_index(list, owner)
+	local holder = paged and owner and Everlook.pages.page_of(owner) or nil
+	local indexes = pin_indexes
+	if holder then
+		indexes = holder.pins or {}
+		holder.pins = indexes
+	end
+	local index = indexes[list]
 	if index and index.count == #list then
 		return index
 	end
@@ -207,7 +239,7 @@ local function pin_index(list)
 		end
 	end
 	index.count = #list
-	pin_indexes[list] = index
+	indexes[list] = index
 	return index
 end
 
@@ -225,7 +257,7 @@ end
 
 -- Repeat pins only add to seen. That count is updated in place so a sighting
 -- does not copy the whole list.
-local function merge_locations(existing, incoming)
+local function merge_locations(existing, incoming, owner)
 	local kind = "none"
 	if type(incoming) ~= "table" then
 		return existing, kind
@@ -236,7 +268,7 @@ local function merge_locations(existing, incoming)
 	for i = 1, #incoming do
 		local location = incoming[i]
 		if type(location) == "table" and usable(location.mapId) then
-			local index = #existing > PIN_SCAN_LIMIT and pin_index(existing) or nil
+			local index = #existing > PIN_SCAN_LIMIT and pin_index(existing, owner) or nil
 			local found = find_pin(existing, index, location)
 			if found then
 				local bump = location.seen or 1
@@ -476,7 +508,7 @@ local function merge(target, source, plain)
 				end
 			elseif key == "locations" then
 				if has_location(value) then
-					local merged, kind = merge_locations(target.locations, value)
+					local merged, kind = merge_locations(target.locations, value, target)
 					if kind == "place" then
 						target.locations = merged
 						changed = true
@@ -637,8 +669,7 @@ local LIST_PARTS = {
 }
 
 local function lookup_name(bucket, id)
-	local bucket_rows = rows[bucket]
-	local row = bucket_rows and bucket_rows[id]
+	local row = get_row(bucket, id)
 	if type(row) ~= "table" then
 		return nil
 	end
@@ -703,17 +734,14 @@ function Everlook.world.collected_records(bucket)
 		return cached.records
 	end
 	local records = {}
-	local bucket_rows = rows[bucket]
-	if bucket_rows then
-		for _, row in pairs(bucket_rows) do
-			local text = record_text(bucket, row)
-			local key = row_key(bucket, row)
-			if text and key ~= nil then
-				records[#records + 1] = { text = text, key = text:lower(), id = tostring(key) }
-			end
+	each_row(bucket, function(_, row)
+		local text = record_text(bucket, row)
+		local key = row_key(bucket, row)
+		if text and key ~= nil then
+			records[#records + 1] = { text = text, key = text:lower(), id = tostring(key) }
 		end
-		table.sort(records, compare_records)
-	end
+	end)
+	table.sort(records, compare_records)
 	collected_cache[bucket] = { version = collected_version, records = records }
 	return records
 end
@@ -750,12 +778,20 @@ function Everlook.world.collected()
 	return listed
 end
 
+local open_empty
+
 function Everlook.world.reset()
 	rows = {}
 	dirty = false
 	counts_dirty = false
 	session_new = 0
 	session_reported = 0
+	paged = false
+	keep_upload = false
+	if Everlook.pages then
+		Everlook.pages.reset()
+		Everlook.pages.set_active(false)
+	end
 	row_total = 0
 	bucket_totals = {}
 	pin_indexes = {}
@@ -767,6 +803,8 @@ function Everlook.world.reset()
 	if Everlook.segments then
 		Everlook.segments.reset()
 	end
+	-- A new, empty collection is kept in pages where it can be.
+	open_empty()
 end
 
 function Everlook.world.session_new()
@@ -804,24 +842,17 @@ function Everlook.world.load_message()
 end
 
 function Everlook.world.each(bucket, visitor)
-	local bucket_rows = rows[bucket]
-	if not bucket_rows or type(visitor) ~= "function" then
+	if type(visitor) ~= "function" then
 		return
 	end
-	for key, row in pairs(bucket_rows) do
-		visitor(key, row)
-	end
+	each_row(bucket, visitor)
 end
 
 function Everlook.world.row(bucket, id)
 	if type(bucket) ~= "string" or not usable(id) then
 		return nil
 	end
-	local bucket_rows = rows[bucket]
-	if not bucket_rows then
-		return nil
-	end
-	return bucket_rows[id]
+	return get_row(bucket, id)
 end
 
 -- Tooltip lines come from small indexes kept as rows are stored. Each index
@@ -876,7 +907,7 @@ local function lookup_index(bucket, row)
 		end
 	elseif bucket == "drops" then
 		if type(row.itemId) == "number" and type(row.npcId) == "number" then
-			lookup_add(lookup.item_drops, row.itemId, row)
+			lookup_add(lookup.item_drops, row.itemId, row_key("drops", row))
 		end
 	elseif bucket == "npcSpells" then
 		if type(row.npcId) == "number" and type(row.spellId) == "number" then
@@ -884,10 +915,10 @@ local function lookup_index(bucket, row)
 		end
 	elseif bucket == "quests" then
 		if type(row.giverId) == "number" then
-			lookup_add(lookup.npc_quests, row.giverId, row)
+			lookup_add(lookup.npc_quests, row.giverId, row.id)
 		end
 		if type(row.turnInId) == "number" then
-			lookup_add(lookup.npc_quests, row.turnInId, row)
+			lookup_add(lookup.npc_quests, row.turnInId, row.id)
 		end
 	elseif bucket == "objectLoot" then
 		if type(row.objectId) == "number" and type(row.itemId) == "number" then
@@ -899,7 +930,7 @@ end
 local LOOKUP_BUCKETS = { vendors = true, drops = true, npcSpells = true, quests = true, objectLoot = true }
 
 local function lookup_label(bucket, id)
-	local row = rows[bucket] and rows[bucket][id]
+	local row = get_row(bucket, id)
 	if type(row) == "table" then
 		if type(row.name) == "string" and row.name ~= "" then
 			return row.name
@@ -930,9 +961,11 @@ function Everlook.world.lookup(kind, id)
 		end
 		local drops = lookup.item_drops[id]
 		for index = 1, drops and #drops or 0 do
-			local row = drops[index]
-			local count = type(row.drops) == "number" and row.drops or 0
-			lines[#lines + 1] = "Dropped by " .. lookup_label("npcs", row.npcId) .. " (" .. count .. ")"
+			local row = get_row("drops", drops[index])
+			if row then
+				local count = type(row.drops) == "number" and row.drops or 0
+				lines[#lines + 1] = "Dropped by " .. lookup_label("npcs", row.npcId) .. " (" .. count .. ")"
+			end
 		end
 	elseif kind == "npc" then
 		local sells = lookup.npc_sells[id]
@@ -945,7 +978,8 @@ function Everlook.world.lookup(kind, id)
 		end
 		local quests = lookup.npc_quests[id]
 		for index = 1, quests and #quests or 0 do
-			lines[#lines + 1] = quest_line(quests[index], id)
+			local row = get_row("quests", quests[index])
+			lines[#lines + 1] = row and quest_line(row, id) or nil
 		end
 	elseif kind == "object" then
 		local loot = lookup.object_loot[id]
@@ -967,17 +1001,22 @@ function Everlook.world.store(bucket, row)
 	if not key then
 		return
 	end
-	local bucket_rows = rows[bucket]
-	if not bucket_rows then
-		bucket_rows = {}
-		rows[bucket] = bucket_rows
-	end
-	local existing = bucket_rows[key]
+	local existing = get_row(bucket, key)
 	local created = false
 	if not existing then
 		existing = {}
-		bucket_rows[key] = existing
 		created = true
+		if paged then
+			Everlook.pages.add(bucket, key, existing)
+		end
+		if not paged or Everlook.pages.migrating then
+			local bucket_rows = rows[bucket]
+			if not bucket_rows then
+				bucket_rows = {}
+				rows[bucket] = bucket_rows
+			end
+			bucket_rows[key] = existing
+		end
 	end
 	local giver, turn_in, name, title, area_name
 	if not created then
@@ -991,12 +1030,8 @@ function Everlook.world.store(bucket, row)
 	if changed then
 		dirty = true
 	end
-	if Everlook.segments then
-		if created then
-			Everlook.segments.add(bucket, existing)
-		elseif changed or bumped ~= bumps then
-			Everlook.segments.touch(existing)
-		end
+	if paged and not created and (changed or bumped ~= bumps) then
+		Everlook.pages.touch(existing)
 	end
 	if created then
 		session_new = session_new + 1
@@ -1014,10 +1049,10 @@ function Everlook.world.store(bucket, row)
 	if LOOKUP_BUCKETS[bucket] and (created or changed) then
 		if bucket == "quests" and not created then
 			if giver ~= existing.giverId and type(giver) == "number" then
-				lookup_remove(lookup.npc_quests, giver, existing)
+				lookup_remove(lookup.npc_quests, giver, existing.id)
 			end
 			if turn_in ~= existing.turnInId and type(turn_in) == "number" then
-				lookup_remove(lookup.npc_quests, turn_in, existing)
+				lookup_remove(lookup.npc_quests, turn_in, existing.id)
 			end
 		end
 		lookup_index(bucket, existing)
@@ -1041,8 +1076,7 @@ function Everlook.world.count(bucket, row)
 	if not key then
 		return
 	end
-	local bucket_rows = rows[bucket]
-	local existing = bucket_rows and bucket_rows[key]
+	local existing = get_row(bucket, key)
 	if not existing then
 		Everlook.world.store(bucket, row)
 		return
@@ -1067,8 +1101,8 @@ function Everlook.world.count(bucket, row)
 			bumped = bumped + 1
 		end
 	end
-	if Everlook.segments then
-		Everlook.segments.touch(existing)
+	if paged then
+		Everlook.pages.touch(existing)
 	end
 end
 
@@ -1500,9 +1534,6 @@ end
 
 -- What the segment encoder shares with this file. Not for other addons.
 Everlook.world.internal = {
-	rows = function()
-		return rows
-	end,
 	pack_row = pack_row,
 	count_strings = count_strings,
 	replace_strings = replace_strings,
@@ -1526,15 +1557,12 @@ function Everlook.world.document()
 	}
 	for i = 1, #BUCKETS do
 		local bucket = BUCKETS[i]
-		local bucket_rows = rows[bucket]
-		if bucket_rows then
-			local packed = {}
-			for _, row in pairs(bucket_rows) do
-				packed[#packed + 1] = pack_row(bucket, row)
-			end
-			if #packed > 0 then
-				document[bucket] = packed
-			end
+		local packed = {}
+		each_row(bucket, function(_, row)
+			packed[#packed + 1] = pack_row(bucket, row)
+		end)
+		if #packed > 0 then
+			document[bucket] = packed
 		end
 	end
 	local counts = {}
@@ -1618,21 +1646,28 @@ function Everlook.world.reindex()
 	Everlook.world.forget_lookup()
 	for index = 1, #BUCKETS do
 		local bucket = BUCKETS[index]
-		local bucket_rows = rows[bucket]
-		if bucket_rows then
-			local total = 0
-			if LOOKUP_BUCKETS[bucket] then
-				for _, row in pairs(bucket_rows) do
-					total = total + 1
+		local total = 0
+		if paged then
+			total = Everlook.pages.total(bucket)
+			if LOOKUP_BUCKETS[bucket] and total > 0 then
+				each_row(bucket, function(_, row)
 					if type(row) == "table" then
 						lookup_index(bucket, row)
 					end
-				end
-			else
-				for _ in pairs(bucket_rows) do
+				end)
+			end
+		else
+			local bucket_rows = rows[bucket]
+			if bucket_rows then
+				for _, row in pairs(bucket_rows) do
 					total = total + 1
+					if LOOKUP_BUCKETS[bucket] and type(row) == "table" then
+						lookup_index(bucket, row)
+					end
 				end
 			end
+		end
+		if total > 0 then
 			bucket_totals[bucket] = total
 			row_total = row_total + total
 		end
@@ -1643,13 +1678,89 @@ function Everlook.world.reindex()
 	end
 end
 
-function Everlook.world.load_saved()
-	if not EverlookDB or type(EverlookDB.raw) ~= "table" then
+-- Starts an empty collection in pages, where the client can keep them.
+open_empty = function()
+	local pages = Everlook.pages
+	if not (pages and pages.enabled()) then
 		return false
 	end
-	rows = EverlookDB.raw
+	local ok = pages.self_test()
+	if not ok then
+		return false
+	end
+	pages.reset()
+	pages.set_active(true)
+	paged = true
+	rows = {}
+	return true
+end
+
+-- Opens the saved collection. It is kept in pages where the client can encode
+-- them and hand them back whole. An older version saved every row as tables,
+-- and those are moved into pages in the background, keeping the old copy until
+-- every page is saved. Without an encoder the rows stay as tables.
+function Everlook.world.load_saved()
+	local db = EverlookDB
+	if type(db) ~= "table" then
+		return false
+	end
+	local pages = Everlook.pages
+	local has_pages = type(db.pages) == "table" and next(db.pages) ~= nil
+	if pages and pages.enabled() then
+		local ok, reason = pages.self_test()
+		db.pagesCheck = ok and "ok" or reason
+		if ok then
+			pages.set_active(true)
+			paged = true
+			local had_raw = type(db.raw) == "table"
+			local carried
+			if had_raw and (db.pagesMigrating or not has_pages) then
+				-- Moving in: the old copy is the whole collection until every page is saved.
+				db.pages, db.pageCounts, db.pagesMigrating = {}, {}, true
+				rows = db.raw
+				pages.import(rows)
+			else
+				-- The pages are the collection. A `raw` beside them holds only what an older
+				-- build, or a session without pages, collected since.
+				rows = {}
+				pages.open_saved()
+				if had_raw then
+					carried = db.raw
+					db.raw = nil
+				end
+			end
+			Everlook.world.reindex()
+			if carried then
+				for bucket, bucket_rows in pairs(carried) do
+					for _, row in pairs(bucket_rows) do
+						if type(row) == "table" then
+							row._seq = nil
+							Everlook.world.store(bucket, row)
+						end
+					end
+				end
+			end
+			return had_raw or next(db.pages or {}) ~= nil
+		end
+		if has_pages then
+			-- The pages cannot be read here. Nothing is written over them, and what
+			-- this session collects waits in `raw` to be added next time.
+			rows = {}
+			keep_upload = true
+			return false
+		end
+	end
+	if type(db.raw) ~= "table" then
+		return false
+	end
+	rows = db.raw
 	Everlook.world.reindex()
 	return true
+end
+
+-- Every page is saved as its own string, so the old copy has been let go.
+function Everlook.world.migrated()
+	rows = {}
 end
 
 function Everlook.world.flush(include_counts)
@@ -1657,8 +1768,11 @@ function Everlook.world.flush(include_counts)
 		return
 	end
 	-- raw is the collection. world and its signature are the signed upload.
-	if EverlookDB.raw ~= nil or Everlook.world.row_count() > 0 then
+	if not paged and (EverlookDB.raw ~= nil or Everlook.world.row_count() > 0) then
 		EverlookDB.raw = rows
+	end
+	if keep_upload then
+		return
 	end
 	-- Segments are packed and signed as they change, so logout only finishes
 	-- what is left. The whole world is packed in one piece only where the

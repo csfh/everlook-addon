@@ -24,6 +24,7 @@ drops.lua
 scan.lua
 hash.lua
 config.lua
+pages.lua
 segments.lua
 sign.lua
 links.lua

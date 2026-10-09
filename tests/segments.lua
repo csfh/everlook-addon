@@ -1,13 +1,26 @@
--- Segments: the world saved in pieces, each packed and hashed once, signed through a manifest.
+-- Pages and segments: the collection saved a page at a time, and the upload saved in segments, one per page.
 return function(root, check)
 	local source = dofile(root .. "/tests/suite.lua")(root)
 
-	local function load()
+	local function deep(value)
+		if type(value) ~= "table" then
+			return value
+		end
+		local copy = {}
+		for key, item in pairs(value) do
+			copy[key] = deep(item)
+		end
+		return copy
+	end
+
+	-- The engine's CBOR is a handle to a snapshot, so a page that is read back is a
+	-- new table. The snapshots outlive a session, as saved pages do.
+	local snapshots = {}
+
+	local function load(setup)
 		local Everlook = {}
-		local tables = {}
 		local env = setmetatable({}, { __index = _G })
 		env._G = env
-		env.time_now = 1000
 		env.EventUtil = { ContinueOnAddOnLoaded = function() end, ContinueOnPlayerLogin = function() end }
 		env.CreateFrame = function()
 			local frame = { shown = true }
@@ -26,8 +39,9 @@ return function(root, check)
 			end
 			return frame
 		end
+		env.clock_now = 1000
 		env.GetTime = function()
-			return env.time_now
+			return env.clock_now
 		end
 		env.time = function()
 			return 1789506741
@@ -39,100 +53,167 @@ return function(root, check)
 			return "enUS"
 		end
 		env.C_AddOns = { GetAddOnMetadata = function() return "0.30.0" end }
-		-- The engine's CBOR is a handle to the table, so a test can read what was packed.
 		env.C_EncodingUtil = {
 			SerializeCBOR = function(value)
-				tables[#tables + 1] = value
-				return "cbor:" .. #tables
+				snapshots[#snapshots + 1] = deep(value)
+				return "cbor:" .. #snapshots
+			end,
+			DeserializeCBOR = function(handle)
+				local index = tonumber(tostring(handle):match("^cbor:(%d+)$"))
+				return index and deep(snapshots[index]) or nil
 			end,
 			EncodeBase64 = function(value)
 				return value
 			end,
+			DecodeBase64 = function(value)
+				return value
+			end,
 		}
 		env.EverlookDB = {}
-		local files = { "world.lua", "location.lua", "sightings.lua", "npcs.lua", "items.lua", "drops.lua", "hash.lua", "config.lua", "segments.lua" }
+		if setup then
+			setup(env)
+		end
+		local files = { "world.lua", "location.lua", "sightings.lua", "npcs.lua", "items.lua", "drops.lua", "hash.lua", "config.lua", "pages.lua", "segments.lua" }
 		for index = 1, #files do
 			local chunk = assert(loadfile(source(files[index])))
 			setfenv(chunk, env)
 			chunk("Everlook", Everlook)
 		end
-		return Everlook, env, tables
+		return Everlook, env, snapshots
+	end
+
+	-- A fresh session on whatever a database already holds.
+	local function open(db, setup)
+		local addon, env, snapshots = load(function(e)
+			e.EverlookDB = db
+			if setup then
+				setup(e)
+			end
+		end)
+		addon.config.token = "token-1"
+		addon.world.load_saved()
+		return addon, env, snapshots
 	end
 
 	local function settle(addon)
 		local guard = 0
 		while addon.segments.step(1000, true, true) do
 			guard = guard + 1
-			if guard > 10000 then
-				error("the segment encoder did not settle")
+			if guard > 100000 then
+				error("the encoder did not settle")
 			end
 		end
 	end
 
-	local function stored(bucket, rows)
-		return rows
+	local function manifest_entries(db)
+		local entries = {}
+		for name, count, sha in db.manifest:gmatch("([%w]+%.%d+%.%d+)=(%d+):(%x+)") do
+			entries[name] = { rows = tonumber(count), sha = sha }
+		end
+		return entries
 	end
 
-	-- Rows land in segments in the order they were first collected.
+	local function count_of(map)
+		local count = 0
+		for _ in pairs(map or {}) do
+			count = count + 1
+		end
+		return count
+	end
+
+	-- A page holds a range of one bucket and is cut in two when it is full.
 	do
-		local addon, env = load()
-		addon.world.reset()
+		local addon, env = open({})
+		check("a fresh install keeps its collection in pages", addon.pages.active() and addon.world.row_count() == 0)
 		for id = 1, 40 do
-			addon.world.store("npcs", { id = id * 977, name = "N" .. id })
+			addon.world.store("npcs", { id = id * 100, name = "N" .. id })
 		end
-		check("rows of one bucket fill a segment before the next", addon.segments.pending() == 1)
-		addon.world.store("npcs", { id = 1, name = "41st" })
-		check("a full segment starts another", addon.segments.pending() == 2)
-		addon.world.store("drops", { npcId = 70, itemId = 5, drops = 1 })
-		addon.world.store("drops", { npcId = 4000000000, itemId = 6, drops = 1 })
-		addon.world.store("drops", { npcId = -5, itemId = 7, drops = 1 })
-		check("a key's size does not matter, only when the row came", addon.segments.pending() == 3)
-		check("a row carries its place", addon.world.row("npcs", 977)._seq == 0 and addon.world.row("npcs", 1)._seq == 40)
-
-		env.GetTime = function() return 5000 end
-		env.EverlookDB.raw = nil
-		addon.world.flush(true)
-		local next_addon, next_env = load()
-		next_env.EverlookDB = env.EverlookDB
-		next_addon.world.load_saved()
-		next_addon.world.store("npcs", { id = 2, name = "42nd" })
-		check("a new row after a reload is numbered after the saved ones", next_addon.world.row("npcs", 2)._seq == 41 and next_addon.world.row("npcs", 977)._seq == 0)
-
-		local legacy, legacy_env = load()
-		legacy_env.EverlookDB = { raw = { npcs = { [5] = { id = 5, name = "A" }, [6] = { id = 6, name = "B" }, [7] = { id = 7, name = "C", _seq = 9 } } } }
-		legacy.world.load_saved()
-		local seen = {}
-		for id = 5, 7 do
-			seen[legacy.world.row("npcs", id)._seq] = true
-		end
-		check("saved rows with no place are numbered after those with one", seen[9] and seen[10] and seen[11])
+		check("a full page is one page", #addon.pages.pages("npcs") == 1)
+		addon.world.store("npcs", { id = 150, name = "41st" })
+		local pages = addon.pages.pages("npcs")
+		check("the page that overflows is cut in two", #pages == 2 and pages[1].count + pages[2].count == 41 and addon.pages.total("npcs") == 41)
+		local cut = pages[2].start
+		check("the cut is at a key, and every row is still found", cut > 100 and addon.world.row("npcs", 150).name == "41st" and addon.world.row("npcs", 4000).name == "N40" and addon.world.row("npcs", 100).name == "N1")
+		check("only the cut page's rows moved", pages[1].count == 20 or pages[1].count == 21)
+		addon.world.store("drops", { npcId = 7, itemId = 1, drops = 1 })
+		addon.world.store("drops", { npcId = 7, itemId = 2, drops = 1 })
+		check("a composite key goes by its first part", #addon.pages.pages("drops") == 1 and addon.world.row("drops", "7:2").drops == 1)
+		check("a key that cannot be placed is still stored", addon.world.store("npcs", { id = 4000000000, name = "Huge" }) ~= nil and addon.world.row("npcs", 4000000000).name == "Huge")
 	end
 
-	-- Only a change marks a segment, and only its own.
+	-- What is saved comes back, whatever the cache let go.
 	do
-		local addon, env = load()
-		addon.world.reset()
+		local addon, env = open({})
+		for id = 1, 700 do
+			addon.world.store("maps", { id = id * 10, name = "Map " .. id })
+		end
+		addon.world.store("npcs", { id = 5, name = "Boar", locations = { { mapId = 1, x = 10, y = 20, seen = 2, zone = "Elwynn" } }, sources = { "target" } })
+		check("many pages are made", #addon.pages.pages("maps") > 49)
+		check("pages with changes are kept until they are saved", addon.pages.loaded() == #addon.pages.pages("maps") + #addon.pages.pages("npcs"))
+		env.clock_now = 5000
+		settle(addon)
+		for id = 1, 700 do
+			addon.world.row("maps", id * 10)
+		end
+		check("once saved, the cache lets pages go and no row is lost", addon.pages.loaded() <= 49 and addon.world.row_count() == 701 and addon.world.row("maps", 10).name == "Map 1")
+		addon.world.flush(true)
+		local db = env.EverlookDB
+		check("a flush saves every page that changed", count_of(db.pages) == #addon.pages.pages("maps") + #addon.pages.pages("npcs") and db.raw == nil)
+
+		local next_addon = open(db)
+		check("the next session knows its rows without reading any page", next_addon.world.row_count() == 701 and next_addon.pages.stats().decodes == 0)
+		check("a row is read from its page", next_addon.world.row("maps", 3500).name == "Map 350" and next_addon.pages.stats().decodes == 1)
+		local boar = next_addon.world.row("npcs", 5)
+		check("a row comes back as it went in", boar.name == "Boar" and boar.locations[1].zone == "Elwynn" and boar.locations[1].seen == 2 and boar.sources[1] == "target")
+		local read = 0
+		next_addon.world.each("maps", function()
+			read = read + 1
+		end)
+		check("walking a bucket reads every row and keeps within the cache", read == 700 and next_addon.pages.loaded() <= 49)
+		check("rows read twice are the same table", next_addon.world.row("maps", 10) == next_addon.world.row("maps", 10))
+	end
+
+	-- A changed page is saved before logout lets go of it, however long the limit.
+	do
+		local addon, env = open({})
+		addon.world.store("npcs", { id = 1, name = "Boar" })
+		env.clock_now = 5000
+		settle(addon)
+		addon.world.flush(true)
+		local db = env.EverlookDB
+		local next_addon, next_env = open(db)
+		next_addon.world.store("npcs", { id = 1, name = "Boar", minLevel = 7 })
+		next_addon.world.store("npcs", { id = 2, name = "Wolf" })
+		local ticks = 0
+		next_env.debugprofilestop = function()
+			ticks = ticks + 500
+			return ticks
+		end
+		next_addon.world.flush(true)
+		local third = open(next_env.EverlookDB)
+		check("logout past its time limit still saves what changed", third.world.row("npcs", 1).minLevel == 7 and third.world.row("npcs", 2).name == "Wolf")
+	end
+
+	-- Counters mark their page, and a restatement does not.
+	do
+		local addon, env = open({})
+		addon.world.store("drops", { npcId = 1, itemId = 2, drops = 1 })
 		addon.world.store("npcs", { id = 1, name = "A", locations = { { mapId = 1, x = 10, y = 10, seen = 1 } } })
-		addon.world.store("npcs", { id = 500, name = "Far" })
-		env.GetTime = function() return 5000 end
+		env.clock_now = 5000
 		settle(addon)
 		check("settling empties the line", addon.segments.pending() == 0)
 		addon.world.store("npcs", { id = 1, name = "A", locations = { { mapId = 1, x = 10, y = 10, seen = 0 } } })
 		check("an identical restatement marks nothing", addon.segments.pending() == 0)
 		addon.world.store("npcs", { id = 1, name = "A", locations = { { mapId = 1, x = 10, y = 10 } } })
-		check("a repeat pin marks its segment", addon.segments.pending() == 1)
-		settle(addon)
-		addon.world.count("drops", { npcId = 1, itemId = 2, drops = 1 })
+		check("a repeat pin marks its page", addon.segments.pending() == 1)
 		settle(addon)
 		addon.world.count("drops", { npcId = 1, itemId = 2, drops = 3 })
-		check("a counter marks its segment", addon.segments.pending() == 1)
+		check("a counter marks its page", addon.segments.pending() == 1 and addon.world.row("drops", "1:2").drops == 4)
 		settle(addon)
-		addon.world.store("npcs", { id = 1, minLevel = 4 })
-		check("only the segment that changed is marked", addon.segments.pending() == 1)
 		collectgarbage("collect")
 		collectgarbage("stop")
-		local before = collectgarbage("count")
 		local scratch = { npcId = 1, itemId = 2, drops = 1 }
+		local before = collectgarbage("count")
 		for _ = 1, 1000 do
 			addon.world.count("drops", scratch)
 		end
@@ -142,104 +223,281 @@ return function(root, check)
 	end
 
 	-- The manifest, the digests and the signature agree with the segments.
-	local function manifest_entries(db)
-		local entries = {}
-		for name, count, sha in db.manifest:gmatch("([%w]+%.%d+%.%d+)=(%d+):(%x+)") do
-			entries[name] = { rows = tonumber(count), sha = sha }
-		end
-		return entries
-	end
-
 	do
-		local addon, env, tables = load()
-		addon.config.token = "token-1"
-		addon.world.reset()
+		local first_snapshot = #snapshots
+		local addon, env = open({})
 		addon.world.store("maps", { id = 1, name = "Elwynn" })
 		addon.world.store("npcs", { id = 1, name = "Boar", locations = { { mapId = 1, x = 10, y = 10, zone = "Elwynn" } } })
 		addon.world.store("npcs", { id = 2, name = "Boar", locations = { { mapId = 1, x = 11, y = 10, zone = "Elwynn" } } })
 		addon.world.store("npcs", { id = 900, name = "Wolf" })
 		addon.world.store("drops", { npcId = 1, itemId = 5, drops = 2 })
-		env.GetTime = function() return 5000 end
+		env.clock_now = 5000
 		settle(addon)
 		local db = env.EverlookDB
 		local entries = manifest_entries(db)
-		local names, rows_listed = 0, 0
-		local digests_agree = true
+		local names, listed, agree = 0, 0, true
 		for name, info in pairs(entries) do
 			names = names + 1
-			rows_listed = rows_listed + info.rows
+			listed = listed + info.rows
 			if addon.hash.sha256(db.segments[name]) ~= info.sha then
-				digests_agree = false
+				agree = false
 			end
 		end
-		check("every segment is listed with the digest of what is saved", names == 3 and digests_agree)
-		check("the manifest counts every row once", rows_listed == addon.world.row_count())
+		check("every page is listed with the digest of what is saved", names == 3 and agree and entries["npcs.1.0"].rows == 3)
+		check("the manifest counts every row once", listed == addon.world.row_count())
 		check("the manifest carries the header the server reads", db.manifest:match("^2;1789506741;66263__x_;enUS;120005;0%.30%.0;") ~= nil)
 		check("the signature covers the manifest", db.signature == addon.hash.hmac_sha256("token-1", db.manifest) and db.signer == addon.hash.sha256("token-1"):sub(1, 16))
-		check("a segment saved holds the rows of one bucket", tables[1].b ~= nil and tables[1].v == 2 and type(tables[1].r) == "table")
-
-		-- Every row is in one segment, and the segments hold what document() packs.
-		local document = addon.world.document()
-		local expected, found = {}, {}
-		for _, bucket in ipairs({ "maps", "npcs", "drops" }) do
-			expected[bucket] = #document[bucket]
-			found[bucket] = 0
-		end
-		local first_cells = {}
-		for _, document_table in ipairs(tables) do
-			found[document_table.b] = (found[document_table.b] or 0) + #document_table.r
-			for _, packed in ipairs(document_table.r) do
-				first_cells[document_table.b .. ":" .. packed[1]] = true
+		local segment_tables, strings = {}, nil
+		for index = first_snapshot + 1, #snapshots do
+			local snapshot = snapshots[index]
+			if snapshot.v == 2 then
+				segment_tables[#segment_tables + 1] = snapshot
+				if snapshot.b == "npcs" and snapshot.s then
+					strings = snapshot.s
+				end
 			end
 		end
-		check("the segments together hold the rows document() packs", found.maps == expected.maps and found.npcs == expected.npcs and found.drops == expected.drops)
-		check("each row is in the segment its first key names", first_cells["npcs:900"] and first_cells["npcs:1"] and first_cells["npcs:2"] and first_cells["drops:1"] and first_cells["maps:1"])
-		local strings = nil
-		for _, document_table in ipairs(tables) do
-			if document_table.b == "npcs" and document_table.s then
-				strings = document_table.s
-			end
+		local rows_in_segments = 0
+		for _, snapshot in ipairs(segment_tables) do
+			rows_in_segments = rows_in_segments + #snapshot.r
 		end
+		check("the segments together hold the rows document() packs", rows_in_segments == 5 and #addon.world.document().npcs == 3)
 		check("a string repeated in a segment is interned in it", strings ~= nil and (strings[1] == "Boar" or strings[2] == "Boar" or strings[1] == "Elwynn" or strings[2] == "Elwynn"))
-		check("a world is not saved whole beside the manifest", db.world == nil)
+		check("no whole world is saved beside the manifest", db.world == nil and db.raw == nil)
 	end
 
-	-- A source that is a word stays a word, because the site reads a number there as a fixed name.
+	-- A source that is a word stays a word.
 	do
-		local addon, env, tables = load()
-		addon.config.token = "token-1"
-		addon.world.reset()
+		local first_snapshot = #snapshots
+		local addon, env = open({})
 		addon.world.store("items", { id = 1, name = "Linen", sources = { "fishing", "bag" } })
 		addon.world.store("items", { id = 2, name = "Linen", sources = { "fishing", "bag" } })
 		addon.world.store("items", { id = 3, name = "Wool", sources = { "fishing" } })
-		env.GetTime = function() return 5000 end
+		env.clock_now = 5000
 		settle(addon)
 		local items
-		for _, document in ipairs(tables) do
-			if document.b == "items" then
-				items = document
+		for index = first_snapshot + 1, #snapshots do
+			local snapshot = snapshots[index]
+			if snapshot.v == 2 and snapshot.b == "items" then
+				items = snapshot
 			end
 		end
-		local source_cells = {}
+		local cells = {}
 		for _, row in ipairs(items.r) do
-			source_cells[#source_cells + 1] = row[#row]
+			cells[#cells + 1] = row[#row]
 		end
-		check("sources are never replaced by a string index", items.s ~= nil and items.s[1] == "Linen" and source_cells[1][1] == "fishing" and source_cells[1][2] == "bag" and source_cells[3][1] == "fishing")
-		check("the other columns are still interned", type(items.r[1][2]) == "number" and items.r[1][2] == items.r[2][2])
+		local words = 0
+		for _, cell in ipairs(cells) do
+			if cell[1] == "fishing" then
+				words = words + 1
+			end
+		end
+		check("sources are never replaced by a string index", items.s ~= nil and words == 3)
+	end
+
+	-- Moving from the old whole collection into pages keeps it until every page is saved.
+	do
+		local raw = { npcs = {}, items = { [9] = { id = 9, name = "Linen" } } }
+		for id = 1, 90 do
+			raw.npcs[id * 10] = { id = id * 10, name = "N" .. id }
+		end
+		local db = { raw = raw, world = "1c.legacy", signer = "old", signature = "olds" }
+		local addon, env = open(db)
+		check("the old copy is opened as pages", addon.world.row_count() == 91 and addon.pages.migrating and db.raw == raw and addon.world.row("npcs", 100).name == "N10")
+		addon.world.store("npcs", { id = 55555, name = "New" })
+		check("a row stored meanwhile goes in the old copy too", raw.npcs[55555] ~= nil and addon.world.row("npcs", 55555).name == "New")
+		addon.world.row("npcs", 100).minLevel = 3
+		addon.pages.touch(addon.world.row("npcs", 100))
+		check("the old copy is the same rows", raw.npcs[100].minLevel == 3)
+
+		-- Logging out part way keeps the old copy and a consistent partial set of pages.
+		local ticks = 0
+		env.debugprofilestop = function()
+			ticks = ticks + 100
+			return ticks
+		end
+		env.clock_now = 5000
+		addon.segments.step(1, true, false, "raw")
+		addon.world.flush(true)
+		check("a logout before the pages are saved keeps the old copy", db.raw == raw and addon.pages.migrating)
+
+		env.debugprofilestop = nil
+		local resumed = open(db)
+		check("the next session starts again from the old copy", resumed.world.row_count() == 92 and resumed.pages.migrating)
+		env.clock_now = 9000
+		settle(resumed)
+		check("once every page is saved the old copy goes", db.raw == nil and not resumed.pages.migrating and db.world == nil and db.manifest ~= nil)
+		local final = open(db)
+		for _ = 1, 10 do
+			resumed.segments.tick()
+		end
+		check("pages kept in memory after the move are let go over time", resumed.pages.loaded() <= 49)
+		check("the pages hold everything the old copy did", final.world.row_count() == 92 and final.world.row("npcs", 100).minLevel == 3 and final.world.row("npcs", 55555).name == "New" and final.world.row("items", 9).name == "Linen")
+	end
+
+	-- A split that was only half saved is made right on load.
+	do
+		local addon, env = open({})
+		for id = 1, 41 do
+			addon.world.store("npcs", { id = id * 100, name = "N" .. id })
+		end
+		local cut = addon.pages.pages("npcs")[2].start
+		env.clock_now = 5000
+		settle(addon)
+		addon.world.flush(true)
+		local db = env.EverlookDB
+		-- The first page's saved copy is the one from before the split, whole.
+		local whole = {}
+		for id = 1, 41 do
+			whole[id * 100] = { id = id * 100, name = "OLD" .. id }
+		end
+		snapshots[#snapshots + 1] = whole
+		db.pages["npcs.0"] = "p1.cbor:" .. #snapshots
+		local half = open(db)
+		local seen, names = 0, {}
+		half.world.each("npcs", function(key, row)
+			seen = seen + 1
+			names[key] = row.name
+		end)
+		check("rows left in a page by an unfinished split are not read twice", seen == 41 and half.world.row_count() == 41)
+		check("the new page's copy of a row wins", names[cut] == "N" .. (cut / 100) and half.world.row("npcs", cut).name == "N" .. (cut / 100))
+		check("the first page keeps its own rows", names[100] == "OLD1")
+	end
+
+	-- A page cut in two is not listed twice.
+	do
+		local addon, env = open({})
+		for id = 1, 40 do
+			addon.world.store("npcs", { id = id * 100, name = "N" .. id })
+		end
+		env.clock_now = 5000
+		settle(addon)
+		local before = manifest_entries(env.EverlookDB)
+		check("one page is one listed segment", count_of(before) == 1)
+		addon.world.store("npcs", { id = 150, name = "Split" })
+		local ticks = 0
+		env.debugprofilestop = function()
+			ticks = ticks + 150
+			return ticks
+		end
+		addon.segments.finish()
+		env.debugprofilestop = nil
+		local listed = 0
+		for _, info in pairs(manifest_entries(env.EverlookDB)) do
+			listed = listed + info.rows
+		end
+		check("rows are listed once however the logout ends", listed > 0 and listed <= 41)
+		env.clock_now = 9000
+		settle(addon)
+		local after = 0
+		for _, info in pairs(manifest_entries(env.EverlookDB)) do
+			after = after + info.rows
+		end
+		check("once both halves are packed every row is listed", after == 41 and count_of(manifest_entries(env.EverlookDB)) == 2)
+	end
+
+	-- An older build that ran in between leaves a raw beside the pages.
+	do
+		local addon, env = open({})
+		addon.world.store("npcs", { id = 1, name = "Boar" })
+		addon.world.store("npcs", { id = 2, name = "Wolf" })
+		env.clock_now = 5000
+		addon.world.flush(true)
+		local db = env.EverlookDB
+		check("a finished move leaves no marker", db.raw == nil and db.pagesMigrating == nil and count_of(db.pages) == 1)
+		db.raw = { npcs = { [1] = { id = 1, name = "Boar", minLevel = 9 }, [3] = { id = 3, name = "Bear", _seq = 4 } } }
+		local back = open(db)
+		check("a raw beside saved pages is added to them and not put over them", back.world.row("npcs", 1).minLevel == 9 and back.world.row("npcs", 2).name == "Wolf" and back.world.row("npcs", 3).name == "Bear" and back.world.row("npcs", 3)._seq == nil and db.raw == nil and back.world.row_count() == 3)
+	end
+
+	-- Pages that cannot be read leave the saved collection and upload alone.
+	do
+		local addon, env = open({})
+		addon.world.store("npcs", { id = 1, name = "Boar" })
+		env.clock_now = 5000
+		addon.world.flush(true)
+		local db = env.EverlookDB
+		local manifest, page = db.manifest, db.pages["npcs.0"]
+		local lossy, lossy_env = open(db, function(e)
+			e.C_EncodingUtil.DeserializeCBOR = function()
+				return { lossy = true }
+			end
+		end)
+		lossy.world.store("npcs", { id = 2, name = "Wolf" })
+		lossy.world.flush(true)
+		check("a session that cannot read the pages leaves them and the upload as they were", db.pages["npcs.0"] == page and db.manifest == manifest and db.world == nil and db.pagesCheck ~= "ok")
+		check("what it collected waits in raw", db.raw ~= nil and db.raw.npcs[2].name == "Wolf")
+		local again = open(db)
+		check("the next session adds it", again.world.row("npcs", 1).name == "Boar" and again.world.row("npcs", 2).name == "Wolf" and db.raw == nil)
+	end
+
+	-- A page the engine will not serialize is not lost, and does not stop logout.
+	do
+		local addon, env = open({})
+		addon.world.store("npcs", { id = 1, name = "Boar" })
+		addon.world.store("items", { id = 5, name = "Linen" })
+		env.clock_now = 5000
+		settle(addon)
+		addon.world.flush(true)
+		local db = env.EverlookDB
+		local next_addon, next_env = open(db)
+		next_addon.world.store("npcs", { id = 1, name = "Boar", minLevel = 4 })
+		next_addon.world.store("items", { id = 5, name = "Linen", quality = 2 })
+		local serialize = next_env.C_EncodingUtil.SerializeCBOR
+		next_env.C_EncodingUtil.SerializeCBOR = function(value, options)
+			if value[1] and value[1].name == "Boar" then
+				return nil
+			end
+			return serialize(value, options)
+		end
+		next_addon.world.flush(true)
+		check("a page that cannot be saved does not stop logout or the others", db.flushStats.failed == 1 and next_env.EverlookDB.pages["items.0"] ~= nil)
+		check("the failure is recorded and the page keeps its changes in memory", next_addon.world.row("npcs", 1).minLevel == 4)
+		local third = open(db)
+		check("the other page's change was saved", third.world.row("items", 5).quality == 2)
+	end
+
+	-- A second session writes only what changed.
+	do
+		local addon, env = open({})
+		for id = 1, 200 do
+			addon.world.store("npcs", { id = id * 100, name = "Creature " .. id })
+		end
+		env.clock_now = 5000
+		settle(addon)
+		addon.world.flush(true)
+		local saved = env.EverlookDB
+		local first = {}
+		for name, payload in pairs(saved.segments) do
+			first[name] = payload
+		end
+		local next_addon, next_env = open(saved)
+		check("a collection saved whole has nothing waiting", next_addon.segments.pending() == 0)
+		next_addon.world.store("npcs", { id = 100, name = "Creature 1", minLevel = 7 })
+		next_addon.world.store("npcs", { id = 1234567, name = "New" })
+		local waiting = next_addon.segments.pending()
+		check("only what changed is waiting", waiting >= 2 and waiting <= 3)
+		next_env.clock_now = 9000
+		settle(next_addon)
+		local changed = 0
+		for name, payload in pairs(next_env.EverlookDB.segments) do
+			if first[name] ~= payload then
+				changed = changed + 1
+			end
+		end
+		check("only those segments are written again", changed >= 2 and changed <= 3)
 	end
 
 	-- A segment that keeps changing is not packed over and over.
 	do
-		local addon, env = load()
-		addon.config.token = "token-1"
-		addon.world.reset()
-		local scratch = { npcId = 1, itemId = 2, drops = 1 }
-		env.GetTime = function() return 100 end
+		local addon, env = open({})
+		env.clock_now = 100
 		addon.world.store("drops", { npcId = 1, itemId = 2, drops = 1 })
-		env.GetTime = function() return 500 end
+		env.clock_now = 500
 		addon.segments.step(0, false, false)
 		local _, _, running = addon.segments.pending()
-		check("a segment past its longest wait is picked", running == true)
+		check("a page past its longest wait is picked", running == true)
+		local scratch = { npcId = 1, itemId = 2, drops = 1 }
 		addon.world.count("drops", scratch)
 		while addon.segments.step(0, false, false) do
 			local _, _, still = addon.segments.pending()
@@ -248,149 +506,34 @@ return function(root, check)
 			end
 		end
 		local queued, _, job = addon.segments.pending()
-		check("a segment touched mid-pack waits out its quiet time again", queued == 1 and job == false)
-		env.GetTime = function() return 520 end
+		check("a page touched mid-save waits out its quiet time again", queued == 1 and job == false)
+		env.clock_now = 520
 		addon.segments.step(0, false, false)
 		local _, _, again = addon.segments.pending()
-		check("it is packed once it has been quiet", again == true)
-	end
-
-	-- Logging out while the move to segments is unfinished saves a consistent, partial set.
-	do
-		local addon, env = load()
-		addon.config.token = "token-1"
-		env.EverlookDB = { raw = { npcs = {} }, world = "1c.legacy", signer = "old", signature = "olds" }
-		addon.world.reset()
-		for id = 1, 120 do
-			env.EverlookDB.raw.npcs[id] = { id = id, name = "N" .. id, _seq = id - 1 }
-		end
-		addon.world.load_saved()
-		local ticks = 0
-		env.debugprofilestop = function()
-			ticks = ticks + 60
-			return ticks
-		end
-		addon.world.flush(true)
-		local db = env.EverlookDB
-		local entries = manifest_entries(db)
-		local agree, count = true, 0
-		for name, info in pairs(entries) do
-			count = count + 1
-			if addon.hash.sha256(db.segments[name]) ~= info.sha then
-				agree = false
-			end
-		end
-		local left = db.staleSegments and #db.staleSegments or 0
-		check("a logout mid-move saves a manifest that agrees with its segments", db.world == nil and count > 0 and agree and left > 0 and count + left == 3)
-		check("what was left is signed for", db.signature == addon.hash.hmac_sha256("token-1", db.manifest))
-		local next_addon, next_env = load()
-		next_addon.config.token = "token-1"
-		next_env.EverlookDB = db
-		next_addon.world.reset()
-		next_addon.world.load_saved()
-		check("the segments it left come back waiting", next_addon.segments.pending() == left)
-	end
-
-	-- A second session writes only what changed.
-	do
-		local addon, env = load()
-		addon.config.token = "token-1"
-		addon.world.reset()
-		for id = 1, 200 do
-			addon.world.store("npcs", { id = id * 100, name = "Creature " .. id })
-		end
-		env.GetTime = function() return 5000 end
-		settle(addon)
-		addon.world.flush(true)
-		local saved = env.EverlookDB
-		local first_segments = {}
-		for name, payload in pairs(saved.segments) do
-			first_segments[name] = payload
-		end
-
-		local next_addon, next_env = load()
-		next_addon.config.token = "token-1"
-		next_env.EverlookDB = saved
-		next_addon.world.reset()
-		next_addon.world.load_saved()
-		check("a world saved whole has nothing waiting", next_addon.segments.pending() == 0)
-		next_addon.world.store("npcs", { id = 100, name = "Creature 1", minLevel = 7 })
-		next_addon.world.store("npcs", { id = 1234567, name = "New" })
-		check("only what changed is waiting", next_addon.segments.pending() == 2)
-		next_env.GetTime = function() return 9000 end
-		settle(next_addon)
-		local changed = 0
-		for name, payload in pairs(next_env.EverlookDB.segments) do
-			if first_segments[name] ~= payload then
-				changed = changed + 1
-			end
-		end
-		check("only those segments are written again", changed == 2)
-		local kept, listed = 0, 0
-		for name in pairs(manifest_entries(next_env.EverlookDB)) do
-			listed = listed + 1
-			if first_segments[name] == next_env.EverlookDB.segments[name] then
-				kept = kept + 1
-			end
-		end
-		check("the other segments are kept as they were saved", listed > 2 and kept == listed - 2)
-	end
-
-	-- Moving from a whole world to segments happens in one step.
-	do
-		local addon, env = load()
-		addon.config.token = "token-1"
-		env.EverlookDB = { raw = { npcs = { [1] = { id = 1, name = "Boar" }, [2] = { id = 2, name = "Wolf" } } }, world = "1c.legacy", signer = "old", signature = "olds" }
-		addon.world.reset()
-		addon.world.load_saved()
-		check("the whole world waits for the segments", addon.segments.pending() == 1 and env.EverlookDB.world == "1c.legacy" and env.EverlookDB.signature == "olds")
-		env.GetTime = function() return 5000 end
-		while addon.segments.step(1, true, false) do
-			check("the whole world is kept until the segments are signed", env.EverlookDB.world == "1c.legacy" and env.EverlookDB.manifest == nil)
-		end
-		settle(addon)
-		check("the segments replace it together", env.EverlookDB.world == nil and type(env.EverlookDB.manifest) == "string" and env.EverlookDB.signature == addon.hash.hmac_sha256("token-1", env.EverlookDB.manifest))
-	end
-
-	-- An older addon that ran in between leaves a world beside a manifest.
-	do
-		local addon, env = load()
-		env.EverlookDB = {
-			raw = { npcs = { [1] = { id = 1, name = "Boar" } } },
-			world = "1c.newer",
-			manifest = "2;1;b;l;1;v;npcs.0.0=1:" .. string.rep("a", 64),
-			segments = { ["npcs.0.0"] = "2r.x" },
-		}
-		addon.world.reset()
-		addon.world.load_saved()
-		check("a manifest beside a whole world is not trusted", env.EverlookDB.manifest == nil and env.EverlookDB.segments == nil and addon.segments.pending() == 1)
+		check("it is saved once it has been quiet", again == true)
 	end
 
 	-- A new token signs the same segments again.
 	do
-		local addon, env = load()
-		addon.config.token = "token-1"
-		addon.world.reset()
+		local addon, env = open({})
 		addon.world.store("npcs", { id = 1, name = "Boar" })
-		env.GetTime = function() return 5000 end
+		env.clock_now = 5000
 		settle(addon)
 		local db = env.EverlookDB
-		local manifest, payload = db.manifest, db.segments["npcs.0.0"]
+		local manifest, payload = db.manifest, db.segments["npcs.1.0"]
 		addon.config.token = "token-2"
 		settle(addon)
-		check("a new token signs the manifest again", db.manifest == manifest and db.segments["npcs.0.0"] == payload and db.signature == addon.hash.hmac_sha256("token-2", manifest) and db.signer == addon.hash.sha256("token-2"):sub(1, 16))
+		check("a new token signs the manifest again", db.manifest == manifest and db.segments["npcs.1.0"] == payload and db.signature == addon.hash.hmac_sha256("token-2", manifest) and db.signer == addon.hash.sha256("token-2"):sub(1, 16))
 		addon.config.token = nil
 		db.secret = nil
 		settle(addon)
 		check("with no token the file is unsigned", db.signature == nil and db.signer == nil and db.manifest == manifest)
 	end
 
-	-- Logout finishes the line within a limit and says what it left.
+	-- Logout builds upload segments within its limit and names the rest.
 	do
-		local addon, env = load()
-		addon.config.token = "token-1"
-		addon.world.reset()
-		for id = 1, 200 do
+		local addon, env = open({})
+		for id = 1, 400 do
 			addon.world.store("npcs", { id = id * 64, name = "Creature " .. id })
 		end
 		local ticks = 0
@@ -408,41 +551,33 @@ return function(root, check)
 				agree = false
 			end
 		end
-		check("logout past its limit saves what it finished and names the rest", type(db.staleSegments) == "table" and #db.staleSegments > 0 and agree and db.flushStats.left == #db.staleSegments)
+		check("logout past its limit saves what it finished and names the rest", left > 0 and agree and db.flushStats.left == left)
 		check("what is saved agrees with its signature", db.signature == addon.hash.hmac_sha256("token-1", db.manifest))
-
-		local next_addon, next_env = load()
-		next_addon.config.token = "token-1"
-		next_env.EverlookDB = db
-		next_addon.world.reset()
-		next_addon.world.load_saved()
-		check("the next session starts with what was left", left > 0 and next_addon.segments.pending() >= left)
+		env.debugprofilestop = nil
+		local next_addon = open(db)
+		check("the next session starts with what was left", next_addon.segments.pending() >= left)
+		check("every row is saved in its page whatever the limit", next_addon.world.row_count() == 400 and next_addon.world.row("npcs", 400 * 64).name == "Creature 400")
 	end
 
-	-- With time to spare, logout leaves nothing behind and flush does not pack the whole world.
+	-- With time to spare, logout leaves nothing behind.
 	do
-		local addon, env = load()
-		addon.config.token = "token-1"
-		addon.world.reset()
+		local addon, env = open({})
 		addon.world.store("npcs", { id = 1, name = "Boar" })
 		addon.world.store("items", { id = 5, name = "Linen" })
 		addon.world.flush(true)
 		local db = env.EverlookDB
 		check("logout saves the segments and the signature", db.manifest ~= nil and db.signature ~= nil and db.staleSegments == nil and db.world == nil)
-		check("logout records the rows and bytes saved", db.worldRows == 2 and db.worldBytes == #db.segments["npcs.0.0"] + #db.segments["items.0.0"])
+		check("logout records the rows and bytes saved", db.worldRows == 2 and db.worldBytes == #db.segments["npcs.1.0"] + #db.segments["items.1.0"])
 	end
 
 	-- The manifest keeps to what the server reads.
 	do
-		local addon, env = load()
-		addon.config.token = "token-1"
-		addon.world.reset()
+		local addon, env = open({})
 		addon.world.store("npcs", { id = 1, name = "Boar" })
 		addon.world.store("fishingLoot", { mapId = 1, areaId = 2, itemId = 3, casts = 1 })
 		env.GetBuildInfo = function() return "x", "build 1;2,3 \195\169", "d", 5 end
 		addon.world.flush(true)
-		local manifest = env.EverlookDB.manifest
-		local header, entries = manifest:match("^(2;%d+;[%w%._%-]*;[%w%._%-]*;%d+;[%w%._%-]*);(.*)$")
+		local header, entries = env.EverlookDB.manifest:match("^(2;%d+;[%w%._%-]*;[%w%._%-]*;%d+;[%w%._%-]*);(.*)$")
 		check("the header holds only characters the server accepts", header ~= nil and not header:find("%s"))
 		local fine = entries ~= nil
 		for entry in (entries or ""):gmatch("[^,]+") do
@@ -453,38 +588,66 @@ return function(root, check)
 		check("every entry is a name, a count and a digest", fine)
 	end
 
+	-- Tooltip lines follow rows that have been let go and read back.
+	do
+		local addon, env = open({})
+		addon.world.store("npcs", { id = 10, name = "Hogger" })
+		addon.world.store("items", { id = 20, name = "Cloth" })
+		addon.world.store("vendors", { npcId = 10, itemId = 20 })
+		addon.world.store("drops", { npcId = 10, itemId = 20, drops = 4 })
+		addon.world.store("quests", { id = 176, title = "Wanted", giverId = 10 })
+		env.clock_now = 5000
+		addon.world.flush(true)
+		local next_addon = open(env.EverlookDB)
+		local lines = table.concat(next_addon.world.lookup("item", 20), "|")
+		check("a tooltip reads its lines from saved pages", lines:find("Vendor: Hogger", 1, true) and lines:find("Dropped by Hogger (4)", 1, true) and next_addon.world.lookup("npc", 10)[2] == "Quest: Wanted")
+		next_addon.world.count("drops", { npcId = 10, itemId = 20, drops = 1 })
+		check("a count shows at once", table.concat(next_addon.world.lookup("item", 20), "|"):find("Dropped by Hogger (5)", 1, true) ~= nil)
+	end
+
+	-- A client whose encoder cannot hand a page back whole keeps rows as tables.
+	do
+		local addon, env = load(function(e)
+			e.EverlookDB = { raw = { npcs = { [1] = { id = 1, name = "Boar", locations = { { mapId = 1, x = 1, y = 2 } } } } } }
+		end)
+		env.C_EncodingUtil.DeserializeCBOR = function(handle)
+			local table_back = {}
+			table_back.lossy = true
+			return table_back
+		end
+		addon.world.load_saved()
+		check("a lossy encoder is noticed and rows stay as tables", not addon.pages.active() and env.EverlookDB.pagesCheck ~= "ok" and env.EverlookDB.raw.npcs[1].name == "Boar" and addon.world.row("npcs", 1).name == "Boar")
+		addon.world.store("npcs", { id = 2, name = "Wolf" })
+		addon.world.flush(true)
+		check("the old whole-world flush is used", env.EverlookDB.raw.npcs[2].name == "Wolf" and env.EverlookDB.manifest == nil)
+	end
+
 	-- A client that cannot encode keeps the whole-world path.
 	do
 		local addon, env = load()
 		env.C_EncodingUtil = nil
 		addon.world.reset()
+		addon.world.load_saved()
 		addon.world.store("npcs", { id = 1, name = "Boar" })
-		check("without an encoder the segments are off", addon.segments.enabled() == false and addon.segments.finish() == false)
+		check("without an encoder nothing is paged", addon.pages.enabled() == false and addon.segments.finish() == false and addon.world.row("npcs", 1).name == "Boar")
 	end
 
-	-- An engine that will not serialize a segment does not stop the rest.
+	-- An engine that will not serialize a page does not stop the rest.
 	do
-		local addon, env = load()
-		addon.config.token = "token-1"
-		addon.world.reset()
+		local addon, env = open({})
 		addon.world.store("npcs", { id = 1, name = "Boar" })
 		addon.world.store("items", { id = 5, name = "Linen" })
-		local first = true
 		local serialize = env.C_EncodingUtil.SerializeCBOR
+		local refuse = false
 		env.C_EncodingUtil.SerializeCBOR = function(value, options)
-			if first then
-				first = false
+			if refuse and value.v == 2 and value.b == "npcs" then
 				return nil
 			end
 			return serialize(value, options)
 		end
-		env.GetTime = function() return 5000 end
+		refuse = true
+		env.clock_now = 5000
 		settle(addon)
-		local entries = manifest_entries(env.EverlookDB)
-		local count = 0
-		for _ in pairs(entries) do
-			count = count + 1
-		end
-		check("a segment the engine refuses is left out and the others are saved", count == 1 and env.EverlookDB.manifest ~= nil)
+		check("a segment the engine refuses is left out and the others are saved", count_of(manifest_entries(env.EverlookDB)) == 1)
 	end
 end

@@ -22,32 +22,39 @@ EverlookDB = EverlookDB or {}
 
 ## Shape
 
-The collection is `EverlookDB.raw`, a table of rows. The signed upload is `EverlookDB.segments` with `manifest`, `signer` and `signature` beside it. The minimap angle stays with them.
+The collection is `EverlookDB.pages`, a table of strings. The signed upload is `EverlookDB.segments` with `manifest`, `signer` and `signature` beside it. The minimap angle stays with them.
 
 ```lua
 EverlookDB = {
 	minimap = {
 		angle = 160,
 	},
-	raw = {
-		npcs = {
-			[448] = { id = 448, name = "Hogger", _seq = 12 },
-		},
-	},
-	segments = { ["npcs.0.0"] = "2c....", ["drops.0.0"] = "2c...." },
-	manifest = "2;1789506741;66263;enUS;120005;0.30.0;drops.0.0=388:ab12...,npcs.0.0=40:cd34...",
+	pages = { ["npcs.0"] = "p1....", ["npcs.12480"] = "p1....", ["drops.0"] = "p1...." },
+	pageCounts = { ["npcs.0"] = 40, ["npcs.12480"] = 31, ["drops.0"] = 404 },
+	segments = { ["npcs.1.0"] = "2c....", ["npcs.1.12480"] = "2c...." },
+	manifest = "2;1789506741;66263;enUS;120005;0.30.0;drops.1.0=404:ab12...,npcs.1.0=40:cd34...",
 	signer = "...",
 	signature = "...",
 }
 ```
 
-A segment is a run of one bucket's rows in the order they were first collected, which `_seq` on each row records. `_seq` is not a column, so it is never uploaded. Its name is `<bucket>.0.<position>`, and the second part says how rows are grouped. A segment holds 24 to 1,024 rows depending on the bucket, so it packs to about 30 KB. It is `2c.` or `2r.` plus Base64 of a CBOR map `{v = 2, b = bucket, r = rows, s = strings}`. `2c.` is raw DEFLATE, and `2r.` is the same CBOR when compression does not make it shorter. The rows are packed as in the old whole document, with a string table of their own. A `sources` list is never interned, because the site reads a number there as one of five fixed names.
+Rows used to be saved as Lua tables, in `EverlookDB.raw`. Lua 5.1 stops compiling a chunk at about 262,000 distinct constants, which in this file is somewhere past 160,000 rows, and a file that does not compile loses everything in it. Tables also all sit in memory, about 3.4 KB a row. So the collection is saved as strings instead, and a row is decoded only when something reads it.
+
+A page is the rows of one bucket whose first key falls in a range, saved as `p1.` plus Base64 of raw DEFLATE of CBOR of `{ [key] = row }`. The rows are kept exactly as stored, not packed. The page `npcs.12480` holds creatures from id 12480 up to the next page's start. Which page holds a key is worked out from the key and the list of page starts, which is read from the names in `pages`, so nothing else is saved to find it. A page with more rows than its bucket allows (24 to 1,024) is cut in two at its middle key, and only its own rows move. The page saved first is the new one, so a split cut short loses nothing, and a row left in the old page that belongs to the new one is skipped on load. `pageCounts` gives each page's rows, so the total is known without reading any page.
+
+Up to 48 pages stay decoded, the ones used last. A page with changes that are not saved yet is never let go. A page read back is a new table, and nothing keeps hold of a row between events: a row is looked up when it is needed. A tooltip's lines are written from the rows as they are then.
+
+On load a self-test sends a sample row through the encoder and back. `EverlookDB.pagesCheck` is `ok`, or says what came back different. If it is not `ok`, rows stay as tables in `EverlookDB.raw`, as before, and the whole world is packed at logout.
+
+A segment is the upload form of one page. Its name is `<bucket>.1.<start>`, and the second part says rows are grouped by page. It is `2c.` or `2r.` plus Base64 of a CBOR map `{v = 2, b = bucket, r = rows, s = strings}`. `2c.` is raw DEFLATE, and `2r.` is the same CBOR when compression does not make it shorter. The rows are packed as in the old whole document, with a string table of their own. A `sources` list is never interned, because the site reads a number there as one of five fixed names.
 
 `manifest` lists every segment with its row count and the SHA-256 of its stored text. `signature` is the HMAC of the manifest, so it covers every segment through its digest. The manifest, the segments and the signature are swapped in together once everything staged is hashed, so what the game saves always agrees with itself. A new token signs the manifest again and leaves the segments alone.
 
-Before the first full set of segments is signed, an older `world` and its `signature` stay where they are. The commit that writes `manifest` removes `world` in the same step. A client that cannot encode keeps writing `world` as before, and the site reads either. If a `world` and a `manifest` are both present, an older addon ran in between and the manifest is dropped. The site reads a file by where its keys sit, so nothing in `raw` is taken for them.
+A page and its segment are both saved in the background once the page has been quiet for 15 seconds. At logout every page that changed is saved first, whatever it takes, because nothing else would keep its rows. Segments are built as far as 400 ms allows, and the rest are named in `EverlookDB.staleSegments` and go first next session.
 
-`EverlookDB.flushStats` holds how many segments were encoded, how long each stage took in total (`stageMs`), how long logout took and how many segments it left.
+An older `raw` is moved into pages in the background. Its tables stay the saved copy, and stay in memory as the rows, until every page is saved, and then it is dropped in the same step. A row stored meanwhile goes into both. A logout before that leaves `raw` as it was, and the next session starts the move again. Before the first full set of segments is signed, an older `world` and its `signature` stay where they are, and the commit that writes `manifest` removes `world`. A client that cannot encode keeps writing `world` as before, and the site reads either. If a `world` and a `manifest` are both present, an older addon ran in between and the manifest is dropped.
+
+`EverlookDB.flushStats` holds how many pages and segments were saved, how long each stage took in total (`stageMs`), how long logout took, how many segments it left, and how many pages were decoded and how slowly.
 
 `minimap.angle` is written when the button is dragged. The button texture is always `assets/logo.tga`.
 
@@ -55,7 +62,7 @@ Before the first full set of segments is signed, an older `world` and its `signa
 
 On addon load, `EverlookDB.raw` becomes the row table. A later sighting merges into those rows. The load line reports the count.
 
-On load, every row gets its place in a segment, and the manifest says which segments are already saved. A segment whose row count differs from the manifest, or that logout left unfinished, is queued. A saved world with no manifest queues them all, and they are packed in the background over the first minutes of play.
+On load, the page list comes from the names in `pages`, and the manifest says which segments are already saved. A segment whose row count differs from its page, or that logout left unfinished, is queued.
 
 The world document includes the character's current talent rank. Classic talents store the rank from `GetTalentInfo`. Retail nodes store `node.currentRank`. `world.lua` packs both into the talents bucket. With a profession window open, `recipes.lua` records the recipe ids from `C_TradeSkillUI.GetAllRecipeIDs()`.
 

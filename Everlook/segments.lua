@@ -1,16 +1,17 @@
 local _, Everlook = ...
 
--- The world is saved in segments, each a small document of its own that holds
--- a run of one bucket's rows in the order they were first collected. A row's
--- segment never changes, so a sighting marks one segment dirty and costs a
--- table lookup. Rows found together are saved together, so a session that
--- walks one zone touches few segments. Dirty segments are packed, compressed and hashed a millisecond or so
--- a frame once they have been quiet for a while, and one HMAC over a manifest
--- of their digests signs them all. Logout finishes what is left. The work
--- follows what changed, not how much has been collected.
+-- Keeps what is saved up to date as the world changes, in small steps.
+--
+-- A page that changed needs two things done: its rows saved as the page's
+-- own string, and its upload segment packed, hashed and listed in the manifest
+-- that one signature covers. Both wait until the page has been quiet for a
+-- while, then run a millisecond or so a frame, never in combat. Logout saves
+-- every page that changed, since nothing else would keep it, and builds
+-- upload segments only as far as the time allows.
 
 Everlook.segments = {}
 local S = Everlook.segments
+local P = Everlook.pages
 
 local floor = math.floor
 local internal = Everlook.world.internal
@@ -27,18 +28,9 @@ for bucket, columns in pairs(internal.columns) do
 	end
 end
 
--- Rows in a full segment, chosen so one is around 30 KB packed. Small rows
--- such as drops fit a thousand, and a creature takes dozens.
-local SIZE = {
-	maps = 8, factions = 512, spells = 192, skillLines = 512, currencies = 512, items = 128, objects = 128,
-	npcs = 40, quests = 24, talents = 512, recipes = 256, kills = 1024, drops = 1024, vendors = 1024,
-	merchantCosts = 1024, objectLoot = 1024, fishingLoot = 512, npcSpells = 1024, npcFactions = 1024,
-	taxiNodes = 256, taxiRoutes = 512,
-}
-
--- The second part of a segment's name says how rows are grouped. Another way
--- of grouping would take another number.
-local GROUPING = 0
+-- The second part of a segment's name says how rows are grouped: by the page
+-- that holds them.
+local GROUPING = 1
 
 local WORK_MS = 1.5
 local SLOW_WORK_MS = 0.75
@@ -50,9 +42,6 @@ local COMMIT_EVERY = 300
 local LOGOUT_MS = 400
 local CHECK_EVERY = 10
 
-local by_bucket = {}
-local seg_of = {}
-local segs = {}
 local queue = {}
 local published = {}
 local staged = {}
@@ -75,9 +64,7 @@ local function clock()
 end
 
 function S.enabled()
-	return type(C_EncodingUtil) == "table"
-		and type(C_EncodingUtil.SerializeCBOR) == "function"
-		and type(C_EncodingUtil.EncodeBase64) == "function"
+	return P.enabled()
 end
 
 local function wake()
@@ -86,76 +73,57 @@ local function wake()
 	end
 end
 
-local function mark_dirty(seg, quiet_already)
-	seg.version = seg.version + 1
-	seg.touched = quiet_already and (now() - QUIET) or now()
-	if not seg.queued then
-		seg.queued = true
-		seg.first_dirty = seg.touched
-		queue[#queue + 1] = seg
+local function segment_name(page)
+	return page.bucket .. "." .. GROUPING .. "." .. page.start
+end
+
+-- A page changed. It waits its turn, and waits longer each time it changes again.
+P.on_dirty = function(page)
+	local t = now()
+	page.touched = t
+	if not page.queued then
+		page.queued = true
+		page.first_dirty = t
+		queue[#queue + 1] = page
 		wake()
 	end
 end
 
-local next_seq = {}
-
-local function segment_at(bucket, position)
-	local list = by_bucket[bucket]
-	if not list then
-		list = {}
-		by_bucket[bucket] = list
-	end
-	local seg = list[position]
-	if not seg then
-		seg = { bucket = bucket, name = bucket .. "." .. GROUPING .. "." .. position, rows = {}, count = 0, version = 0 }
-		list[position] = seg
-		segs[seg.name] = seg
-	end
-	return seg
-end
-
--- A row's place is its sequence number, kept on the row so it comes back
--- with the saved rows. It is not a column, so it is never uploaded.
-local function place(bucket, row)
-	if not internal.keys[bucket] then
-		return nil
-	end
-	local seq = row._seq
-	if type(seq) ~= "number" or seq < 0 or seq ~= floor(seq) then
-		seq = next_seq[bucket] or 0
-		row._seq = seq
-	end
-	if seq >= (next_seq[bucket] or 0) then
-		next_seq[bucket] = seq + 1
-	end
-	local seg = segment_at(bucket, floor(seq / (SIZE[bucket] or 256)))
-	seg.count = seg.count + 1
-	seg.rows[seg.count] = row
-	seg_of[row] = seg
-	return seg
-end
-
--- A row that was just stored for the first time.
-function S.add(bucket, row)
-	local seg = place(bucket, row)
-	if seg then
-		mark_dirty(seg)
+-- A page that was cut in two no longer matches the segment listed for it, and
+-- the rows it gave up would be listed twice. It is left out until it is packed again.
+P.on_split = function(page)
+	local name = segment_name(page)
+	staged[name] = nil
+	if published[name] then
+		total_bytes = total_bytes - (published[name].bytes or 0)
+		published[name] = nil
 	end
 end
 
--- A row whose content or counts changed.
-function S.touch(row)
-	local seg = seg_of[row]
-	if seg then
-		mark_dirty(seg)
+local function dequeue(page)
+	for index = 1, #queue do
+		if queue[index] == page then
+			queue[index] = queue[#queue]
+			queue[#queue] = nil
+			break
+		end
+	end
+	page.queued = false
+	page.first_dirty = nil
+end
+
+local function settle_queue(page)
+	if page.queued and not page.raw_dirty and not page.seg_dirty then
+		dequeue(page)
 	end
 end
 
 function S.reset()
-	by_bucket, seg_of, segs, queue, published, staged, next_seq = {}, {}, {}, {}, {}, {}, {}
+	queue, published, staged = {}, {}, {}
 	job, committing = nil, nil
 	total_bytes = 0
 	last_commit = now()
+	stats = {}
 end
 
 -- What the saved manifest says about each segment, and only for a segment the
@@ -179,28 +147,17 @@ local function read_saved()
 	end
 end
 
--- Called once the saved rows are in place, while the loading screen is up.
+-- Called once the pages are in place, while the loading screen is up.
 function S.rebuild()
-	S.reset()
-	local rows = internal.rows()
-	local buckets = internal.buckets
-	for index = 1, #buckets do
-		local bucket = buckets[index]
-		local bucket_rows = rows[bucket]
-		if bucket_rows then
-			-- Rows that already have a number keep it, so new ones are numbered after them.
-			for _, row in pairs(bucket_rows) do
-				if type(row) == "table" and type(row._seq) == "number" and row._seq >= (next_seq[bucket] or 0) then
-					next_seq[bucket] = floor(row._seq) + 1
-				end
-			end
-			for _, row in pairs(bucket_rows) do
-				if type(row) == "table" then
-					place(bucket, row)
-				end
-			end
+	-- Pages that moving the old collection in has already marked stay in line.
+	local waiting = {}
+	for index = 1, #queue do
+		if P.by_name(queue[index].name) == queue[index] then
+			waiting[#waiting + 1] = queue[index]
 		end
 	end
+	S.reset()
+	queue = waiting
 	read_saved()
 	local stale = type(EverlookDB) == "table" and type(EverlookDB.staleSegments) == "table" and EverlookDB.staleSegments or {}
 	local named = {}
@@ -210,39 +167,79 @@ function S.rebuild()
 	if type(EverlookDB) == "table" then
 		EverlookDB.staleSegments = nil
 	end
-	for name, seg in pairs(segs) do
+	for _, page in pairs(P.all()) do
+		local name = segment_name(page)
 		local info = published[name]
-		if not info or info.rows ~= seg.count or named[name] then
-			mark_dirty(seg, true)
+		if not info or info.rows ~= page.count or named[name] then
+			page.seg_dirty = true
+			P.on_dirty(page)
 		end
+	end
+	-- Whatever is waiting at load has waited long enough.
+	local t = now()
+	for index = 1, #queue do
+		queue[index].touched = t - QUIET
+		queue[index].first_dirty = t - QUIET
 	end
 end
 
--- Stages of one segment's encoding. Each call does a small piece and returns.
-local function pack_step(current)
-	local seg = current.seg
+-- Stages of one job. Each call does a small piece and returns.
+local RAW = {}
+local SEG = {}
+
+function RAW.load(current)
+	P.page_rows(current.page)
+	current.stage = "cbor"
+end
+
+function RAW.cbor(current)
+	local cbor = P.encode_cbor(current.page)
+	if type(cbor) ~= "string" then
+		current.failed = true
+		return
+	end
+	current.cbor = cbor
+	current.stage = "store"
+end
+
+function RAW.store(current)
+	local page = current.page
+	P.store_payload(page, P.encode_payload(current.cbor))
+	current.cbor = nil
+	current.stage = "done"
+end
+
+function SEG.load(current)
+	local rows = P.page_rows(current.page)
+	local list = {}
+	for _, row in pairs(rows) do
+		list[#list + 1] = row
+	end
+	current.list = list
+	current.index = 1
+	current.stage = "pack"
+end
+
+function SEG.pack(current)
 	local began = clock()
-	-- A creature with thousands of pins is slow to pack, so the clock is read per row.
-	while current.index <= seg.count do
-		current.packed[#current.packed + 1] = internal.pack_row(seg.bucket, seg.rows[current.index])
+	local bucket = current.page.bucket
+	while current.index <= #current.list do
+		current.packed[#current.packed + 1] = internal.pack_row(bucket, current.list[current.index])
 		current.index = current.index + 1
 		if clock() - began >= PACK_MS then
-			break
+			return
 		end
 	end
-	if current.index > seg.count then
-		current.index = 1
-		current.stage = "count"
-	end
+	current.list = nil
+	current.index = 1
+	current.stage = "count"
 end
 
--- Strings that repeat inside the segment are written once and pointed to. Both
--- passes go a row at a time against the clock.
-local function count_step(current)
+function SEG.count(current)
 	local packed = current.packed
 	local began = clock()
 	current.counts = current.counts or {}
-	local skip = sources_column[current.seg.bucket]
+	local skip = sources_column[current.page.bucket]
 	while current.index <= #packed do
 		local row = packed[current.index]
 		local held = skip and row[skip]
@@ -271,15 +268,15 @@ local function count_step(current)
 		current.strings, current.indexes = table_strings, indexes
 		current.stage = "replace"
 	else
-		current.document = { v = 2, b = current.seg.bucket, r = packed }
+		current.document = { v = 2, b = current.page.bucket, r = packed }
 		current.stage = "cbor"
 	end
 end
 
-local function replace_step(current)
+function SEG.replace(current)
 	local packed = current.packed
 	local began = clock()
-	local skip = sources_column[current.seg.bucket]
+	local skip = sources_column[current.page.bucket]
 	while current.index <= #packed do
 		local row = packed[current.index]
 		local held = skip and row[skip]
@@ -295,12 +292,12 @@ local function replace_step(current)
 			return
 		end
 	end
-	current.document = { v = 2, b = current.seg.bucket, r = packed, s = current.strings }
+	current.document = { v = 2, b = current.page.bucket, r = packed, s = current.strings }
 	current.strings, current.indexes = nil, nil
 	current.stage = "cbor"
 end
 
-local function cbor_step(current)
+function SEG.cbor(current)
 	local cbor = C_EncodingUtil.SerializeCBOR(current.document, { ignoreSerializationErrors = true })
 	current.document = nil
 	if type(cbor) ~= "string" then
@@ -311,7 +308,7 @@ local function cbor_step(current)
 	current.stage = "compress"
 end
 
-local function compress_step(current)
+function SEG.compress(current)
 	local cbor = current.cbor
 	local payload = "2r." .. C_EncodingUtil.EncodeBase64(cbor)
 	if C_EncodingUtil.CompressString then
@@ -331,54 +328,76 @@ local function compress_step(current)
 	current.stage = "hash"
 end
 
-local function hash_step(current)
+function SEG.hash(current)
 	if current.hasher:step(HASH_BLOCKS) then
 		current.stage = "done"
 	end
 end
 
-local STAGES = { pack = pack_step, count = count_step, replace = replace_step, cbor = cbor_step, compress = compress_step, hash = hash_step }
-
-local function dequeue(seg)
-	for index = 1, #queue do
-		if queue[index] == seg then
-			queue[index] = queue[#queue]
-			queue[#queue] = nil
-			break
-		end
-	end
-	seg.queued = false
-	seg.first_dirty = nil
-end
-
 local function finish_job(current)
-	local seg = current.seg
-	staged[seg.name] = { payload = current.payload, rows = seg.count, sha = current.hasher:hex() }
-	stats.encoded = (stats.encoded or 0) + 1
-	if seg.version == current.version then
-		dequeue(seg)
-	else
-		-- Touched again while it was being packed. It stays queued and waits out
-		-- its quiet time again, or a busy segment would be packed over and over.
-		seg.touched = now()
-		seg.first_dirty = seg.touched
+	local page = current.page
+	page.job = nil
+	local same = page.version == current.version
+	if current.kind == "raw" then
+		if same then
+			page.raw_dirty = false
+			if page.waits and not page.waits.raw_dirty then
+				page.waits = nil
+			end
+		end
+		stats.saved = (stats.saved or 0) + 1
+	elseif same then
+		-- A segment packed before the page changed again is not listed.
+		staged[segment_name(page)] = { payload = current.payload, rows = current.rows, sha = current.hasher:hex() }
+		stats.encoded = (stats.encoded or 0) + 1
+		page.seg_dirty = false
 	end
+	if not same then
+		-- Changed again while it was being saved. It waits out its quiet time again.
+		page.touched = now()
+		page.first_dirty = page.touched
+	end
+	settle_queue(page)
+	P.trim()
 end
 
--- The segment to encode next: one never saved first, then the one waiting longest.
-local function pick(force)
+-- The engine would not serialize the page. Its changes are not saved, so it stays
+-- marked, is never let go, and is left alone for the rest of the session.
+local function abandon_job(current)
+	current.page.job = nil
+	current.page.failed = true
+	stats.failed = (stats.failed or 0) + 1
+end
+
+-- The page to work on next, and what kind of work. A page that a split is
+-- waiting on goes first.
+local function pick(force, only)
 	local t = now()
-	local best, best_score
+	local best, best_kind, best_score
 	for index = 1, #queue do
-		local seg = queue[index]
-		if force or (t - seg.touched >= QUIET) or (t - seg.first_dirty >= MAX_WAIT) then
-			local score = seg.first_dirty - (published[seg.name] and 0 or 1e9)
-			if not best or score < best_score then
-				best, best_score = seg, score
+		local page = queue[index]
+		if not page.job and not page.failed and (force or (t - page.touched >= QUIET) or (t - page.first_dirty >= MAX_WAIT)) then
+			local kind
+			if page.raw_dirty then
+				kind = "raw"
+				if page.waits and page.waits.raw_dirty then
+					page = page.waits
+					if page.job or page.failed then
+						kind = nil
+					end
+				end
+			elseif page.seg_dirty and only ~= "raw" then
+				kind = "seg"
+			end
+			if kind and (only == nil or only == kind) then
+				local score = (kind == "raw" and 0 or 1e9) + (page.first_dirty or 0) - (published[segment_name(page)] and 0 or 1e8)
+				if not best or score < best_score then
+					best, best_kind, best_score = page, kind, score
+				end
 			end
 		end
 	end
-	return best
+	return best, best_kind
 end
 
 local function credentials()
@@ -396,10 +415,12 @@ end
 -- The manifest the server reads: the header, then every segment saved or
 -- staged with its row count and digest, sorted by name.
 local function manifest_text()
-	local names = {}
-	for name in pairs(segs) do
+	local names, pages = {}, {}
+	for _, page in pairs(P.all()) do
+		local name = segment_name(page)
 		if staged[name] or published[name] then
 			names[#names + 1] = name
+			pages[name] = page
 		end
 	end
 	table.sort(names)
@@ -484,13 +505,76 @@ local function commit_due(force)
 	if next(staged) == nil and not credentials_changed() then
 		return false
 	end
-	return force or #queue == 0 or now() - last_commit >= COMMIT_EVERY
+	if force then
+		return true
+	end
+	for index = 1, #queue do
+		if queue[index].seg_dirty then
+			return now() - last_commit >= COMMIT_EVERY
+		end
+	end
+	return true
+end
+
+-- Once every page is saved as its own string, the old whole-collection copy is
+-- not needed, and goes in the same step.
+local function finish_migration()
+	if not P.migrating then
+		return
+	end
+	for index = 1, #queue do
+		if queue[index].raw_dirty then
+			return
+		end
+	end
+	if job and job.kind == "raw" then
+		return
+	end
+	local db = EverlookDB
+	if type(db) == "table" then
+		db.raw = nil
+	end
+	P.migrating = false
+	if Everlook.world.migrated then
+		Everlook.world.migrated()
+	end
+	stats.migrated = true
+end
+
+local function begin(page, kind)
+	local current = { page = page, kind = kind, version = page.version, stage = "load" }
+	page.job = current
+	if kind == "seg" then
+		current.packed = {}
+		current.rows = page.count
+	end
+	return current
+end
+
+local function step_job(current)
+	if current.failed then
+		abandon_job(current)
+		return true
+	end
+	if current.stage == "done" then
+		finish_job(current)
+		return true
+	end
+	local stage, began = current.stage, clock()
+	local table_of = current.kind == "raw" and RAW or SEG
+	table_of[stage](current)
+	local spent = stats.stageMs or {}
+	stats.stageMs = spent
+	local label = current.kind .. "_" .. stage
+	spent[label] = floor(((spent[label] or 0) + clock() - began) * 100 + 0.5) / 100
+	return false
 end
 
 -- Does pieces of work until the time is up or there is none. True while work
--- remains. `force` ignores how long a segment has been quiet, and `commit`
--- signs what is staged without waiting for the line to empty.
-local function work(limit_ms, force, commit, finishing)
+-- remains. `force` ignores how long a page has been quiet, `commit` signs
+-- what is staged without waiting for the line to empty, `only` limits the
+-- work to one kind, and `finishing` starts no new job.
+local function work(limit_ms, force, commit, finishing, only)
 	local started = clock()
 	while true do
 		if committing then
@@ -502,28 +586,20 @@ local function work(limit_ms, force, commit, finishing)
 				publish_commit()
 			end
 		elseif job then
-			if job.failed then
-				-- The engine would not serialize it. Leave it queued for the next session.
-				dequeue(job.seg)
+			if step_job(job) then
 				job = nil
-			elseif job.stage == "done" then
-				finish_job(job)
-				job = nil
-			else
-				-- Where the time goes, kept with the saved variables so a slow one can be read back.
-				local stage, began = job.stage, clock()
-				STAGES[stage](job)
-				local spent = stats.stageMs or {}
-				stats.stageMs = spent
-				spent[stage] = floor(((spent[stage] or 0) + clock() - began) * 100 + 0.5) / 100
 			end
 		else
-			local seg = not finishing and pick(force) or nil
-			if seg then
-				job = { seg = seg, version = seg.version, index = 1, packed = {}, stage = "pack" }
-			elseif commit_due(commit or force) then
+			local page, kind
+			if not finishing then
+				page, kind = pick(force, only)
+			end
+			if page then
+				job = begin(page, kind)
+			elseif only == nil and commit_due(commit or force) then
 				start_commit()
 			else
+				finish_migration()
 				return false
 			end
 		end
@@ -533,10 +609,11 @@ local function work(limit_ms, force, commit, finishing)
 	end
 end
 
-function S.step(limit_ms, force, commit)
-	return work(limit_ms or WORK_MS, force, commit)
+function S.step(limit_ms, force, commit, only)
+	return work(limit_ms or WORK_MS, force, commit, false, only)
 end
 
+-- (lines waiting, whether anything is staged, whether a job runs, whether a manifest is being signed)
 function S.pending()
 	return #queue, next(staged) ~= nil, job ~= nil, committing ~= nil
 end
@@ -558,39 +635,70 @@ function S.tick()
 	end
 	local slow = type(GetFramerate) == "function" and (GetFramerate() or 60) < 30
 	if not work(slow and SLOW_WORK_MS or WORK_MS, false) then
-		if #queue == 0 and next(staged) == nil then
+		if P.over() then
+			-- Pages left in memory once moving in was done go a few at a time.
+			P.trim()
+		elseif #queue == 0 and next(staged) == nil then
 			if frame then
 				frame:Hide()
 			end
 		else
-			-- Segments are waiting out their quiet time. Looking again each frame would be wasted.
+			-- Pages are waiting out their quiet time. Looking again each frame would be wasted.
 			next_poll = t + 0.5
 		end
 	end
 end
 
+local function has_raw_work()
+	for index = 1, #queue do
+		if queue[index].raw_dirty then
+			return true
+		end
+	end
+	return job ~= nil and job.kind == "raw"
+end
+
 -- Logout, and a reload. The engine saves the variables right after this, so
--- whatever is still in line is finished here, within a limit. A segment that
--- does not make it keeps the last copy that was saved and goes first next time.
+-- every page that changed is saved first, whatever it takes, since nothing
+-- else would keep its rows. Upload segments are built as far as the limit
+-- allows. One that is not finished keeps the copy saved before it and goes
+-- first next session.
 function S.finish()
 	local db = EverlookDB
-	if type(db) ~= "table" or not S.enabled() then
+	if type(db) ~= "table" or not S.enabled() or not P.active() then
 		return false
 	end
 	local started = clock()
 	local deadline = started + LOGOUT_MS
+	if P.migrating then
+		-- The old copy still holds everything, so saving pages can wait for the time.
+		while work(math.max(1, deadline - clock()), true, false, false, "raw") and clock() < deadline do
+		end
+	else
+		while job and job.kind == "seg" do
+			work(1000, true, false, true)
+		end
+		while has_raw_work() do
+			if not work(1e9, true, false, false, "raw") then
+				break
+			end
+		end
+	end
 	while work(math.max(1, deadline - clock()), true) and clock() < deadline do
 	end
-	-- Past the limit nothing new is started. The segment in hand is finished, and
-	-- the manifest is signed even so: without it, nothing staged is saved.
+	-- Past the limit nothing new is started. The job in hand is finished, and the
+	-- manifest is signed even so: without it, nothing staged is saved.
 	while committing or job or commit_due(true) do
 		if not work(1000, false, true, true) then
 			break
 		end
 	end
+	finish_migration()
 	local late = {}
 	for index = 1, #queue do
-		late[#late + 1] = queue[index].name
+		if queue[index].seg_dirty then
+			late[#late + 1] = segment_name(queue[index])
+		end
 	end
 	if #late > 0 then
 		table.sort(late)
@@ -600,6 +708,9 @@ function S.finish()
 	end
 	stats.logoutMs = floor((clock() - started) * 10 + 0.5) / 10
 	stats.left = #late
+	local page_stats = P.stats()
+	stats.decodes, stats.decodeMs, stats.worstDecodeMs = page_stats.decodes, floor(page_stats.decodeMs * 10 + 0.5) / 10, floor(page_stats.worstDecodeMs * 10 + 0.5) / 10
+	stats.splits, stats.evictions = page_stats.splits, page_stats.evictions
 	db.flushStats = stats
 	return true
 end
