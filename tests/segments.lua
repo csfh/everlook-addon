@@ -327,6 +327,7 @@ return function(root, check)
 		env.clock_now = 9000
 		settle(resumed)
 		check("once every page is saved the old copy goes", db.raw == nil and not resumed.pages.migrating and db.world == nil and db.manifest ~= nil)
+		check("and so does the marker that said the move was unfinished", db.pagesMigrating == nil)
 		local final = open(db)
 		for _ = 1, 10 do
 			resumed.segments.tick()

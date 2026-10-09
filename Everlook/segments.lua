@@ -533,6 +533,7 @@ local function finish_migration()
 	local db = EverlookDB
 	if type(db) == "table" then
 		db.raw = nil
+		db.pagesMigrating = nil
 	end
 	P.migrating = false
 	if Everlook.world.migrated then
