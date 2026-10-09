@@ -26,12 +26,19 @@ def arrow(x, y):
     return 0.0
 
 
+def ring(x, y):
+    # A circle 62 wide with its middle cut out, 8 thick, for the progress rings.
+    distance = math.hypot(x - 32, y - 32)
+    return 1.0 if 23 <= distance <= 31 else 0.0
+
+
 def main():
     assets = Path(__file__).resolve().parents[1] / "Everlook_Island" / "assets"
     tga(assets / "island_corner.tga", 32,
         lambda x, y: float(math.hypot(32 - x, 32 - y) <= 32))
     tga(assets / "island_white.tga", 2, lambda x, y: 1)
     tga(assets / "island_arrow.tga", 32, arrow)
+    tga(assets / "island_ring.tga", 64, ring)
 
 
 if __name__ == "__main__":

@@ -86,7 +86,7 @@ local resting_slots = {}
 -- The open summary spaces everything from these steps. A gap inside a group is
 -- `within`, a gap between siblings `near`, and a gap between groups `section`,
 -- which is at least twice the one inside. `edge` is the inset the rows below share.
-shell.space = { within = 4, near = 8, section = 16, edge = 12, rail = 3, gauge = 4, icon = 20, head = 40, pane_min = 48, pane_max = 320 }
+shell.space = { within = 4, near = 8, section = 16, edge = 12, rail = 3, ring = 28, icon = 16, head = 40, pane_min = 48, pane_max = 320 }
 local function refresh_quests(force)
 	quest_context.refresh(force)
 end
@@ -143,6 +143,55 @@ end
 shell.heading = function(label, text, marker)
 	call(label, "SetText", (marker or "") .. string.upper(text))
 end
+
+-- A colour as the inline code a font string reads.
+shell.tone = function(color)
+	return string.format("|cff%02x%02x%02x", math.floor(color[1] * 255 + 0.5), math.floor(color[2] * 255 + 0.5), math.floor(color[3] * 255 + 0.5))
+end
+
+-- A ring that fills clockwise to a fraction, in place of a bar. The track is the
+-- whole ring, dim. The fill is a cooldown held at a percentage, as the game's own
+-- honor ring is, so it needs no art but the ring.
+shell.make_ring = function(parent, size)
+	local ring = { size = size }
+	ring.track = call(parent, "CreateTexture", nil, "BACKGROUND")
+	call(ring.track, "SetTexture", ART .. "island_ring.tga")
+	call(ring.track, "SetVertexColor", 1, 1, 1, 0.14)
+	call(ring.track, "SetSize", size, size)
+	ring.fill = CreateFrame("Cooldown", nil, parent)
+	call(ring.fill, "SetSize", size, size)
+	call(ring.fill, "EnableMouse", false)
+	call(ring.fill, "SetSwipeTexture", ART .. "island_ring.tga")
+	call(ring.fill, "SetReverse", true)
+	call(ring.fill, "SetDrawEdge", false)
+	call(ring.fill, "SetDrawBling", false)
+	call(ring.fill, "SetHideCountdownNumbers", true)
+	call(ring.track, "Hide")
+	call(ring.fill, "Hide")
+	return ring
+end
+
+shell.place_ring = function(ring, relative, x, y)
+	for _, part in ipairs({ ring.track, ring.fill }) do
+		call(part, "ClearAllPoints")
+		call(part, "SetPoint", "TOPLEFT", relative, "TOPLEFT", x, -y)
+	end
+end
+
+shell.set_ring = function(ring, fraction, color)
+	fraction = math.max(0, math.min(0.999, fraction))
+	call(ring.track, "Show")
+	call(ring.fill, "Show")
+	call(ring.fill, "SetSwipeColor", color[1], color[2], color[3], 1)
+	call(ring.fill, "Pause")
+	call(ring.fill, "SetCooldown", (GetTime and GetTime() or 0) - 100 * fraction, 100)
+end
+
+shell.hide_ring = function(ring)
+	call(ring.track, "Hide")
+	call(ring.fill, "Hide")
+end
+
 
 local function screen_size(method)
 	return (call(UIParent, method) or (method == "GetWidth" and OPEN_W + 32 or 1080)) / (module.get(id, "size") / 100)
@@ -708,18 +757,9 @@ local function experience_height(left, width, top)
 end
 
 -- The open summary is a header, an Experience table and a Status heading over
--- a two column grid. Each cell has a mark, a small name over its value and,
--- where it makes sense, a thin fill underneath. The fill shows what is left,
--- in the warning colors.
+-- a grid of cells. Each cell has a mark, a small name over its value and, for a
+-- figure with a fraction, a ring around the mark that fills to it.
 local EDGE_OPTIONS = { top = "rim_top", bottom = "rim_bottom" }
-
--- A figure on an edge bar needs no second fill inside its cell.
-local function edge_tracks(kind)
-	for _, option in pairs(EDGE_OPTIONS) do
-		if module.get(id, option) == kind then return true end
-	end
-	return false
-end
 
 -- The open island is two columns that the summary and the panes share: the
 -- left one runs to `left_w`, the right one begins there. With no left column
@@ -727,17 +767,21 @@ end
 local function layout_summary(width, left_w)
 	local space = shell.space
 	local edge = space.edge
+	local durability, free, total = readout.durability, readout.bags, readout.bags_total
+	-- Colour is for attention: a figure is plain until it needs you.
+	local function stated(value, state)
+		return state and shell.tone(COLORS[state]) .. value .. "|r" or value
+	end
+	local gear_state = durability and (durability <= 10 and "error" or durability <= 30 and "warning") or nil
+	local bags_state = free and (free == 0 and "error" or free <= module.get(id, "low_slots") and "warning") or nil
 	local values = {
-		{ "Money", readout.money_text and vitals.rich(readout.money), readout.money_text, "money" },
-		{ "Position", readout.coords_text, nil, nil, nil, nil, "Coordinates" },
-		{ "Gear", readout.durability_text, nil, "repair", not edge_tracks("durability") and readout.durability and readout.durability / 100 or nil,
-			readout.durability and (readout.durability <= 10 and "error" or readout.durability <= 30 and "warning" or "success"),
-			"Lowest durability" },
-		{ "Bags", readout.bags and (readout.bags_total and (readout.bags .. " / " .. readout.bags_total) or tostring(readout.bags)),
-			nil, "bags",
-			not edge_tracks("bags") and readout.bags and readout.bags_total and readout.bags / readout.bags_total or nil,
-			readout.bags and (readout.bags == 0 and "error" or readout.bags <= module.get(id, "low_slots") and "warning" or "success"),
-			"Free slots" },
+		{ name = "Money", value = readout.money_text and vitals.rich(readout.money), plain = readout.money_text, icon = "money" },
+		{ name = "Position", value = readout.coords_text, tip = "Coordinates" },
+		{ name = "Gear", value = readout.durability_text and stated(readout.durability_text, gear_state), plain = readout.durability_text,
+			icon = "repair", fraction = durability and durability / 100, state = gear_state, tip = "Lowest durability" },
+		{ name = "Bags", value = free and stated(free .. " free", bags_state) .. (total and " " .. shell.tone(COLORS.muted) .. "of " .. total .. "|r" or ""),
+			plain = free and (free .. " free" .. (total and " of " .. total or "")), icon = "bags",
+			fraction = free and total and total > 0 and free / total or nil, state = bags_state, tip = "Free slots" },
 	}
 	local heading_height = math.max(call(left_text, "GetStringHeight") or 0, call(right_text, "GetStringHeight") or 0,
 		call(left_text, "GetLineHeight") or 14, call(right_text, "GetLineHeight") or 14)
@@ -758,11 +802,11 @@ local function layout_summary(width, left_w)
 	local status_width = beside and width - left_w - 2 * edge or width - 2 * edge
 	-- Two columns of cells, unless there is a whole row to spread four across.
 	local per_row = (beside or stacked) and 2 or 4
-	-- Money and position share a row, and the two gauges share the next, so the
-	-- gauges line up whichever readouts are missing.
+	-- Money and position share a row, and gear and bags share the next, so the
+	-- rings line up whichever readouts are missing.
 	local rows_of, shown = per_row == 2 and { {}, {} } or { {} }, {}
 	for index, metric in ipairs(values) do
-		if metric[2] and metric[2] ~= "" and metric_nodes[index] then
+		if metric.value and metric.value ~= "" and metric_nodes[index] then
 			shown[#shown + 1] = index
 			local group = rows_of[per_row == 2 and (index <= 2 and 1 or 2) or 1]
 			group[#group + 1] = index
@@ -781,62 +825,51 @@ local function layout_summary(width, left_w)
 		shell.heading(shell.status_heading, "Status")
 		y = y + (call(shell.status_heading, "GetLineHeight") or 14) + space.near
 	end
-	-- Equal columns of cells. A cell is a small name over its value, so the
-	-- value sits under the word that explains it. A row with a gauge is taller.
+	-- Equal columns of cells. A cell is a mark in a box the size of a ring, then a
+	-- small name over its value, so the text of every cell starts on one edge.
 	local column_width = math.floor((status_width - (per_row - 1) * space.near) / per_row)
 	local label_height = call(metric_nodes[1].label, "GetLineHeight") or 12
 	local value_height = call(metric_nodes[1].value, "GetLineHeight") or 14
-	local text_height = label_height + space.within + value_height
-	local lead = 0
-	for _, index in ipairs(shown) do
-		if values[index][4] then lead = space.icon + space.near end
-	end
-	local row_heights, row_tops, grid_height = {}, {}, 0
+	local text_height = math.max(label_height + space.within + value_height, space.ring)
+	local lead = space.ring + space.near
+	local row_tops, grid_height = {}, 0
 	local placed = {}
 	for row, group in ipairs(grid) do
-		local gauge = false
-		for column, index in ipairs(group) do
-			placed[index] = { row = row, column = column - 1 }
-			if values[index][5] then gauge = true end
-		end
-		row_heights[row] = text_height + (gauge and space.within + space.gauge or 0)
+		for column, index in ipairs(group) do placed[index] = { row = row, column = column - 1 } end
 		row_tops[row] = grid_height
-		grid_height = grid_height + row_heights[row] + (row < #grid and space.near or 0)
+		grid_height = grid_height + text_height + (row < #grid and space.near or 0)
 	end
+	local box_top = math.floor((text_height - space.ring) / 2)
+	local text_top = math.floor((text_height - (label_height + space.within + value_height)) / 2)
 	for index, metric in ipairs(values) do
 		local node = metric_nodes[index]
 		if node and placed[index] then
 			local column, row = placed[index].column, placed[index].row
-			node.tooltip = (metric[7] or metric[1]) .. ": " .. (metric[3] or metric[2])
-			if metric[4] then paint_icon(node.icon, metric[4]) end
-			call(node.icon, metric[4] and "Show" or "Hide")
+			node.tooltip = (metric.tip or metric.name) .. ": " .. (metric.plain or metric.value)
+			if metric.icon then paint_icon(node.icon, metric.icon) end
+			call(node.icon, metric.icon and "Show" or "Hide")
 			call(node.icon, "ClearAllPoints")
-			call(node.icon, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", 0, -math.max(0, math.floor((text_height - space.icon) / 2)))
-			call(node.label, "SetText", metric[1])
+			call(node.icon, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", (space.ring - space.icon) / 2, -(box_top + (space.ring - space.icon) / 2))
+			if metric.fraction then
+				shell.place_ring(node.ring, node.label_parent, 0, box_top)
+				shell.set_ring(node.ring, metric.fraction, metric.state and COLORS[metric.state] or COLORS.secondary)
+			else
+				shell.hide_ring(node.ring)
+			end
+			call(node.label, "SetText", metric.name)
 			call(node.label, "ClearAllPoints")
-			call(node.label, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", lead, 0)
+			call(node.label, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", lead, -text_top)
 			call(node.label, "SetWidth", math.max(1, column_width - lead))
-			call(node.value, "SetText", metric[2])
+			call(node.value, "SetText", metric.value)
 			call(node.value, "ClearAllPoints")
-			call(node.value, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", lead, -(label_height + space.within))
+			call(node.value, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", lead, -(text_top + label_height + space.within))
 			call(node.value, "SetWidth", math.max(1, column_width - lead))
 			call(node.frame, "ClearAllPoints")
 			call(node.frame, "SetPoint", "TOPLEFT", summary, "TOPLEFT", status_left + column * (column_width + space.near), -(y + row_tops[row]))
-			call(node.frame, "SetSize", column_width, row_heights[row])
-			local fill_share = metric[5]
-			if fill_share then
-				for _, part in ipairs({ node.track, node.bar }) do
-					call(part, "ClearAllPoints")
-					call(part, "SetPoint", "BOTTOMLEFT", node.label_parent, "BOTTOMLEFT", 0, 0)
-					call(part, "SetSize", column_width, space.gauge)
-				end
-				call(node.bar, "SetValue", math.max(0, math.min(1, fill_share)))
-				call(node.bar, "SetStatusBarColor", unpack(COLORS[metric[6]] or COLORS.secondary))
-			end
-			call(node.bar, fill_share and "Show" or "Hide")
-			call(node.track, fill_share and "Show" or "Hide")
+			call(node.frame, "SetSize", column_width, text_height)
 			call(node.frame, "Show")
 		elseif node then
+			shell.hide_ring(node.ring)
 			call(node.frame, "Hide")
 		end
 	end
@@ -855,6 +888,7 @@ end
 -- a fraction and a colour, or nil when there is nothing plain to read.
 local RESTED_COLOR = { 0.35, 0.6, 0.95, 1 }
 local QUEST_COLOR = { 1, 0.82, 0.25, 1 }
+shell.quest_color = QUEST_COLOR
 
 local function edge_reading(kind)
 	if kind == "experience" then
@@ -2576,14 +2610,7 @@ local function ensure_frame()
 		call(node.icon, "Hide")
 		node.value = make_label(visual, "LEFT")
 		call(node.value, "SetWordWrap", false)
-		node.track = call(visual, "CreateTexture", nil, "BACKGROUND")
-		call(node.track, "SetColorTexture", 1, 1, 1, 0.12)
-		call(node.track, "Hide")
-		node.bar = CreateFrame("StatusBar", nil, visual)
-		call(node.bar, "EnableMouse", false)
-		call(node.bar, "SetStatusBarTexture", ART .. "island_white.tga")
-		call(node.bar, "SetMinMaxValues", 0, 1)
-		call(node.bar, "Hide")
+		node.ring = shell.make_ring(visual, shell.space.ring)
 		metric_nodes[index] = node
 		hover_target(target, node)
 		-- A gauge cell is part of the background, so a click on it does what a click beside it does.
@@ -2652,7 +2679,8 @@ local function ensure_frame()
 	preview_controls[#preview_controls + 1] = shell.quest_scrollbar.thumb
 	quest_context.ensure_ui({ root = shell.face, content = quest_content, label = make_label, visual = make_visual,
 		head = shell.quest_head, link = shell.make_link, space = shell.space, heading = shell.heading,
-		tones = { primary = COLORS.primary, muted = COLORS.muted }, hover = hover_target, controls = preview_controls, pin = island.pin_quest,
+		tones = { primary = COLORS.primary, muted = COLORS.muted, success = COLORS.success, quest = shell.quest_color },
+		rings = { make = shell.make_ring, place = shell.place_ring, set = shell.set_ring, hide = shell.hide_ring }, hover = hover_target, controls = preview_controls, pin = island.pin_quest,
 		repaint = function() paint() end })
 	preview_group = call(expanded, "CreateAnimationGroup")
 	if preview_group then

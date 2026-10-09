@@ -634,9 +634,11 @@ function quests.route(view)
 	return list, built_from_pin
 end
 
+local OBJECTIVES_SHOWN = 4
+
 function quests.ensure_ui(adapter)
 	if ui then return end
-	ui = { adapter = adapter, page = 1, objectives = {}, meters = {}, plan = {}, segments = {} }
+	ui = { adapter = adapter, page = 1, objectives = {}, marks = {}, plan = {} }
 	ui.capsule = CreateFrame("Frame", "EverlookIslandQuestCapsule", adapter.root)
 	call(ui.capsule, "EnableMouse", false)
 	call(ui.capsule, "SetPoint", "TOPLEFT", adapter.root, "TOPLEFT", 0, 0)
@@ -645,7 +647,7 @@ function quests.ensure_ui(adapter)
 	call(ui.icon, "SetSize", 16, 16)
 	call(ui.icon, "SetPoint", "TOPLEFT", ui.capsule, "TOPLEFT", 8, -8)
 	ui.title = adapter.label(ui.capsule, "LEFT")
-	call(ui.title, "SetPoint", "TOPLEFT", ui.capsule, "TOPLEFT", 30, -9)
+	call(ui.title, "SetPoint", "TOPLEFT", ui.capsule, "TOPLEFT", 34, -9)
 	call(ui.title, "SetMaxLines", 1)
 	ui.badge = adapter.label(ui.capsule, "RIGHT", true)
 	call(ui.badge, "SetPoint", "TOPRIGHT", ui.capsule, "TOPRIGHT", -14, -9)
@@ -665,17 +667,9 @@ function quests.ensure_ui(adapter)
 	end
 	ui.arrow = make_arrow(ui.capsule)
 	call(ui.arrow, "SetPoint", "TOPLEFT", ui.capsule, "TOPLEFT", 8, -8)
-	for index = 1, 10 do
-		local segment = CreateFrame("StatusBar", nil, ui.capsule)
-		call(segment, "EnableMouse", false)
-		call(segment, "SetStatusBarTexture", "Interface\\AddOns\\Everlook_Island\\assets\\island_white.tga")
-		call(segment, "SetStatusBarColor", 0.5, 0.9, 0.65, 1)
-		call(segment, "SetMinMaxValues", 0, 1)
-		local background = call(segment, "CreateTexture", nil, "BACKGROUND")
-		call(background, "SetAllPoints", segment)
-		call(background, "SetColorTexture", 1, 1, 1, 0.15)
-		ui.segments[index] = segment
-	end
+	-- The ring around the arrow fills as the quest does, and goes green when it can be handed in.
+	ui.ring = adapter.rings.make(ui.capsule, adapter.space.ring)
+	adapter.rings.place(ui.ring, ui.capsule, 2, 2)
 	ui.panel = CreateFrame("Frame", "EverlookIslandQuestInspection", adapter.content)
 	call(ui.panel, "EnableMouse", false)
 	call(ui.panel, "SetPoint", "TOPLEFT", adapter.content, "TOPLEFT", 0, 0)
@@ -685,16 +679,13 @@ function quests.ensure_ui(adapter)
 	ui.heading = adapter.label(ui.visual, "LEFT")
 	ui.explanation = adapter.label(ui.visual, "LEFT", true)
 	for index = 1, 20 do ui.objectives[index] = adapter.label(ui.visual, "LEFT", "text") end
-	for index = 1, 20 do
-		local track = call(ui.visual, "CreateTexture", nil, "BACKGROUND")
-		call(track, "SetColorTexture", 1, 1, 1, 0.12)
-		call(track, "Hide")
-		local bar = CreateFrame("StatusBar", nil, ui.visual)
-		call(bar, "EnableMouse", false)
-		call(bar, "SetStatusBarTexture", "Interface\\AddOns\\Everlook_Island\\assets\\island_white.tga")
-		call(bar, "SetMinMaxValues", 0, 1)
-		call(bar, "Hide")
-		ui.meters[index] = { track = track, bar = bar }
+	-- Beside each objective: a check when it is done, a ring that fills when it counts.
+	for index = 1, OBJECTIVES_SHOWN do
+		local check = call(ui.visual, "CreateTexture", nil, "OVERLAY")
+		call(check, "SetAtlas", "common-icon-checkmark")
+		call(check, "SetSize", adapter.space.icon, adapter.space.icon)
+		call(check, "Hide")
+		ui.marks[index] = { check = check, ring = adapter.rings.make(ui.visual, adapter.space.icon) }
 	end
 	-- The two actions sit in the quests heading row, outside the card, so the card scrolls without them.
 	ui.pin = adapter.link(adapter.head, "EverlookIslandPinQuest", "Pin quest", function()
@@ -718,6 +709,17 @@ function quests.ensure_ui(adapter)
 	follow(ui.panel)
 end
 
+-- How far a quest is: all of it when it can be handed in, otherwise the average
+-- of its counting objectives, or nothing when none of them counts.
+function quests.progress(current)
+	if current.ready then return 1 end
+	local total, count = 0, 0
+	for _, objective in ipairs(current.objectives or {}) do
+		if type(objective.progress) == "number" then total, count = total + objective.progress, count + 1 end
+	end
+	if count > 0 then return total / count end
+end
+
 function quests.capsule(view, visible, wide, available, badge, reserve)
 	if not ui then return end
 	local current = view and view.current
@@ -739,26 +741,18 @@ function quests.capsule(view, visible, wide, available, badge, reserve)
 	local width = math.min(available, wide and 300 + badge_width + reserve or math.max(64, distance_width + 50 + badge_width + reserve))
 	call(ui.capsule, "SetSize", width, wide and 36 or 28)
 	call(ui.title, "SetText", current.title)
-	call(ui.title, "SetWidth", math.max(12, width - distance_width - badge_width - reserve - 56))
+	call(ui.title, "SetWidth", math.max(12, width - distance_width - badge_width - reserve - 60))
 	call(ui.title, wide and "Show" or "Hide")
-	local count = math.min(10, #current.objectives)
-	for index, segment in ipairs(ui.segments) do
-		local objective = current.objectives[index]
-		local show = wide and index <= count and objective and objective.progress ~= nil
-		call(segment, show and "Show" or "Hide")
-		if show then
-			local step = (width - 32) / count
-			call(segment, "SetSize", math.max(1, step - 3), 4)
-			call(segment, "ClearAllPoints")
-			call(segment, "SetPoint", "TOPLEFT", ui.capsule, "TOPLEFT", 16 + (index - 1) * step, -27)
-			call(segment, "SetValue", objective.progress)
-		end
+	local rings, tones = ui.adapter.rings, ui.adapter.tones
+	local fraction = quests.progress(current)
+	if wide and fraction then
+		rings.set(ui.ring, fraction, current.ready and tones.success or tones.quest)
+	else
+		rings.hide(ui.ring)
 	end
 	quests.aim()
 	return width, wide and 36 or 28
 end
-
-local OBJECTIVES_SHOWN = 4
 
 -- The game's own objective text usually carries its count ("0/1 Rifle"). Add
 -- ours only when the text does not.
@@ -770,14 +764,14 @@ local function objective_text(objective)
 	return text
 end
 
--- Puts a label at `top` and returns where it ends. The caller adds the gap.
-local function line(label, value, width, top)
-	local edge = ui.adapter.space.edge
+-- Puts a label at `top`, `lead` in from the edge, and returns where it ends. The caller adds the gap.
+local function line(label, value, width, top, lead)
+	local edge, lead = ui.adapter.space.edge, lead or 0
 	call(label, "Show")
 	call(label, "SetText", value)
-	call(label, "SetWidth", width - 2 * edge)
+	call(label, "SetWidth", width - 2 * edge - lead)
 	call(label, "ClearAllPoints")
-	call(label, "SetPoint", "TOPLEFT", ui.visual, "TOPLEFT", edge, -top)
+	call(label, "SetPoint", "TOPLEFT", ui.visual, "TOPLEFT", edge + lead, -top)
 	return top + (call(label, "GetStringHeight") or 14)
 end
 
@@ -796,9 +790,9 @@ function quests.inspection(view, visible, width)
 	for _, link in ipairs({ ui.pin, ui.release }) do call(link, "Hide") end
 	if not view then quests.aim(); return 0 end
 	for _, label in ipairs(ui.objectives) do call(label, "Hide") end
-	for _, meter in ipairs(ui.meters) do
-		call(meter.track, "Hide")
-		call(meter.bar, "Hide")
+	for _, mark in ipairs(ui.marks) do
+		call(mark.check, "Hide")
+		adapter.rings.hide(mark.ring)
 	end
 	for _, node in ipairs(ui.plan) do call(node.frame, "Hide"); node.record = nil end
 	for _, control in ipairs({ ui.pin, ui.release, ui.plan_heading, ui.plan_reason }) do call(control, "Hide") end
@@ -809,31 +803,29 @@ function quests.inspection(view, visible, width)
 		top = line(ui.explanation, view.reason .. ", " .. reason(current), width, top) + space.near
 		-- Four objectives fit in the card. Any more fold into one line.
 		local shown = math.min(#current.objectives, #ui.objectives, OBJECTIVES_SHOWN)
+		local lead = space.icon + space.near
 		for index = 1, shown do
 			local objective = current.objectives[index]
-			-- A finished objective steps back, and only one still to do draws a fill.
+			-- A finished objective steps back and takes a check, one that counts shows how far it is, and the text says the same.
 			call(ui.objectives[index], "SetTextColor", unpack(objective.finished and tones.muted or tones.primary))
-			top = line(ui.objectives[index], objective_text(objective), width, top)
-			local meter = ui.meters[index]
-			if objective.progress ~= nil and not objective.finished then
-				top = top + space.within
-				for _, part in ipairs({ meter.track, meter.bar }) do
-					call(part, "ClearAllPoints")
-					call(part, "SetPoint", "TOPLEFT", ui.visual, "TOPLEFT", edge, -top)
-					call(part, "SetSize", width - 2 * edge, space.rail)
-				end
-				call(meter.track, "Show")
-				call(meter.bar, "SetValue", objective.progress)
-				call(meter.bar, "SetStatusBarColor", 0.68, 0.46, 0.94, 1)
-				call(meter.bar, "Show")
-				top = top + space.rail
+			local line_top = top
+			top = line(ui.objectives[index], objective_text(objective), width, top, lead)
+			local mark = ui.marks[index]
+			local mark_top = line_top + math.floor((top - line_top - space.icon) / 2)
+			if objective.finished then
+				call(mark.check, "ClearAllPoints")
+				call(mark.check, "SetPoint", "TOPLEFT", ui.visual, "TOPLEFT", edge, -mark_top)
+				call(mark.check, "Show")
+			elseif objective.progress ~= nil then
+				adapter.rings.place(mark.ring, ui.visual, edge, mark_top)
+				adapter.rings.set(mark.ring, objective.progress, tones.quest)
 			end
 			top = top + space.near
 		end
 		local hidden = #current.objectives - shown
 		if hidden > 0 then
 			call(ui.objectives[shown + 1], "SetTextColor", unpack(tones.muted))
-			top = line(ui.objectives[shown + 1], "+" .. hidden .. (hidden == 1 and " more objective" or " more objectives"), width, top) + space.near
+			top = line(ui.objectives[shown + 1], "+" .. hidden .. (hidden == 1 and " more objective" or " more objectives"), width, top, lead) + space.near
 		end
 		call(view.pinned and ui.release or ui.pin, "Show")
 	else

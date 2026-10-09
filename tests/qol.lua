@@ -43,6 +43,10 @@ return function(root, check)
 			function frame:SetScrollChild(child) self.scroll_child = child end
 			function frame:SetVerticalScroll(offset) self.scroll_offset = offset end
 			function frame:SetEnabled(enabled) self.enabled = enabled end
+			-- A ring is a cooldown held at a percentage: started that share of 100 seconds ago.
+			function frame:SetCooldown(start, duration) self.cooldown = { start = start, duration = duration } end
+			function frame:SetSwipeColor(...) self.swipe_color = { ... } end
+			function frame:Pause() self.paused = true end
 			function frame:SetAlpha(alpha) self.alpha = alpha end
 			function frame:RegisterEvent(event) self.events[event] = true; return true end
 			function frame:UnregisterEvent(event) self.events[event] = nil end
@@ -2652,7 +2656,7 @@ return function(root, check)
 		local title, count = label(current.title), label("Collect things  1/6")
 		-- 12 edge, a 14 high title, 4 to the explanation, 14 high, 8 to the first objective.
 		check("the card's lines follow the spacing scale: edge, within a group, between siblings",
-			title and title.point[5] == -12 and count.point[5] == -(12 + 14 + 4 + 14 + 8) and count.point[4] == 12)
+			title and title.point[5] == -12 and count.point[5] == -(12 + 14 + 4 + 14 + 8) and count.point[4] == 12 + 16 + 8)
 		check("the pin action sits in the quests heading row, not in the card, and only the one that applies shows",
 			pin.shown ~= false and pin.point[1] == "TOPRIGHT" and pin.parent.shown ~= false and release_button.shown == false)
 		pin.scripts.OnClick(pin)
@@ -2692,12 +2696,15 @@ return function(root, check)
 			end
 		end
 		local done, todo = shown("Slay the first"), shown("Slay the second")
-		local meters = 0
+		local rings, checks = 0, 0
 		for _, frame in ipairs(frames) do
-			if frame.value and frame.shown == true and frame.height == 3 and frame.width and frame.width > 100 then meters = meters + 1 end
+			if frame.cooldown and frame.shown == true and frame.width == 16 then rings = rings + 1 end
+			for _, region in ipairs(frame.regions or {}) do
+				if region.atlas == "common-icon-checkmark" and region.shown ~= false then checks = checks + 1 end
+			end
 		end
-		check("a finished objective steps back and draws no fill, one still to do stays bright and has one",
-			done and todo and done.color[1] < 0.6 and todo.color[1] > 0.9 and meters == 1)
+		check("a finished objective steps back and takes a check, one still to do stays bright and takes a ring",
+			done and todo and done.color[1] < 0.6 and todo.color[1] > 0.9 and rings == 1 and checks == 1)
 		local pin_link
 		for _, frame in ipairs(frames) do if frame.name == "EverlookIslandPinQuest" then pin_link = frame end end
 		check("the pin action shows while a quest is followed", pin_link.shown ~= false)
@@ -2784,6 +2791,26 @@ return function(root, check)
 		state.quests[1].objectives = { { text = "Return", finished = false } }
 		event("QUEST_LOG_UPDATE")
 		check("a quest brings the column and the width back", addon.smart_island.view().width == 720 and pane.shown ~= false)
+	end
+	do
+		local addon, env, event, state, _, _, frames = quest_world()
+		addon.module.set("smart_island", "quest_context", true)
+		local function ring()
+			for _, frame in ipairs(frames) do
+				if frame.cooldown and frame.width == 28 and frame.shown == true then return frame end
+			end
+		end
+		local seen = ring()
+		check("the closed quest capsule has a ring round its arrow, filled to the quest's progress",
+			seen and math.abs((env.GetTime() - seen.cooldown.start) / seen.cooldown.duration - 1 / 6) < 1e-9 and seen.swipe_color[1] == 1)
+		state.selected = 23
+		state.watched = { 23 }
+		event("SUPER_TRACKING_CHANGED")
+		addon.module.set("smart_island", "quest_plan", true)
+		event("QUEST_LOG_UPDATE")
+		local done = ring()
+		check("a quest ready to hand in fills its ring and turns it green",
+			done and (env.GetTime() - done.cooldown.start) / done.cooldown.duration > 0.99 and done.swipe_color[1] < 0.6 and done.swipe_color[2] > 0.8)
 	end
 	do
 		local function near(actual, expected)

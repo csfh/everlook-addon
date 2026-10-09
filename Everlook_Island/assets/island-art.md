@@ -16,3 +16,7 @@ The font roles are `GameFontHighlightMedium` (14-point Roman font) and
 `GameFontHighlight`. Their shared font inheritance preserves font preferences.
 
 Client rendering of these assets still needs a human review in Forever.
+
+`island_ring.tga` is a 64 × 64 ring, 8 thick, with supersampled alpha. It is the
+track of every progress ring and the swipe texture of the cooldown frame that
+fills it, held at a percentage the way the game's own honor ring is.

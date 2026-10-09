@@ -504,17 +504,19 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local addon, env, _, state, _, _, frames = island_world()
 		env.C_Container.GetContainerNumSlots = function(bag) return bag <= 1 and 20 or 0 end
 		addon.module.set("smart_island", "enabled", true)
-		-- With no edge bar on durability or bags, their cells carry the fill.
+		-- Their cells carry a ring that fills to the share.
 		env.everlook_smart_island_key("down")
-		local values = {}
+		local shares = {}
 		for _, frame in ipairs(frames) do
-			if frame.value and frame.shown == true and frame.height == 4 then values[#values + 1] = frame.value end
+			if frame.cooldown and frame.shown == true and frame.paused then
+				shares[#shares + 1] = (env.GetTime() - frame.cooldown.start) / frame.cooldown.duration
+			end
 		end
-		table.sort(values)
-		local found = {}
-		for _, value in ipairs(values) do found[value] = true end
-		check("durability gets a thin fill of its percentage", found[0.5] == true)
-		check("free slots get a thin fill of free over total", found[8 / 40] == true)
+		table.sort(shares)
+		local function near(a, b) return a and math.abs(a - b) < 1e-9 end
+		check("two rings show, one for gear and one for bags", #shares == 2)
+		check("durability's ring fills to its percentage", near(shares[2], 0.5))
+		check("the bags ring fills to the free share", near(shares[1], 8 / 40))
 	end
 	do
 		local addon = island_world()
@@ -626,8 +628,8 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local name, figure = label("Gear"), label("50%")
 		check("a value sits under its name on the cell's left edge",
 			name.point[4] == figure.point[4] and name.point[5] == 0 and figure.point[5] == -(14 + 4))
-		check("the summary ends one edge below the row, with room for the gauges",
-			addon.smart_island.view().summary_height == -money.point[5] + 32 + 8 + 40 + 12)
+		check("the summary ends one edge below the last row",
+			addon.smart_island.view().summary_height == -money.point[5] + 32 + 8 + 32 + 12)
 		check("the clock moved to the header beside the percent", label("14:05    45%") ~= nil and cell("Time") == nil)
 	end
 	do
@@ -638,11 +640,12 @@ return function(root, check, island_world, quest_world, secret_stat)
 		}
 		addon.module.set("smart_island", "quest_context", true)
 		env.everlook_smart_island_key("down")
-		local fills = {}
+		local fills, bars = {}, 0
 		for _, frame in ipairs(frames) do
-			if frame.value and frame.shown == true and frame.height == 3 and frame.width and frame.width > 100 then fills[#fills + 1] = frame.value end
+			if frame.cooldown and frame.shown == true and frame.width == 16 then fills[#fills + 1] = (env.GetTime() - frame.cooldown.start) / frame.cooldown.duration end
+			if frame.value and frame.shown == true and frame.height == 3 and frame.width and frame.width > 100 then bars = bars + 1 end
 		end
-		check("a countable objective gets a thin fill of its progress", #fills == 1 and fills[1] == 1 / 6)
+		check("a countable objective gets a ring that fills to its progress, and no bar", #fills == 1 and math.abs(fills[1] - 1 / 6) < 1e-9 and bars == 0)
 	end
 	do
 		local addon = island_world()
@@ -879,20 +882,54 @@ return function(root, check, island_world, quest_world, secret_stat)
 		check("the closed pill has room for the top and bottom bars", addon.island_rim.length(closed.width, closed.height) ~= nil)
 	end
 	do
+		local addon, env, event, state, _, _, frames = island_world()
+		env.C_Container.GetContainerNumSlots = function(bag) return bag <= 1 and 20 or 0 end
+		addon.module.set("smart_island", "enabled", true)
+		env.everlook_smart_island_key("down")
+		local function text_of(match)
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if type(region.text) == "string" and region.text:find(match, 1, true) and region.shown ~= false then return region.text end
+				end
+			end
+		end
+		local function swipes()
+			local colors = {}
+			for _, frame in ipairs(frames) do
+				if frame.swipe_color and frame.shown == true then colors[#colors + 1] = frame.swipe_color end
+			end
+			return colors
+		end
+		check("a healthy figure is plain white, not green: colour is for attention",
+			text_of("50%") == "50%" and not text_of("|cff80e6a6"))
+		check("bags read as free of the total, with the total set back in the dimmer grey",
+			text_of("8 free") == "8 free |cff8891a0of 40|r")
+		for _, color in ipairs(swipes()) do check("a healthy ring is the neutral grey", color[1] < 0.75) end
+		state.slots[1] = { 10, 50 }
+		event("UPDATE_INVENTORY_DURABILITY")
+		check("a low figure takes the warning yellow", text_of("|cffffd46620%|r") ~= nil)
+		local warned = false
+		for _, color in ipairs(swipes()) do if color[1] == 1 and color[2] > 0.8 and color[3] < 0.5 then warned = true end end
+		check("and so does its ring", warned)
+		state.slots[1] = { 2, 50 }
+		event("UPDATE_INVENTORY_DURABILITY")
+		check("a dire one takes the error red", text_of("|cffff80804%|r") ~= nil)
+	end
+	do
 		local addon, env, _, _, _, _, frames = island_world()
 		env.C_Container.GetContainerNumSlots = function(bag) return bag <= 1 and 20 or 0 end
 		addon.module.set("smart_island", "enabled", true)
 		env.everlook_smart_island_key("down")
-		local function cell_fills()
+		local function rings()
 			local count = 0
 			for _, frame in ipairs(frames) do
-				if frame.value and frame.shown == true and frame.height == 4 then count = count + 1 end
+				if frame.cooldown and frame.shown == true then count = count + 1 end
 			end
 			return count
 		end
-		check("gear and bags carry their own fills when no edge tracks them", cell_fills() == 2)
+		check("gear and bags each carry a ring", rings() == 2)
 		addon.module.set("smart_island", "rim_bottom", "bags")
-		check("a figure on an edge bar does not repeat as a fill in its cell", cell_fills() == 1)
+		check("a figure on an edge bar keeps its ring, since the cell is where its number is", rings() == 2)
 	end
 	do
 		local addon, env, _, _, _, _, frames = island_world()
