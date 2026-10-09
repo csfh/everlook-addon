@@ -23,6 +23,17 @@ local COLORS = {
 	success = { 0.5, 0.9, 0.65, 1 },
 	warning = { 1, 0.83, 0.4, 1 },
 	error = { 1, 0.5, 0.5, 1 },
+	muted = { 136 / 255, 145 / 255, 160 / 255, 1 },
+}
+-- WoW fonts have one weight, so a role is a size and a tone. Display is the
+-- level, a title names a thing, body explains it, a caption names a figure and
+-- a heading names a section. Headings are set in capitals through shell.heading.
+local ROLES = {
+	display = { "GameFontHighlightLarge", COLORS.primary },
+	title = { "GameFontHighlightMedium", COLORS.primary },
+	body = { "GameFontHighlight", COLORS.secondary },
+	caption = { "GameFontHighlightSmall", COLORS.secondary },
+	heading = { "GameFontHighlightSmall", COLORS.muted },
 }
 local ART = "Interface\\AddOns\\Everlook_Island\\assets\\"
 
@@ -125,6 +136,11 @@ local function call(object, method, ...)
 	if type(fn) == "function" then return fn(object, ...) end
 end
 
+-- Headings are set in capitals, which a font cannot do for us.
+shell.heading = function(label, text, marker)
+	call(label, "SetText", (marker or "") .. string.upper(text))
+end
+
 local function screen_size(method)
 	return (call(UIParent, method) or (method == "GetWidth" and OPEN_W + 32 or 1080)) / (module.get(id, "size") / 100)
 end
@@ -203,10 +219,12 @@ local function bound_history()
 	island_inbox.evict(notices, module.get(id, "inbox_size"))
 end
 
-local function make_label(parent, justify, secondary, caption)
-	local label = call(parent, "CreateFontString", nil, "OVERLAY", caption and "GameFontHighlightSmall" or secondary and "GameFontHighlight" or "GameFontHighlightMedium")
+-- The role is a name from ROLES. The older `true` means body, and none means title.
+local function make_label(parent, justify, role)
+	local font, tone = unpack(ROLES[role == true and "body" or role or "title"])
+	local label = call(parent, "CreateFontString", nil, "OVERLAY", font)
 	call(label, "SetJustifyH", justify or "LEFT")
-	call(label, "SetTextColor", unpack(secondary and COLORS.secondary or COLORS.primary))
+	call(label, "SetTextColor", unpack(tone))
 	call(label, "SetWordWrap", true)
 	call(label, "SetNonSpaceWrap", true)
 	call(label, "SetSpacing", 4)
@@ -609,7 +627,8 @@ end
 -- with an hour and a day column, then one footer line.
 local EXPERIENCE_COLUMN = 84
 
--- The table fills the column that starts at `left` and is `width` wide.
+-- The table fills the column that starts at `left` and is `width` wide. Its
+-- heading row names the columns, and a click on it folds the slices.
 local function experience_height(left, width, top)
 	local exp = shell.exp
 	if not exp then return 0 end
@@ -617,36 +636,48 @@ local function experience_height(left, width, top)
 	local data = module.get(id, "feed_experience") and Everlook.island_experience and Everlook.island_experience.table
 		and Everlook.island_experience.table() or nil
 	if not data then
-		for _, label in ipairs({ exp.names, exp.hour, exp.day, exp.footer, exp.toggle }) do call(label, "Hide") end
+		for _, label in pairs(exp) do call(label, "Hide") end
 		return 0
 	end
 	-- Collapsed, the table is its Total row. A click on the heading shows the slices.
 	local expandable = #data.rows > 1
 	local shown_rows = (shell.exp_open or not expandable) and #data.rows or 1
 	local marker = expandable and (shell.exp_open and "v " or "> ") or ""
-	local names, hours, days = { "|cffaeb6c3" .. marker .. "Experience|r" }, { "|cffaeb6c3Hour|r" }, { "|cffaeb6c3Day|r" }
+	local names, hours, days = {}, {}, {}
 	for index = 1, shown_rows do
 		local row = data.rows[index]
-		names[#names + 1] = "|cffaeb6c3" .. row[1] .. "|r"
+		names[#names + 1] = row[1]
 		hours[#hours + 1] = row[2]
 		days[#days + 1] = row[3]
 	end
-	local function place(label, text, x, label_width)
+	local hour_left = left + width - EXPERIENCE_COLUMN * 2 - space.near
+	local day_left = left + width - EXPERIENCE_COLUMN
+	local function place(label, text, x, label_width, y)
 		call(label, "ClearAllPoints")
-		call(label, "SetPoint", "TOPLEFT", summary, "TOPLEFT", x, -top)
+		call(label, "SetPoint", "TOPLEFT", summary, "TOPLEFT", x, -y)
 		call(label, "SetWidth", label_width)
-		call(label, "SetText", text)
+		if label == exp.heading then
+			shell.heading(label, "Experience", marker)
+		elseif label == exp.hour_heading or label == exp.day_heading then
+			shell.heading(label, text)
+		else
+			call(label, "SetText", text)
+		end
 		call(label, "Show")
 	end
-	place(exp.names, table.concat(names, "\n"), left, math.max(40, width - EXPERIENCE_COLUMN * 2 - space.near))
-	place(exp.hour, table.concat(hours, "\n"), left + width - EXPERIENCE_COLUMN * 2 - space.near, EXPERIENCE_COLUMN)
-	place(exp.day, table.concat(days, "\n"), left + width - EXPERIENCE_COLUMN, EXPERIENCE_COLUMN)
-	local row_height = (call(exp.names, "GetLineHeight") or 14) + space.within
-	local height = (shown_rows + 1) * row_height
+	place(exp.heading, "Experience", left, math.max(40, width - EXPERIENCE_COLUMN * 2 - space.near), top)
+	place(exp.hour_heading, "Hour", hour_left, EXPERIENCE_COLUMN, top)
+	place(exp.day_heading, "Day", day_left, EXPERIENCE_COLUMN, top)
+	local heading_height = call(exp.heading, "GetLineHeight") or 12
 	call(exp.toggle, "ClearAllPoints")
 	call(exp.toggle, "SetPoint", "TOPLEFT", summary, "TOPLEFT", left, -top)
-	call(exp.toggle, "SetSize", math.max(1, width), row_height)
+	call(exp.toggle, "SetSize", math.max(1, width), heading_height + space.near)
 	call(exp.toggle, expandable and "Show" or "Hide")
+	local rows_top = top + heading_height + space.near
+	place(exp.names, table.concat(names, "\n"), left, math.max(40, width - EXPERIENCE_COLUMN * 2 - space.near), rows_top)
+	place(exp.hour, table.concat(hours, "\n"), hour_left, EXPERIENCE_COLUMN, rows_top)
+	place(exp.day, table.concat(days, "\n"), day_left, EXPERIENCE_COLUMN, rows_top)
+	local height = heading_height + space.near + shown_rows * ((call(exp.names, "GetLineHeight") or 14) + space.within)
 	if data.footer then
 		call(exp.footer, "ClearAllPoints")
 		call(exp.footer, "SetPoint", "TOPLEFT", summary, "TOPLEFT", left, -(top + height + space.within))
@@ -693,6 +724,10 @@ local function layout_summary(width, left_w)
 	}
 	local heading_height = math.max(call(left_text, "GetStringHeight") or 0, call(right_text, "GetStringHeight") or 0,
 		call(left_text, "GetLineHeight") or 14, call(right_text, "GetLineHeight") or 14)
+	-- The figures on the right are smaller than the level, so their last lines meet.
+	local left_line, right_line = call(left_text, "GetLineHeight") or 14, call(right_text, "GetLineHeight") or 14
+	call(right_text, "ClearAllPoints")
+	call(right_text, "SetPoint", "TOPRIGHT", shell.header_visual, "TOPRIGHT", -edge, -(edge + math.max(0, left_line - right_line - 1)))
 	local rail_top = edge + heading_height + space.near
 	shell.rail_top = rail_top
 	local block_top = (shell.rail_wanted() and rail_top + space.rail or edge + heading_height) + space.section
@@ -722,7 +757,7 @@ local function layout_summary(width, left_w)
 	if #shown > 0 then
 		call(shell.status_heading, "ClearAllPoints")
 		call(shell.status_heading, "SetPoint", "TOPLEFT", summary, "TOPLEFT", status_left, -y)
-		call(shell.status_heading, "SetText", "Status")
+		shell.heading(shell.status_heading, "Status")
 		y = y + (call(shell.status_heading, "GetLineHeight") or 14) + space.near
 	end
 	-- Equal columns of cells. A cell is a small name over its value, so the
@@ -2429,11 +2464,15 @@ local function ensure_frame()
 	call(activity, "SetScript", "OnClick", on_click)
 	preview_controls[#preview_controls + 1] = activity
 	local header_visual = make_visual(summary, true)
-	left_text = make_label(header_visual, "LEFT")
+	shell.header_visual = header_visual
+	left_text = make_label(header_visual, "LEFT", "display")
 	call(left_text, "SetPoint", "TOPLEFT", header_visual, "TOPLEFT", shell.space.edge, -shell.space.edge)
 	right_text = make_label(header_visual, "RIGHT", true)
 	call(right_text, "SetPoint", "TOPRIGHT", header_visual, "TOPRIGHT", -shell.space.edge, -shell.space.edge)
 	shell.exp = {
+		heading = make_label(header_visual, "LEFT", "heading"),
+		hour_heading = make_label(header_visual, "RIGHT", "heading"),
+		day_heading = make_label(header_visual, "RIGHT", "heading"),
 		names = make_label(header_visual, "LEFT", true),
 		hour = make_label(header_visual, "RIGHT", true),
 		day = make_label(header_visual, "RIGHT", true),
@@ -2448,14 +2487,14 @@ local function ensure_frame()
 	call(shell.exp.hour, "SetTextColor", unpack(COLORS.primary))
 	call(shell.exp.day, "SetTextColor", unpack(COLORS.primary))
 	for _, label in pairs(shell.exp) do call(label, "Hide") end
-	shell.status_heading = make_label(header_visual, "LEFT", true)
+	shell.status_heading = make_label(header_visual, "LEFT", "heading")
 	call(shell.status_heading, "Hide")
 	shell.divider = call(header_visual, "CreateTexture", nil, "ARTWORK")
 	call(shell.divider, "SetColorTexture", 1, 1, 1, 0.1)
 	for index = 1, 5 do
 		local target = CreateFrame("Button", nil, summary)
 		local visual = make_visual(target, true)
-		local node = { frame = target, label = make_label(visual, "LEFT", true, true), label_parent = visual }
+		local node = { frame = target, label = make_label(visual, "LEFT", "caption"), label_parent = visual }
 		node.icon = call(visual, "CreateTexture", nil, "OVERLAY")
 		call(node.icon, "SetSize", shell.space.icon, shell.space.icon)
 		call(node.icon, "Hide")
@@ -2484,10 +2523,10 @@ local function ensure_frame()
 	call(shell.quest_rule, "SetColorTexture", 1, 1, 1, 0.1)
 	shell.notice_rule = call(panes_visual, "CreateTexture", nil, "ARTWORK")
 	call(shell.notice_rule, "SetColorTexture", 1, 1, 1, 0.1)
-	shell.quest_heading = make_label(panes_visual, "LEFT", true)
-	call(shell.quest_heading, "SetText", "Quests")
-	shell.notice_heading = make_label(panes_visual, "LEFT", true)
-	call(shell.notice_heading, "SetText", "Notifications")
+	shell.quest_heading = make_label(panes_visual, "LEFT", "heading")
+	shell.heading(shell.quest_heading, "Quests")
+	shell.notice_heading = make_label(panes_visual, "LEFT", "heading")
+	shell.heading(shell.notice_heading, "Notifications")
 	shell.quest_empty = make_label(panes_visual, "LEFT", true)
 	call(shell.quest_empty, "SetText", "Turn on Show active quest in the Smart island settings to follow a quest here.")
 	call(shell.quest_empty, "Hide")

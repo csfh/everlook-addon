@@ -3962,7 +3962,7 @@ return function(root, check)
 		local function status_top()
 			for _, object in ipairs(frames) do
 				for _, region in ipairs(object.regions or {}) do
-					if region.text == "Status" and region.shown ~= false then return -region.point[5] end
+					if region.text == "STATUS" and region.shown ~= false then return -region.point[5] end
 				end
 			end
 		end
@@ -5486,7 +5486,7 @@ return function(root, check)
 			local function hour_label()
 				for _, object in ipairs(ui_frames) do
 					for _, region in ipairs(object.regions or {}) do
-						if region.text and region.text:find("Hour|r", 1, true) then return region end
+						if region.text == "HOUR" and region.shown ~= false then return region end
 					end
 				end
 			end
@@ -5505,16 +5505,16 @@ return function(root, check)
 			ui_env.everlook_smart_island_key("down")
 			local label, money = hour_label(), money_chip()
 			check("the open island places the hour above money",
-				label and label.shown ~= false and label.text:find("Hour|r", 1, true)
+				label and label.shown ~= false and label.text == "HOUR"
 				and money and money.point and label.point and label.point[5] > money.point[5])
 			local status, quests_heading, notices_heading, names, quest_pane, notice_pane
 			for _, object in ipairs(ui_frames) do
 				for _, region in ipairs(object.regions or {}) do
 					if region.shown ~= false then
-						if region.text == "Status" then status = region end
-						if region.text == "Quests" then quests_heading = region end
-						if region.text == "Notifications" then notices_heading = region end
-						if region.text and region.text:find("Experience|r", 1, true) then names = region end
+						if region.text == "STATUS" then status = region end
+						if region.text == "QUESTS" then quests_heading = region end
+						if region.text == "NOTIFICATIONS" then notices_heading = region end
+						if region.text == "> EXPERIENCE" then names = region end
 					end
 				end
 				if object.scroll_child and object.point then

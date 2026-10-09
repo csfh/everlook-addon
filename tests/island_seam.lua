@@ -605,16 +605,21 @@ return function(root, check, island_world, quest_world, secret_stat)
 			end
 		end
 		local function cell(text) local found = label(text); return found and found.parent and found.parent.parent end
-		check("the open summary has a Status heading", label("Status") ~= nil)
+		check("the open summary has a Status heading", label("STATUS") ~= nil)
 		local money, gear, bags = cell("Money"), cell("Gear"), cell("Bags")
 		-- Worked from the scale by hand: edge 12, a 14 high level line, 16 to
 		-- Status, 14 high Status, 8 to the cells. The XP rail is not drawn here,
 		-- because the top edge bar already shows experience, so it takes no room.
-		local status = label("Status")
+		local status = label("STATUS")
 		check("the Status heading is a section gap below the level line, with no room kept for a hidden rail",
 			-status.point[5] == 12 + 14 + 16)
 		-- With no Experience table to sit beside, the cells share one row across
 		-- the whole width: 696 wide, three gaps of 8, so four columns of 168.
+		local level, caption = label("Level 12"), label("Gear")
+		check("the level is the largest type, a heading is small and dimmer than a caption, and neither is body size",
+			level.font == "GameFontHighlightLarge" and status.font == "GameFontHighlightSmall" and caption.font == "GameFontHighlightSmall"
+			and status.color[1] < caption.color[1] and status.color[1] > 0.4)
+		check("the three text tones are white, grey and a dimmer grey", level.color[1] > 0.9 and caption.color[1] > 0.6 and caption.color[1] < 0.75)
 		check("the cells share one width, one row and the summary's left edge",
 			money.width == 168 and gear.width == 168 and bags.width == 168 and money.point[4] == 12
 			and gear.point[5] == money.point[5] and bags.point[5] == money.point[5])
@@ -782,17 +787,17 @@ return function(root, check, island_world, quest_world, secret_stat)
 		state.xp = state.xp + 90
 		event("PLAYER_XP_UPDATE")
 		env.everlook_smart_island_key("down")
-		local function names()
+		local function text_of(match)
 			for _, frame in ipairs(frames) do
 				for _, region in ipairs(frame.regions or {}) do
-					if type(region.text) == "string" and region.text:find("Experience|r", 1, true) and region.shown ~= false then return region.text end
+					if type(region.text) == "string" and region.text:find(match, 1, true) and region.shown ~= false then return region.text end
 				end
 			end
 		end
-		check("experience starts folded to its Total row", names() and names():find("> Experience", 1, true) and not names():find("Other", 1, true))
+		check("experience starts folded to its Total row", text_of("> EXPERIENCE") and text_of("Total") and not text_of("Other"))
 		check("a click on the heading opens the slices", addon.smart_island.toggle_experience() == true
-			and names():find("v Experience", 1, true) and names():find("Other", 1, true))
-		check("and another folds them again", addon.smart_island.toggle_experience() == false and not names():find("Other", 1, true))
+			and text_of("v EXPERIENCE") and text_of("Other"))
+		check("and another folds them again", addon.smart_island.toggle_experience() == false and not text_of("Other") and text_of("> EXPERIENCE"))
 	end
 	do
 		local addon, env, _, _, _, _, frames = island_world()
