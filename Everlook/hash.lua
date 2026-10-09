@@ -150,33 +150,72 @@ end
 if compress ~= compress_portable then
 	local state = initial_state()
 	compress(state, "abc\128" .. string.rep("\0", 52) .. "\0\0\0\0\0\0\0\24", 1, 64)
-	if state[1] ~= 0xba7816bf or state[2] ~= 0x8f01cfea or state[5] ~= 0xf61f2001 or state[8] ~= 0xf20015ad then
+	if state[1] ~= 0xba7816bf or state[2] ~= 0x8f01cfea or state[5] ~= 0xb00361a3 or state[8] ~= 0xf20015ad then
 		compress = compress_portable
 	end
 end
 
--- Whole blocks are read in place. Only the tail is copied to be padded, so a
--- large message is never copied to be hashed. `prefix` counts bytes already
--- fed to the state, as when HMAC feeds its key block first.
-local function finish(state, message, prefix)
+-- A hasher walks a message a few blocks at a time, so a long one can be
+-- hashed across frames. Whole blocks are read in place and only the tail is
+-- copied to be padded. `state` and `prefix` carry on from bytes already
+-- hashed, as HMAC does after its key block.
+local hasher = {}
+hasher.__index = hasher
+
+local function begin(message, state, prefix)
 	local length = #message
-	local whole = length - length % 64
-	if whole > 0 then
-		compress(state, message, 1, whole - 63)
+	local copy = initial_state()
+	if state then
+		for index = 1, 8 do
+			copy[index] = state[index]
+		end
 	end
-	local bits = (prefix + length) * 8
-	local tail = message:sub(whole + 1) .. "\128" .. string.rep("\0", (55 - length) % 64)
+	return setmetatable({
+		state = copy,
+		message = message,
+		length = length,
+		whole = length - length % 64,
+		at = 1,
+		prefix = prefix or 0,
+		done = false,
+	}, hasher)
+end
+
+-- Hashes up to `blocks` blocks. True once the whole message is hashed.
+function hasher:step(blocks)
+	if self.done then
+		return true
+	end
+	if self.at <= self.whole then
+		local last = self.whole - 63
+		if blocks and self.at + (blocks - 1) * 64 < last then
+			last = self.at + (blocks - 1) * 64
+		end
+		compress(self.state, self.message, self.at, last)
+		self.at = last + 64
+		if self.at <= self.whole then
+			return false
+		end
+	end
+	local bits = (self.prefix + self.length) * 8
+	local tail = self.message:sub(self.whole + 1) .. "\128" .. string.rep("\0", (55 - self.length) % 64)
 		.. word_bytes(floor(bits / modulus)) .. word_bytes(bits)
-	compress(state, tail, 1, #tail - 63)
+	compress(self.state, tail, 1, #tail - 63)
+	self.done = true
+	return true
+end
+
+function hasher:digest()
+	self:step()
 	local digest = {}
 	for index = 1, 8 do
-		digest[index] = word_bytes(state[index])
+		digest[index] = word_bytes(self.state[index])
 	end
 	return table.concat(digest)
 end
 
 local function sha256_bytes(message)
-	return finish(initial_state(), message, 0)
+	return begin(message):digest()
 end
 
 local function hex(bytes)
@@ -187,11 +226,26 @@ end
 
 Everlook.hash = {}
 
+-- Whether the bit library carries the hash. Tests read it to know which path they ran.
+Everlook.hash.fast = compress ~= compress_portable
+
 function Everlook.hash.sha256(message)
 	return hex(sha256_bytes(message))
 end
 
-function Everlook.hash.hmac_sha256(key, message)
+-- A SHA-256 hashed a few blocks at a time. `step(blocks)` returns true when
+-- done, and `hex()` then gives the digest.
+function Everlook.hash.stream(message)
+	local walker = begin(message)
+	function walker:hex()
+		return hex(self:digest())
+	end
+	return walker
+end
+
+-- The state after a key's two pad blocks, kept so a message is signed without
+-- hashing the key again. A key over 64 bytes is hashed first, as HMAC says.
+function Everlook.hash.hmac_key(key)
 	if #key > 64 then
 		key = sha256_bytes(key)
 	end
@@ -201,8 +255,37 @@ function Everlook.hash.hmac_sha256(key, message)
 		inner[index] = string.char(bxor(key:byte(index), 0x36))
 		outer[index] = string.char(bxor(key:byte(index), 0x5c))
 	end
-	local state = initial_state()
-	compress(state, table.concat(inner), 1, 1)
-	local inner_digest = finish(state, message, 64)
-	return hex(sha256_bytes(table.concat(outer) .. inner_digest))
+	local inner_state, outer_state = initial_state(), initial_state()
+	compress(inner_state, table.concat(inner), 1, 1)
+	compress(outer_state, table.concat(outer), 1, 1)
+	return { inner = inner_state, outer = outer_state }
+end
+
+-- An HMAC-SHA256 that is computed a few blocks at a time. `step` returns true
+-- once the signature is ready, and `hex` then gives it.
+local signer = {}
+signer.__index = signer
+
+function Everlook.hash.hmac_stream(pads, message)
+	return setmetatable({ pads = pads, inner = begin(message, pads.inner, 64) }, signer)
+end
+
+function signer:step(blocks)
+	if self.signature then
+		return true
+	end
+	if not self.inner:step(blocks) then
+		return false
+	end
+	self.signature = hex(begin(self.inner:digest(), self.pads.outer, 64):digest())
+	return true
+end
+
+function signer:hex()
+	self:step()
+	return self.signature
+end
+
+function Everlook.hash.hmac_sha256(key, message)
+	return Everlook.hash.hmac_stream(Everlook.hash.hmac_key(key), message):hex()
 end

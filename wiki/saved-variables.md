@@ -12,7 +12,7 @@ The client stores it at:
 
 Changing a key on `EverlookDB` in Lua updates memory immediately. The client writes the file when you `/reload`, log out, disconnect, or quit. `PLAYER_LOGOUT` fires immediately before that write. There is no API to flush the file on demand.
 
-So Everlook packs and signs the world document in `PLAYER_LOGOUT` and at no other time. Packing walks every row, and the HMAC runs in Lua: on a world of 1,500 rows one pass took about 60 ms, and on 10,000 rows about 450 ms. An earlier version did this every five seconds while new rows arrived, which froze the game on that beat. Doing it sooner only costs frames, since nothing reads the string before the client writes the file.
+So Everlook keeps the signed upload up to date as it goes, in pieces, and finishes it in `PLAYER_LOGOUT`. Packing every row and signing the result in one pass cost 60 ms on 1,500 rows and about 450 ms on 10,000, and it grew with everything ever collected. An earlier version did that every five seconds while new rows arrived, which froze the game on that beat. The upload is now a set of segments (see Shape). A sighting marks the one segment that holds the row, and a segment is packed, compressed and hashed about a millisecond a frame once it has been quiet for 15 seconds. Nothing runs in combat, and the budget halves under 30 frames a second. Logout encodes what is left within 400 ms and names anything it could not finish in `EverlookDB.staleSegments`, which goes first next session. What it costs follows what changed in the session, not how much has been collected.
 
 The table is available inside `EventUtil.ContinueOnAddOnLoaded`. During the initial file execution it is still nil, so `minimap.lua` assigns it there:
 
@@ -22,7 +22,7 @@ EverlookDB = EverlookDB or {}
 
 ## Shape
 
-The collection is `EverlookDB.raw`, a table of rows. The signed upload is `EverlookDB.world` with `signature` beside it. The minimap angle stays with them.
+The collection is `EverlookDB.raw`, a table of rows. The signed upload is `EverlookDB.segments` with `manifest`, `signer` and `signature` beside it. The minimap angle stays with them.
 
 ```lua
 EverlookDB = {
@@ -31,15 +31,23 @@ EverlookDB = {
 	},
 	raw = {
 		npcs = {
-			[448] = { id = 448, name = "Hogger" },
+			[448] = { id = 448, name = "Hogger", _seq = 12 },
 		},
 	},
-	world = "1c....",
+	segments = { ["npcs.0.0"] = "2c....", ["drops.0.0"] = "2c...." },
+	manifest = "2;1789506741;66263;enUS;120005;0.30.0;drops.0.0=388:ab12...,npcs.0.0=40:cd34...",
+	signer = "...",
 	signature = "...",
 }
 ```
 
-`world` is `1c.` or `1r.` plus Base64. `1c.` is raw DEFLATE of CBOR. `1r.` is the same CBOR without compression, used when compression does not make the string shorter. The site turns that document back into quest, item, drop, and NPC rows. `signature` is the HMAC of that string.
+A segment is a run of one bucket's rows in the order they were first collected, which `_seq` on each row records. `_seq` is not a column, so it is never uploaded. Its name is `<bucket>.0.<position>`, and the second part says how rows are grouped. A segment holds 24 to 1,024 rows depending on the bucket, so it packs to about 30 KB. It is `2c.` or `2r.` plus Base64 of a CBOR map `{v = 2, b = bucket, r = rows, s = strings}`. `2c.` is raw DEFLATE, and `2r.` is the same CBOR when compression does not make it shorter. The rows are packed as in the old whole document, with a string table of their own. A `sources` list is never interned, because the site reads a number there as one of five fixed names.
+
+`manifest` lists every segment with its row count and the SHA-256 of its stored text. `signature` is the HMAC of the manifest, so it covers every segment through its digest. The manifest, the segments and the signature are swapped in together once everything staged is hashed, so what the game saves always agrees with itself. A new token signs the manifest again and leaves the segments alone.
+
+Before the first full set of segments is signed, an older `world` and its `signature` stay where they are. The commit that writes `manifest` removes `world` in the same step. A client that cannot encode keeps writing `world` as before, and the site reads either. If a `world` and a `manifest` are both present, an older addon ran in between and the manifest is dropped. The site reads a file by where its keys sit, so nothing in `raw` is taken for them.
+
+`EverlookDB.flushStats` holds how many segments were encoded, how long each stage took in total (`stageMs`), how long logout took and how many segments it left.
 
 `minimap.angle` is written when the button is dragged. The button texture is always `assets/logo.tga`.
 
@@ -47,7 +55,7 @@ EverlookDB = {
 
 On addon load, `EverlookDB.raw` becomes the row table. A later sighting merges into those rows. The load line reports the count.
 
-Logout packs `raw` into `world` when the rows changed, then signs that string. The addon leaves `world` unread. A logout with no new sighting leaves the signed string where it is.
+On load, every row gets its place in a segment, and the manifest says which segments are already saved. A segment whose row count differs from the manifest, or that logout left unfinished, is queued. A saved world with no manifest queues them all, and they are packed in the background over the first minutes of play.
 
 The world document includes the character's current talent rank. Classic talents store the rank from `GetTalentInfo`. Retail nodes store `node.currentRank`. `world.lua` packs both into the talents bucket. With a profession window open, `recipes.lua` records the recipe ids from `C_TradeSkillUI.GetAllRecipeIDs()`.
 

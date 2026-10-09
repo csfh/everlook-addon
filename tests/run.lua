@@ -2380,6 +2380,7 @@ end)()
 	local fast = load_addon().hash
 	_G.bit = nil
 	local slow = load_addon().hash
+	check("the bit library carries the hash, and a missing one does not", fast.fast == true and slow.fast == false)
 	check("SHA-256 abc with a bit library", fast.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
 	check("SHA-256 empty with a bit library", fast.sha256("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
 	check("SHA-256 multi-block with a bit library", fast.sha256("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") == "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1")
@@ -2398,18 +2399,47 @@ end)()
 		end
 	end
 	check("both hash paths agree at every padding edge", agree)
+	-- A long message can be hashed a few blocks at a time.
+	local streams = true
+	for _, lib in ipairs({ fast, slow }) do
+		for _, length in ipairs({ 0, 1, 55, 56, 63, 64, 65, 127, 128, 129, 400, 1000 }) do
+			local body = string.rep("q", length)
+			for _, blocks in ipairs({ 1, 2, 5, 1000 }) do
+				local walker = lib.stream(body)
+				local steps = 0
+				while not walker:step(blocks) do
+					steps = steps + 1
+				end
+				if walker:hex() ~= lib.sha256(body) or steps > length / 64 / blocks + 1 then
+					streams = false
+				end
+				local signer = lib.hmac_stream(lib.hmac_key("secret"), body)
+				while not signer:step(blocks) do end
+				if signer:hex() ~= lib.hmac_sha256("secret", body) then
+					streams = false
+				end
+			end
+		end
+	end
+	check("a stepped hash equals the one-shot hash at every length and step size", streams)
+	check("a stepped HMAC matches the RFC vector", (function()
+		local signer = fast.hmac_stream(fast.hmac_key(string.rep("\170", 131)), "Test Using Larger Than Block-Size Key - Hash Key First")
+		while not signer:step(1) do end
+		return signer:hex() == "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"
+	end)())
 	-- A bit library that does not behave must not reach the signature.
 	_G.bit = { band = shim.band, bor = shim.bor, bxor = function(left, right) return shim.bxor(left, right) + 1 end, bnot = shim.bnot, lshift = shim.lshift, rshift = shim.rshift }
 	local broken = load_addon().hash
 	_G.bit = nil
-	check("a misbehaving bit library falls back to the portable hash", broken.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" and broken.hmac_sha256("Jefe", "what do ya want for nothing?") == "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")
+	check("a misbehaving bit library falls back to the portable hash", broken.fast == false and broken.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" and broken.hmac_sha256("Jefe", "what do ya want for nothing?") == "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")
 	-- bit32 hands back unsigned numbers.
 	_G.bit32 = { band = function(a, b) return shim.band(a, b) % range end, bor = function(a, b) return shim.bor(a, b) % range end, bxor = function(a, b) return shim.bxor(a, b) % range end, bnot = function(a) return shim.bnot(a) % range end, lshift = function(a, n) return shim.lshift(a, n) % range end, rshift = function(a, n) return shim.rshift(a, n) % range end }
 	local unsigned = load_addon().hash
 	_G.bit32 = nil
-	check("an unsigned bit library hashes the same", unsigned.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" and unsigned.hmac_sha256(string.rep("\170", 131), "Test Using Larger Than Block-Size Key - Hash Key First") == "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54")
+	check("an unsigned bit library hashes the same", unsigned.fast == true and unsigned.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" and unsigned.hmac_sha256(string.rep("\170", 131), "Test Using Larger Than Block-Size Key - Hash Key First") == "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54")
 end)()
 
+assert(loadfile(root .. "/tests/segments.lua"))()(root, check)
 assert(loadfile(root .. "/tests/module.lua"))()(root, check)
 assert(loadfile(root .. "/tests/qol.lua"))()(root, check)
 assert(loadfile(root .. "/tests/waves.lua"))()(root, check)

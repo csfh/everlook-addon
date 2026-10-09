@@ -34,6 +34,16 @@ local function signer_for(secret)
 	return signer_value
 end
 
+-- The token and the short name the server knows it by, without signing
+-- anything. Nil until a token is placed.
+function Everlook.config.credentials()
+	local secret = secret_value()
+	if type(secret) ~= "string" or secret == "" then
+		return nil
+	end
+	return secret, signer_for(secret)
+end
+
 function Everlook.config.sign(payload)
 	local db = saved()
 	local secret = secret_value()
@@ -81,7 +91,7 @@ function Everlook.config.describe()
 		return status, "Signed \194\183 " .. (Everlook.config.fingerprint() or ""), 0.3, 0.9, 0.4
 	elseif status == "pending" then
 		local code = signer_for(secret_value()):sub(1, 8)
-		return status, "Token " .. code .. " loaded. Saves are signed when you log out or reload.", 1, 0.82, 0.2
+		return status, "Token " .. code .. " loaded. Saves are signed as you play, and when you log out or reload.", 1, 0.82, 0.2
 	end
 	return status, "Not signed. Place the token in the Everlook app.", 1, 0.3, 0.3
 end

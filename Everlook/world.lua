@@ -12,6 +12,9 @@ local rows = {}
 local dirty = false
 -- Tallies ride along on the next real edit, or on logout when the file is written.
 local counts_dirty = false
+-- Moves on every counter or pin count that changes without the row "changing",
+-- so a store can tell the segment holding it that it has new numbers to save.
+local bumped = 0
 local session_new = 0
 local session_reported = 0
 local row_total = 0
@@ -469,6 +472,7 @@ local function merge(target, source, plain)
 				if value ~= 0 then
 					target[key] = target[key] + value
 					counts_dirty = true
+					bumped = bumped + 1
 				end
 			elseif key == "locations" then
 				if has_location(value) then
@@ -478,6 +482,7 @@ local function merge(target, source, plain)
 						changed = true
 					elseif kind == "seen" then
 						counts_dirty = true
+						bumped = bumped + 1
 					end
 				end
 			elseif key == "sources" then
@@ -759,6 +764,9 @@ function Everlook.world.reset()
 	if Everlook.location and Everlook.location.forget then
 		Everlook.location.forget()
 	end
+	if Everlook.segments then
+		Everlook.segments.reset()
+	end
 end
 
 function Everlook.world.session_new()
@@ -978,9 +986,17 @@ function Everlook.world.store(bucket, row)
 			giver, turn_in = existing.giverId, existing.turnInId
 		end
 	end
+	local bumps = bumped
 	local changed = merge(existing, row, PLAIN_VALUES[bucket])
 	if changed then
 		dirty = true
+	end
+	if Everlook.segments then
+		if created then
+			Everlook.segments.add(bucket, existing)
+		elseif changed or bumped ~= bumps then
+			Everlook.segments.touch(existing)
+		end
 	end
 	if created then
 		session_new = session_new + 1
@@ -1048,7 +1064,11 @@ function Everlook.world.count(bucket, row)
 		if COUNTERS[field] and type(amount) == "number" and amount ~= 0 and usable(amount) then
 			existing[field] = existing[field] + amount
 			counts_dirty = true
+			bumped = bumped + 1
 		end
+	end
+	if Everlook.segments then
+		Everlook.segments.touch(existing)
 	end
 end
 
@@ -1478,6 +1498,20 @@ local function replace_strings(value, indexes, named)
 	end
 end
 
+-- What the segment encoder shares with this file. Not for other addons.
+Everlook.world.internal = {
+	rows = function()
+		return rows
+	end,
+	pack_row = pack_row,
+	count_strings = count_strings,
+	replace_strings = replace_strings,
+	null = NULL,
+	columns = COLUMNS,
+	keys = KEYS,
+	buckets = BUCKETS,
+}
+
 function Everlook.world.document()
 	local build, toc = "", 0
 	if GetBuildInfo then
@@ -1604,6 +1638,9 @@ function Everlook.world.reindex()
 		end
 	end
 	collected_version = collected_version + 1
+	if Everlook.segments then
+		Everlook.segments.rebuild()
+	end
 end
 
 function Everlook.world.load_saved()
@@ -1622,6 +1659,14 @@ function Everlook.world.flush(include_counts)
 	-- raw is the collection. world and its signature are the signed upload.
 	if EverlookDB.raw ~= nil or Everlook.world.row_count() > 0 then
 		EverlookDB.raw = rows
+	end
+	-- Segments are packed and signed as they change, so logout only finishes
+	-- what is left. The whole world is packed in one piece only where the
+	-- client cannot encode, or where segments are not loaded.
+	if Everlook.segments and Everlook.segments.finish() then
+		EverlookDB.worldRows = Everlook.world.row_count()
+		EverlookDB.worldBytes = Everlook.segments.bytes()
+		return
 	end
 	if not dirty and not (include_counts and counts_dirty) then
 		if include_counts then
