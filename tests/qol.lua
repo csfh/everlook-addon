@@ -1800,11 +1800,13 @@ return function(root, check)
 		widget.TitleText = label()
 		widget.portrait = { SetTexture = function() end }
 		widget.CreateFontString = label
-		for _, method in ipairs({ "SetFrameStrata", "SetClampedToScreen", "SetMovable", "EnableMouse", "RegisterForDrag", "StartMoving", "StopMovingOrSizing", "SetWidth" }) do
+		for _, method in ipairs({ "SetFrameStrata", "SetClampedToScreen", "SetMovable", "EnableMouse", "RegisterForDrag", "StartMoving", "StopMovingOrSizing", "SetWidth", "SetSize", "SetPoint" }) do
 			widget[method] = function() end
 		end
 		function widget:SetShown(value) self.shown = value end
 		function widget:IsShown() return self.shown end
+		function widget:SetText(text) self.text = text end
+		function widget:SetEnabled(value) self.enabled = value end
 		function widget:SetDataProvider(entries)
 			self.entries = entries
 			local initializer = self.view and self.view.initializer
@@ -1842,7 +1844,22 @@ return function(root, check)
 		collected_buckets = function()
 			return { { bucket = "npcs", label = "Creatures", count = 1 } }
 		end,
-		collected_records = function()
+		page_count = function()
+			return 3
+		end,
+		page_range = function(_, page)
+			return page * 100, page < 3 and page * 100 + 99 or nil, page == 2 and 2 or 1
+		end,
+		page_for_id = function(_, id)
+			return id >= 200 and (id >= 300 and 3 or 2) or 1
+		end,
+		page_records = function(_, page)
+			if page == 2 then
+				return { { id = "210", text = "Boar", key = "boar" }, { id = "240", text = "Wolf", key = "wolf" } }
+			end
+			if page == 3 then
+				return { { id = "330", text = "Bear", key = "bear" } }
+			end
 			return { { id = "448", text = "Hogger", key = "hogger" } }
 		end,
 		row = function(bucket, id)
@@ -1867,7 +1884,39 @@ return function(root, check)
 	check("the selected record shows its map location", frames3[before + 4].buttons[1].detail.text == "Elwynn Forest 50.0, 25.0 giver")
 	addon3.world.collected_buckets = function() return {} end
 	browser:Show()
-	check("showing the page again refreshes the browser", not frames3[before + 2].shown and #frames3 == before + 6)
+	check("showing the page again refreshes the browser", not frames3[before + 2].shown and #frames3 == before + 8)
+	do
+		addon3.world.collected_buckets = function() return { { bucket = "npcs", label = "Creatures", count = 4 } } end
+		browser:Show()
+		local records_box, previous, following = frames3[before + 4], frames3[before + 7], frames3[before + 8]
+		check("the browser opens on the first page and names it", previous.text == "<" and following.text == ">" and previous.enabled == false and following.enabled == true)
+		following.scripts.OnClick()
+		check("next shows the next page's rows and no others", #records_box.entries == 2 and records_box.entries[1].text == "Boar" and previous.enabled == true)
+		following.scripts.OnClick()
+		check("the last page has nothing after it", #records_box.entries == 1 and records_box.entries[1].text == "Bear" and following.enabled == false)
+		previous.scripts.OnClick()
+		previous.scripts.OnClick()
+		check("previous goes back to the first page", records_box.entries[1].text == "Hogger" and previous.enabled == false)
+		local search_box = frames3[before + 6]
+		search_box.GetText = function() return "240" end
+		search_box.scripts.OnTextChanged(search_box)
+		check("a number jumps to the page that holds that id", records_box.entries[1].text == "Boar")
+		search_box.GetText = function() return "wol" end
+		search_box.scripts.OnTextChanged(search_box)
+		check("a name narrows the rows of the page being looked at", #records_box.entries == 1 and records_box.entries[1].text == "Wolf")
+		search_box.GetText = function() return "bear" end
+		search_box.scripts.OnTextChanged(search_box)
+		check("a name on another page is not found by typing alone", #records_box.entries == 0)
+		search_box.scripts.OnEnterPressed(search_box)
+		local scanner = browser.scripts.OnUpdate
+		check("enter looks in every page, a few at a time", type(scanner) == "function" or #records_box.entries == 1)
+		while browser.scripts.OnUpdate do
+			browser.scripts.OnUpdate()
+		end
+		check("the search finds the row on any page and stops", #records_box.entries == 1 and records_box.entries[1].text == "Bear" and browser.scripts.OnUpdate == nil)
+		browser.scripts.OnHide()
+		check("hiding the page ends a search", browser.scripts.OnUpdate == nil)
+	end
 
 
 	-- Radial wheel: geometry and drawing.

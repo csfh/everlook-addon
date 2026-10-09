@@ -746,6 +746,62 @@ function Everlook.world.collected_records(bucket)
 	return records
 end
 
+-- The collection browsed a page at a time, so nothing has to read all of it.
+-- Without pages the rows are one page.
+function Everlook.world.page_count(bucket)
+	if not paged then
+		return 1
+	end
+	return math.max(1, #Everlook.pages.pages(bucket))
+end
+
+-- The first key a page holds, the last it can hold (nil for the last page), and its rows.
+function Everlook.world.page_range(bucket, index)
+	if not paged then
+		return 0, nil, bucket_totals[bucket] or 0
+	end
+	local list = Everlook.pages.pages(bucket)
+	local page = list[index]
+	if not page then
+		return 0, nil, 0
+	end
+	local following = list[index + 1]
+	return page.start, following and following.start - 1 or nil, page.count
+end
+
+function Everlook.world.page_for_id(bucket, id)
+	if not paged or type(id) ~= "number" then
+		return 1
+	end
+	return Everlook.pages.index_of(bucket, id)
+end
+
+-- A page's rows as listing records, sorted by name. Kept until the page changes.
+function Everlook.world.page_records(bucket, index)
+	if not paged then
+		return Everlook.world.collected_records(bucket)
+	end
+	local page = Everlook.pages.pages(bucket)[index]
+	if not page then
+		return {}
+	end
+	local rows_of_page = Everlook.pages.page_rows(page)
+	if page.records and page.records_version == page.version and page.records_names == collected_version then
+		return page.records
+	end
+	local records = {}
+	for _, row in pairs(rows_of_page) do
+		local text = record_text(bucket, row)
+		local key = row_key(bucket, row)
+		if text and key ~= nil then
+			records[#records + 1] = { text = text, key = text:lower(), id = tostring(key) }
+		end
+	end
+	table.sort(records, compare_records)
+	page.records, page.records_version, page.records_names = records, page.version, collected_version
+	return records
+end
+
 -- Counts come from the running totals, so asking costs nothing.
 function Everlook.world.collected_buckets()
 	local listed = {}

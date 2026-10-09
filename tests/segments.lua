@@ -667,6 +667,35 @@ return function(root, check)
 		check("a tooltip skips an entry whose row is missing", #later.world.lookup("item", 20) == 0)
 	end
 
+	-- The collection can be browsed a page at a time.
+	do
+		local addon, env = open({})
+		for id = 1, 130 do
+			addon.world.store("npcs", { id = id * 10, name = (id % 2 == 0 and "Zed " or "Abe ") .. id })
+		end
+		env.clock_now = 5000
+		settle(addon)
+		addon.world.flush(true)
+		local later = open(env.EverlookDB)
+		local pages = later.world.page_count("npcs")
+		check("a bucket is a short list of pages", pages >= 3 and pages == #later.pages.pages("npcs"))
+		local first, last, count = later.world.page_range("npcs", 2)
+		check("a page names the ids it covers", first == later.pages.pages("npcs")[2].start and last == later.pages.pages("npcs")[3].start - 1 and count > 0)
+		local _, open_end = later.world.page_range("npcs", pages)
+		check("the last page has no upper end", open_end == nil)
+		local decodes = later.pages.stats().decodes
+		local records = later.world.page_records("npcs", 2)
+		check("a page's rows are listed sorted by name, and only that page is read", #records == count and records[1].key <= records[#records].key and later.pages.stats().decodes - decodes == 1)
+		check("the listing is kept until the page changes", later.world.page_records("npcs", 2) == records)
+		local sample = tonumber(records[1].id)
+		later.world.store("npcs", { id = sample, name = "Aaa renamed" })
+		check("a rename is listed", later.world.page_records("npcs", later.world.page_for_id("npcs", sample))[1].text == "Aaa renamed")
+		check("an id finds its page", later.world.page_for_id("npcs", 5) == 1 and later.world.page_for_id("npcs", 1300) == pages)
+		local table_addon = load()
+		table_addon.world.reset()
+		check("without pages the rows are one page", table_addon.world.page_count("npcs") >= 1)
+	end
+
 	-- A client whose encoder cannot hand a page back whole keeps rows as tables.
 	do
 		local addon, env = load(function(e)

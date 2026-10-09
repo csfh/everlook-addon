@@ -164,6 +164,12 @@ function P.mark(page)
 	P.on_dirty(page)
 end
 
+-- The place of the page that holds `key` in the bucket's list of pages, from 1.
+function P.index_of(bucket, key)
+	local _, index = locate(bucket, first_of(key))
+	return index
+end
+
 function P.derived(bucket)
 	return DERIVED[bucket] == true
 end
@@ -192,6 +198,7 @@ local function forget(page)
 	end
 	page.rows = nil
 	page.pins = nil
+	page.records = nil
 	loaded_count = loaded_count - 1
 	stats.evictions = stats.evictions + 1
 end

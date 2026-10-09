@@ -93,6 +93,9 @@ function Everlook.collected.insert(bucket, key)
 end
 
 local frame
+local nav_label
+local nav_prev
+local nav_next
 local bucket_box
 local bucket_bar
 local record_box
@@ -115,6 +118,66 @@ local function paint_bucket(button, element_data)
 	local selected = element_data.bucket == selected_bucket
 	button.highlight:SetShown(selected)
 	button.label:SetFontObject(selected and "GameFontHighlight" or "GameFontNormal")
+end
+
+-- The page of the selected bucket being looked at, and a search across pages.
+-- Only one page is read at a time, and a search reads the rest a few at a time.
+local page_at = {}
+local scan
+
+local function page_total(bucket)
+	return Everlook.world.page_count(bucket)
+end
+
+local function current_page(bucket)
+	local page = page_at[bucket] or 1
+	local total = page_total(bucket)
+	if page > total then
+		page = total
+	end
+	if page < 1 then
+		page = 1
+	end
+	return page
+end
+
+local function describe_page(bucket, page)
+	local first, last, count = Everlook.world.page_range(bucket, page)
+	local total = page_total(bucket)
+	if total <= 1 then
+		return count .. " rows"
+	end
+	local span = last and (first .. "-" .. last) or (first .. " and up")
+	return "Page " .. page .. " of " .. total .. ", ids " .. span .. ", " .. count .. " rows"
+end
+
+local function show_navigation(bucket, page)
+	if not nav_label then
+		return
+	end
+	local total = page_total(bucket)
+	if scan then
+		nav_label:SetText(scan.done and (#scan.results .. " found in " .. scan.total .. " pages") or ("Searching " .. scan.index .. " of " .. scan.total .. " pages, " .. #scan.results .. " found"))
+	else
+		nav_label:SetText(describe_page(bucket, page))
+	end
+	local browsing = not scan
+	if nav_prev and nav_prev.SetEnabled then
+		nav_prev:SetEnabled(browsing and page > 1)
+	end
+	if nav_next and nav_next.SetEnabled then
+		nav_next:SetEnabled(browsing and page < total)
+	end
+end
+
+-- A number typed in the box jumps to the page that holds that id. Anything else
+-- narrows the rows of the page being looked at.
+local function typed_id()
+	return search_text:match("^%s*(%d+)%s*$")
+end
+
+local function filter_text()
+	return typed_id() and "" or search_text
 end
 
 local function refresh()
@@ -142,7 +205,10 @@ local function refresh()
 	if not shown then
 		return
 	end
-	local records = Everlook.collected.filter(Everlook.world.collected_records(selected_bucket), search_text)
+	local page = current_page(selected_bucket)
+	page_at[selected_bucket] = page
+	show_navigation(selected_bucket, page)
+	local records = scan and scan.results or Everlook.collected.filter(Everlook.world.page_records(selected_bucket, page), filter_text())
 	local record = records[1]
 	if selected_record_id then
 		local found = false
@@ -167,8 +233,74 @@ local function refresh()
 	end
 end
 
+local function stop_scan()
+	scan = nil
+	if frame then
+		frame:SetScript("OnUpdate", nil)
+	end
+end
+
 local function choose(bucket)
+	stop_scan()
 	selected_bucket = bucket
+	selected_record_id = nil
+	refresh()
+end
+
+local function go(step)
+	if not selected_bucket then
+		return
+	end
+	stop_scan()
+	page_at[selected_bucket] = current_page(selected_bucket) + step
+	selected_record_id = nil
+	refresh()
+end
+
+local MATCH_LIMIT = 500
+local SCAN_MS = 2
+
+-- Looks for a name in every page of the bucket, a few at a time, and shows what
+-- it has found as it goes. A thousand pages are not read in one frame.
+local function scan_step()
+	if not scan or scan.done then
+		return
+	end
+	local began = type(debugprofilestop) == "function" and debugprofilestop() or nil
+	local grown = false
+	while scan.index < scan.total do
+		scan.index = scan.index + 1
+		local found = Everlook.collected.filter(Everlook.world.page_records(scan.bucket, scan.index), scan.needle)
+		for index = 1, #found do
+			if #scan.results < MATCH_LIMIT then
+				scan.results[#scan.results + 1] = found[index]
+				grown = true
+			end
+		end
+		if not began or debugprofilestop() - began >= SCAN_MS then
+			break
+		end
+	end
+	if scan.index >= scan.total or #scan.results >= MATCH_LIMIT then
+		scan.done = true
+		frame:SetScript("OnUpdate", nil)
+		grown = true
+	end
+	if grown then
+		refresh()
+	else
+		show_navigation(scan.bucket, current_page(scan.bucket))
+	end
+end
+
+local function start_scan()
+	if not selected_bucket or typed_id() or search_text == "" then
+		return
+	end
+	scan = { bucket = selected_bucket, needle = search_text, index = 0, total = page_total(selected_bucket), results = {}, done = false }
+	selected_record_id = nil
+	frame:SetScript("OnUpdate", scan_step)
+	scan_step()
 	refresh()
 end
 
@@ -294,16 +426,45 @@ local function build(panel)
 	records:SetPoint("RIGHT", panel, "RIGHT", -24, 0)
 
 	local search = CreateFrame("EditBox", nil, panel, "SearchBoxTemplate")
-	search:SetPoint("TOPLEFT", 228, -34)
-	search:SetPoint("TOPRIGHT", -28, -34)
+	search:SetPoint("TOPLEFT", 228, -8)
+	search:SetPoint("TOPRIGHT", -28, -8)
 	search:SetSize(400, 22)
 	if search.SetAutoFocus then
 		search:SetAutoFocus(false)
 	end
 	search:SetScript("OnTextChanged", function(self)
 		search_text = self.GetText and self:GetText() or ""
+		stop_scan()
+		local id = typed_id()
+		if id and selected_bucket then
+			page_at[selected_bucket] = Everlook.world.page_for_id(selected_bucket, tonumber(id))
+			selected_record_id = nil
+		end
 		refresh()
 	end)
+	-- Enter looks for the name in every page, not just this one.
+	search:SetScript("OnEnterPressed", function()
+		start_scan()
+	end)
+
+	local previous = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+	previous:SetSize(24, 22)
+	previous:SetPoint("TOPLEFT", 228, -36)
+	previous:SetText("<")
+	previous:SetScript("OnClick", function()
+		go(-1)
+	end)
+	local following = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+	following:SetSize(24, 22)
+	following:SetPoint("TOPLEFT", 256, -36)
+	following:SetText(">")
+	following:SetScript("OnClick", function()
+		go(1)
+	end)
+	local where_label = panel:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+	where_label:SetPoint("LEFT", following, "RIGHT", 8, 0)
+	where_label:SetText("")
+	nav_prev, nav_next, nav_label = previous, following, where_label
 
 	bucket_box = buckets
 	bucket_bar = bucket_scroll
@@ -325,6 +486,8 @@ function Everlook.collected.page()
 		end
 		refresh()
 	end)
+	-- A search stops with the page, so nothing keeps reading pages unseen.
+	panel:SetScript("OnHide", stop_scan)
 	frame = panel
 	return panel
 end
