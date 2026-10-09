@@ -7,7 +7,7 @@ They contain no third-party artwork and were authored for Everlook.
 The 32 × 32 quarter circle is an uncompressed 32-bit TGA with a top-left origin
 and supersampled alpha. Mirroring it supplies four corners. Straight pieces
 stretch independently, keeping the rounded radius constant as a card grows.
-The 2 × 2 opaque white texture supplies the tintable status capsule bar.
+The 2 × 2 opaque white texture supplies the tintable bar of a notification's progress.
 
 Notification icons use Blizzard art already referenced in Mainline 12.0.0:
 `INV_Misc_QuestionMark`, `inv_misc_coin_01`, `Inv_misc_bag_08`,

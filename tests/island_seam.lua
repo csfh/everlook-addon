@@ -885,6 +885,16 @@ return function(root, check, island_world, quest_world, secret_stat)
 	end
 	do
 		local addon = island_world()
+		local layout = addon.island_capsule.layout
+		local function measure(text) return #text * 7 end
+		local with_progress = layout({ text = "Flight to Stormwind", progress = 0.4 }, measure, 280)
+		check("a status capsule shows its progress as a percent in purple, not as a bar", with_progress.show_trailing
+			and with_progress.line == "Flight to Stormwind  |cffad76ef40%|r")
+		check("a trailing mark of its own is left alone", layout({ text = "Flight", trailing = "soon", progress = 0.4 }, measure, 280).line == "Flight  soon")
+		check("with no progress there is nothing to show", layout({ text = "Flight" }, measure, 280).show_trailing == false)
+	end
+	do
+		local addon = island_world()
 		check("the edge bars are gone as options", not pcall(addon.module.set, "smart_island", "rim_top", "experience")
 			and not pcall(addon.module.set, "smart_island", "rim_bottom", "quest"))
 		check("and so is their module", addon.island_rim == nil)

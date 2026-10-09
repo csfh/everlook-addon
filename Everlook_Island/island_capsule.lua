@@ -262,6 +262,11 @@ end
 
 function capsule.layout(spec, measure, ceiling)
 	if type(spec) ~= "table" or type(spec.text) ~= "string" then return nil end
+	-- Progress is a percent in the purple of experience, unless the spec has its own trailing mark.
+	local trailing = spec.trailing
+	if trailing == nil and type(spec.progress) == "number" then
+		trailing = "|cffad76ef" .. math.floor(math.max(0, math.min(1, spec.progress)) * 100 + 0.5) .. "%|r"
+	end
 	local limit = 280
 	if type(ceiling) == "number" and ceiling == ceiling and ceiling > 0 and ceiling < math.huge then
 		limit = math.max(64, math.min(280, ceiling))
@@ -274,9 +279,9 @@ function capsule.layout(spec, measure, ceiling)
 	local leading = spec.icon and MARK or 0
 	local text_width = width_of(spec.text)
 	local trailing_width, show_trailing = 0, false
-	if spec.trailing ~= nil then
+	if trailing ~= nil then
 		show_trailing = true
-		trailing_width = type(spec.trailing) == "string" and width_of(spec.trailing) or MARK
+		trailing_width = type(trailing) == "string" and width_of(trailing) or MARK
 	end
 	local function span(with_trailing)
 		local pieces = (leading > 0 and 1 or 0) + 1 + (with_trailing and 1 or 0)
@@ -292,10 +297,10 @@ function capsule.layout(spec, measure, ceiling)
 	if width < 64 then width = 64 end
 	local line = spec.text
 	if show_trailing then
-		if type(spec.trailing) == "string" then
-			line = spec.text .. "  " .. spec.trailing
+		if type(trailing) == "string" then
+			line = spec.text .. "  " .. trailing
 		else
-			line = spec.text .. "  " .. escape_mark(spec.trailing)
+			line = spec.text .. "  " .. escape_mark(trailing)
 		end
 	end
 	local gaps = (leading > 0 and 1 or 0) + (show_trailing and 1 or 0)

@@ -2490,9 +2490,10 @@ return function(root, check)
 		local toasts = addon.smart_island.view().toasts
 		return toasts[#toasts] and toasts[#toasts].text
 	end
-	local function island_fill(frames)
+	-- A bar is a status bar that is showing. The island draws none of its own now.
+	local function shown_bar(frames)
 		for index = 1, #frames do
-			if frames[index].value ~= nil then return frames[index] end
+			if frames[index].value ~= nil and frames[index].shown == true then return frames[index] end
 		end
 	end
 	local function secret_stat()
@@ -3321,8 +3322,7 @@ return function(root, check)
 		env.Everlook.island.notify({ text = string.rep("A wrapped history message ", 12) })
 		local after = addon.smart_island.view()
 		check("long history rows grow below a stable summary", before.summary_height ~= nil and before.summary_height == after.summary_height and after.height > before.height + 16)
-		local bar = island_fill(frames)
-		check("experience uses a thin header rail", bar.height == 3 and bar.status_texture ~= nil and not bar.all_points)
+		check("experience draws no rail under the level", shown_bar(frames) == nil)
 	end
 
 	do
@@ -3813,7 +3813,7 @@ return function(root, check)
 	do
 		local addon, env, _, state, afters, _, frames = island_world()
 		addon.module.set("smart_island", "enabled", true)
-		check("the closed chip draws no bar", island_fill(frames).shown ~= true)
+		check("the closed chip draws no bar", shown_bar(frames) == nil)
 		env.everlook_smart_island_key("down")
 		local heading, metric, clear, undo, experience, status
 		for _, object in ipairs(frames) do
@@ -4064,20 +4064,19 @@ return function(root, check)
 	do
 		local addon, env, event, state, _, _, frames = island_world()
 		addon.module.set("smart_island", "enabled", true)
-		local bar = island_fill(frames)
 		check("the closed pill draws no experience bar, with a numeric reading or a secret one",
-			addon.smart_island.view().xp == 450 and bar.shown ~= true)
+			addon.smart_island.view().xp == 450 and shown_bar(frames) == nil)
 		local xp, xp_max = secret_stat(), secret_stat()
 		check("a secret experience reading is not a number", type(xp) ~= "number" and type(xp_max) ~= "number")
 		env.issecretvalue = function(value) return value == xp or value == xp_max end
 		state.xp, state.xp_max = xp, xp_max
 		event("PLAYER_XP_UPDATE", "player")
 		check("a secret reading is kept as it arrived and draws nothing",
-			addon.smart_island.view().xp == xp and addon.smart_island.view().xp_max == xp_max and island_fill(frames).shown ~= true)
+			addon.smart_island.view().xp == xp and addon.smart_island.view().xp_max == xp_max and shown_bar(frames) == nil)
 		env.everlook_smart_island_key("down")
 		local open = addon.smart_island.view()
 		check("the open island still reads its other figures, and draws no bar either",
-			open.mode == "open" and island_fill(frames).shown ~= true
+			open.mode == "open" and shown_bar(frames) == nil
 			and open.money == "1g 23s 45c" and open.durability == "50%" and open.bags == "8 free slots" and open.clock == "14:05")
 		local function status_top()
 			for _, object in ipairs(frames) do

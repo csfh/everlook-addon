@@ -44,7 +44,7 @@ local EMPTY_HINT = "Loot, mail, quests and warnings from Everlook and other addo
 local island = {}
 Everlook.smart_island = island
 
-local frame, summary, fill, closed_text, left_text, right_text, surface
+local frame, summary, closed_text, left_text, right_text, surface
 local inbox, inbox_content, footer, empty_text, unread_text
 local quest_scroll, quest_content
 local clear_button, undo_button, new_button
@@ -1592,6 +1592,10 @@ paint = function(reason)
 	local width, height = CLOSED_W, CLOSED_H
 	local status = active_status()
 	local compact = status and status.capsule
+	-- A status can carry its progress outside its capsule. The capsule shows it as a percent.
+	if compact and compact.progress == nil and type(status.progress) == "number" then
+		compact = { text = compact.text, icon = compact.icon, trailing = compact.trailing, progress = status.progress }
+	end
 	local two = visual_open and quest_context.has_content()
 	local page_width = math.max(CLOSED_W, math.min(two and OPEN_W or NARROW_W, screen_size("GetWidth") - 32))
 	local available = math.max(64, screen_size("GetWidth") - 32)
@@ -1625,13 +1629,6 @@ paint = function(reason)
 	if visual_open then width, height = layout_expanded(list, status, face.inspection_height, two) end
 	if now ~= "open" then
 		width, height = closed_w, closed_h
-		if not morphing then
-			call(fill, "SetParent", frame)
-			call(fill, "ClearAllPoints")
-			call(fill, "SetPoint", "TOPLEFT", frame, "TOPLEFT", 12, -closed_h + 6)
-			call(fill, "SetSize", width - 24, 3)
-			call(fill, "SetAlpha", 1)
-		end
 	end
 	frame.width, frame.height = width, height
 	call(frame, "SetSize", width, height)
@@ -1640,19 +1637,6 @@ paint = function(reason)
 	call(frame, "SetHitRectInsets", hit_inset, hit_inset, hit_inset, hit_inset)
 	call(frame, "Show")
 	frame.shown = true
-	-- Only a status capsule draws a bar now, along its own bottom edge, and only while closed.
-	call(fill, "Hide")
-	if now == "closed" and layout and status and not morphing then
-		local progress = status.capsule.progress
-		if progress == nil then progress = status.progress end
-		if type(progress) == "number" then
-			call(fill, "SetMinMaxValues", 0, 1)
-			call(fill, "SetValue", progress)
-			call(fill, "SetStatusBarColor", unpack(COLORS.accent))
-			call(fill, "Show")
-		end
-	end
-	if now == "closed" and quest and not morphing then call(fill, "Hide") end
 	call(expanded, visual_open and "Show" or "Hide")
 	call(resting, "SetAlpha", 1)
 	call(resting, "Show")
@@ -2387,15 +2371,6 @@ local function ensure_frame()
 	summary = CreateFrame("Frame", nil, expanded)
 	call(summary, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", 0, 0)
 	call(summary, "EnableMouse", false)
-	fill = CreateFrame("StatusBar", nil, frame)
-	if fill then
-		call(fill, "SetFrameLevel", 54)
-		call(fill, "SetStatusBarTexture", ART .. "island_white.tga")
-		call(fill, "SetStatusBarColor", unpack(COLORS.accent))
-		call(fill, "SetMinMaxValues", 0, 1)
-		call(fill, "SetValue", 0)
-		call(fill, "EnableMouse", false)
-	end
 	closed_text = make_label(shell.face, "CENTER")
 	call(closed_text, "SetPoint", "CENTER", shell.face, "CENTER", -4, 0)
 	unread_text = make_label(shell.face, "RIGHT", true)
