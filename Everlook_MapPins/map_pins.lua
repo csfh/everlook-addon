@@ -233,7 +233,7 @@ local function queue_pins()
 		refresh_pins()
 	end
 	if C_Timer and type(C_Timer.After) == "function" then
-		C_Timer.After(0.2, run)
+		C_Timer.After(1, run)
 	else
 		run()
 	end
