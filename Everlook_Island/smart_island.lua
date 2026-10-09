@@ -271,10 +271,10 @@ local function content_size(node, entry, width, compact, activity)
 	local pieces = {}
 	if severity then pieces[#pieces + 1] = severity end
 	if source_label then pieces[#pieces + 1] = source_label end
-	local metadata = table.concat(pieces, " · ")
+	local metadata = table.concat(pieces, ", ")
 	if not compact and not activity then
 		local age = math.max(0, math.floor(clock_now() - (entry.updated_at or clock_now())))
-		metadata = (entry.unread and "Unread · " or "") .. metadata .. " · " .. island.age_text(age)
+		metadata = (entry.unread and "Unread, " or "") .. metadata .. ", " .. island.age_text(age)
 	end
 	local line_height = call(node.label, "GetLineHeight") or 14
 	local clipped = false
@@ -303,7 +303,7 @@ local function content_size(node, entry, width, compact, activity)
 		end
 		y = y + h + 4
 	end
-	if clipped then metadata = metadata ~= "" and ("More in inbox · " .. metadata) or "More in inbox" end
+	if clipped then metadata = metadata ~= "" and ("More in inbox, " .. metadata) or "More in inbox" end
 	-- A routine toast from Everlook needs no byline. The inbox row still has one.
 	local routine = compact and not activity and not clipped and not foreign_source
 		and entry.severity ~= "warning" and entry.severity ~= "error"
@@ -473,7 +473,7 @@ function island.header_figures()
 	local parts = {}
 	if readout.clock_text and readout.clock_text ~= "" then parts[#parts + 1] = readout.clock_text end
 	if readout.xp_text and readout.xp_text ~= "" then parts[#parts + 1] = readout.xp_text end
-	return #parts > 0 and table.concat(parts, "  ·  ") or nil
+	return #parts > 0 and table.concat(parts, "    ") or nil
 end
 
 function island.format_clock(hour, minute)
@@ -1243,7 +1243,7 @@ end
 shell.badge_text = function()
 	local level = island.format_level(readout.level)
 	if level == "" then return nil end
-	if module.get(id, "closed_xp") and readout.xp_text then return level .. " · " .. readout.xp_text end
+	if module.get(id, "closed_xp") and readout.xp_text then return level .. "  " .. readout.xp_text end
 	return level
 end
 
@@ -1265,12 +1265,12 @@ shell.closed_view = function(available)
 	elseif finite(slots) and module.get(id, "closed_bags") then
 		add(slots .. " free", "aeb6c3")
 	end
-	local text = table.concat(plain, " · ")
+	local text = table.concat(plain, "   ")
 	local width = CLOSED_W
 	if #plain > 1 then
 		width = math.max(CLOSED_W, math.min(available, math.ceil(measure_capsule(text)) + 24 + (unread_count() > 0 and 12 or 0)))
 	end
-	return table.concat(shown, " |cff6b7280·|r "), width
+	return table.concat(shown, "   "), width
 end
 
 local function place_slot(slot, layout, mark, alpha)

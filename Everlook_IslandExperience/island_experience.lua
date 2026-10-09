@@ -370,11 +370,11 @@ end
 local function headline(name, totals)
 	local line = name .. "  " .. digits(totals.total)
 	if totals.levels == 1 then
-		line = line .. " · 1 level"
+		line = line .. "   1 level"
 	elseif totals.levels > 1 then
-		line = line .. " · " .. digits(totals.levels) .. " levels"
+		line = line .. "   " .. digits(totals.levels) .. " levels"
 	end
-	if totals.gap then line = line .. " · XP incomplete" end
+	if totals.gap then line = line .. "   XP incomplete" end
 	return line
 end
 
@@ -386,8 +386,8 @@ local function split_line(totals)
 	if totals.other > 0 then parts[#parts + 1] = "Other " .. digits(totals.other) end
 	if totals.unsorted > 0 then parts[#parts + 1] = "Unsorted " .. digits(totals.unsorted) end
 	if #parts == 0 then return nil end
-	local line = "  " .. table.concat(parts, " · ")
-	if totals.split then line = line .. " · XP incomplete" end
+	local line = "  " .. table.concat(parts, "   ")
+	if totals.split then line = line .. "   XP incomplete" end
 	return line
 end
 
@@ -438,8 +438,8 @@ local function render(hour, day, now, bar)
 	local pace = pace_line(hour, now, bar)
 	if rested then foot[#foot + 1] = rested end
 	if pace then foot[#foot + 1] = pace end
-	if #foot > 0 then lines[#lines + 1] = table.concat(foot, " · ") end
-	return lines, #foot > 0 and table.concat(foot, " · ") or nil
+	if #foot > 0 then lines[#lines + 1] = table.concat(foot, "   ") end
+	return lines, #foot > 0 and table.concat(foot, "   ") or nil
 end
 
 function experience.report()
@@ -479,7 +479,7 @@ function experience.table()
 	slice("Levels", hour.levels, day.levels)
 	local footer = report.footer
 	if hour.gap or day.gap or hour.split or day.split then
-		footer = (footer and footer .. " · " or "") .. "XP incomplete"
+		footer = (footer and footer .. "   " or "") .. "XP incomplete"
 	end
 	return { rows = rows, footer = footer }
 end

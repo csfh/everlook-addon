@@ -371,11 +371,11 @@ return function(root, check, island_world, quest_world, secret_stat)
 		end
 		event("MAIL_INBOX_UPDATE")
 		local notice = notice_key(addon, "mail:new")
-		check("opening the mailbox says what is waiting", notice.detail == "3 messages · 2 with attachments · 1g 50s")
+		check("opening the mailbox says what is waiting", notice.detail == "3 messages, 2 with attachments, 1g 50s")
 		check("that update does not toast again", #addon.smart_island.view().toasts == 0 or notice.presentation == "inbox")
 		env.GetInboxNumItems = function() return 0 end
 		event("MAIL_INBOX_UPDATE")
-		check("an empty mailbox keeps the last summary", notice_key(addon, "mail:new").detail == "3 messages · 2 with attachments · 1g 50s")
+		check("an empty mailbox keeps the last summary", notice_key(addon, "mail:new").detail == "3 messages, 2 with attachments, 1g 50s")
 	end
 	do
 		local addon, _, event = island_world()
@@ -610,7 +610,7 @@ return function(root, check, island_world, quest_world, secret_stat)
 		check("money runs the full width on its own row", money and money.width > gear.width * 1.5)
 		check("gear and bags share the next row, gear on the left",
 			gear.point[5] == bags.point[5] and gear.point[5] < money.point[5] and bags.point[4] > gear.point[4] and gear.point[4] == money.point[4])
-		check("the clock moved to the header beside the percent", label("14:05  ·  45%") ~= nil and cell("Time") == nil)
+		check("the clock moved to the header beside the percent", label("14:05    45%") ~= nil and cell("Time") == nil)
 		check("each cell shows its value on the right", label("50%") ~= nil)
 	end
 	do
@@ -711,9 +711,16 @@ return function(root, check, island_world, quest_world, secret_stat)
 		check("the route lists three quests after the current one",
 			joined:find("\n1. Suitable farther\n", 1, true) and joined:find("\n2. Nearby dangerous\n", 1, true)
 			and joined:find("\n3. Across the sea\n", 1, true) and not joined:find("4. ", 1, true))
-		check("each says where it is: the zone from the log and the distance", joined:find("\nElwynn Forest · ~800 yd\n", 1, true) ~= nil)
-		check("and why it was chosen", joined:find("Why: closest to you · level 18, 6 above you", 1, true) ~= nil
-			and joined:find("Why: level 12, close to yours", 1, true) ~= nil)
+		check("each says where it is: the zone from the log and the distance", joined:find("\nElwynn Forest, ~800 yd\n", 1, true) ~= nil)
+		check("a row stays at two lines and leaves its reasoning to the tooltip", joined:find("Why:", 1, true) == nil)
+		local tips = {}
+		env.GameTooltip = { SetOwner = function() end, SetText = function(_, text) tips[#tips + 1] = text end, Show = function() end, Hide = function() end }
+		for _, frame in ipairs(frames) do
+			if frame.scripts and frame.scripts.OnEnter then frame.scripts.OnEnter(frame) end
+		end
+		local tooltips = table.concat(tips, "\n")
+		check("the tooltip says why it was chosen", tooltips:find("Why: closest to you; level 18, 6 above you", 1, true) ~= nil
+			and tooltips:find("Why: level 12, close to yours", 1, true) ~= nil)
 	end
 	do
 		local addon, _, _, _, _, _, frames = quest_world()
@@ -728,7 +735,7 @@ return function(root, check, island_world, quest_world, secret_stat)
 		check("the quest capsule carries the level as a badge", label("12") ~= nil)
 		local plain_width = addon.smart_island.view().width
 		addon.module.set("smart_island", "closed_xp", true)
-		check("and the experience percent when the pill shows it", label("12 · 45%") ~= nil)
+		check("and the experience percent when the pill shows it", label("12  45%") ~= nil)
 		check("the capsule grows to make room", addon.smart_island.view().width > plain_width)
 	end
 	do
@@ -785,9 +792,9 @@ return function(root, check, island_world, quest_world, secret_stat)
 			return false
 		end
 		addon.island.notify({ source = "everlook.buffs", key = "own", text = "Own warning", severity = "warning" })
-		check("an Everlook warning toast names its severity and not its source", has("Warning") and not has("Warning · Everlook"))
+		check("an Everlook warning toast names its severity and not its source", has("Warning") and not has("Warning, Everlook"))
 		addon.island.notify({ source = "OtherAddon", key = "foreign", text = "Their warning", severity = "warning" })
-		check("another addon's toast names its source", has("Warning · OtherAddon"))
+		check("another addon's toast names its source", has("Warning, OtherAddon"))
 	end
 	do
 		local addon, _, _, _, _, _, frames = quest_world()
@@ -796,7 +803,7 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local function badge_point()
 			for _, frame in ipairs(frames) do
 				for _, region in ipairs(frame.regions or {}) do
-					if region.text == "12 · 45%" and region.shown ~= false then return region.point end
+					if region.text == "12  45%" and region.shown ~= false then return region.point end
 				end
 			end
 		end

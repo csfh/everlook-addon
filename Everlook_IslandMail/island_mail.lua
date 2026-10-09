@@ -59,7 +59,7 @@ local function inbox_summary()
 	local parts = { messages .. (messages == 1 and " message" or " messages") }
 	if with_items > 0 then parts[#parts + 1] = with_items .. " with attachments" end
 	if copper > 0 then parts[#parts + 1] = Everlook.island_vitals.money(copper) end
-	return table.concat(parts, " · ")
+	return table.concat(parts, ", ")
 end
 
 local function mail_contents()

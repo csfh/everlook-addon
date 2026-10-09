@@ -166,7 +166,7 @@ local function pin_suggestions()
 	local quest_id = record.id
 	state.pin_handle = notify({
 		source = "everlook.quests", key = "pin-suggest", kind = "quest", duration = 12,
-		text = "Pin " .. record.title .. "?", detail = PIN_REASONS[chosen.kind] .. " · " .. quests.where(record),
+		text = "Pin " .. record.title .. "?", detail = PIN_REASONS[chosen.kind] .. ", " .. quests.where(record),
 		actions = {
 			{ id = "pin", label = "Pin", type = "callback", on_click = function(handle)
 				if Everlook.smart_island and Everlook.smart_island.pin_quest then Everlook.smart_island.pin_quest(quest_id) end

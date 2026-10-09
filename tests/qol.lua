@@ -2641,7 +2641,7 @@ return function(root, check)
 		addon.module.set("smart_island", "quest_plan", true)
 		env.everlook_smart_island_key("down")
 		check("expanded quest inspection shows objective counts", label("Collect things  1/6"))
-		check("expanded quest plan explains its order", label("Next up · closest to you, matched to your level"))
+		check("expanded quest plan explains its order", label("Next up, closest to you and matched to your level"))
 		local pin
 		for _, frame in ipairs(frames) do if frame.name == "EverlookIslandPinQuest" then pin = frame end end
 		pin.scripts.OnClick(pin)
@@ -3633,7 +3633,7 @@ return function(root, check)
 			if object.name == "EverlookIslandUndo" then undo = object end
 			for _, region in ipairs(object.regions) do
 				if region.text == "Level 12" then heading = region end
-				if region.text == "14:05  ·  45%" then experience = region end
+				if region.text == "14:05    45%" then experience = region end
 				if region.text == "Money" then metric = region end
 			end
 		end
@@ -5022,11 +5022,11 @@ return function(root, check)
 				state.time = state.time + 1
 				event("NEW_RECIPE_LEARNED", 333)
 				first = notice_key(addon, "professions:1")
-				check("a recipe in the same burst updates that notice", first and first.text == "Blacksmithing reached 50 · New recipe" and notice_key(addon, "professions:2") == nil)
+				check("a recipe in the same burst updates that notice", first and first.text == "Blacksmithing reached 50. New recipe" and notice_key(addon, "professions:2") == nil)
 				local secret = secret_stat()
 				env.issecretvalue = function(value) return rawequal(value, secret) end
 				event("NEW_RECIPE_LEARNED", secret)
-				check("a secret recipe is omitted", notice_key(addon, "professions:1").text == "Blacksmithing reached 50 · New recipe")
+				check("a secret recipe is omitted", notice_key(addon, "professions:1").text == "Blacksmithing reached 50. New recipe")
 				state.time = state.time + 3
 				skills.skill = 80
 				event("SKILL_LINES_CHANGED")
@@ -5143,7 +5143,7 @@ return function(root, check)
 			addon.island_experience.on_event("PLAYER_LEVEL_UP", 11)
 			report = addon.island_experience.report()
 			check("a one-level wrap counts the rest of the old bar and one level",
-				report.day.total == 110 and report.day.levels == 1 and joined(report):find("Day  110 · 1 level", 1, true))
+				report.day.total == 110 and report.day.levels == 1 and joined(report):find("Day  110   1 level", 1, true))
 
 			addon, _, state = open_world(function(state)
 				state.xp = 100
@@ -5153,7 +5153,7 @@ return function(root, check)
 			addon.island_experience.on_event("PLAYER_XP_UPDATE")
 			report = addon.island_experience.report()
 			check("a two-level jump marks the window incomplete and adds nothing",
-				report.hour.total == 0 and report.hour.gap and joined(report):find("Hour  0 · XP incomplete", 1, true))
+				report.hour.total == 0 and report.hour.gap and joined(report):find("Hour  0   XP incomplete", 1, true))
 
 			addon, _, state = open_world(function(state)
 				state.xp = 100
@@ -5187,7 +5187,7 @@ return function(root, check)
 			report = addon.island_experience.report()
 			check("a secret bar waits, then counts the gain as unsorted",
 				ok and report.hour.total == 100 and report.hour.unsorted == 100 and report.hour.split
-				and joined(report):find("Unsorted 100 · XP incomplete", 1, true))
+				and joined(report):find("Unsorted 100   XP incomplete", 1, true))
 
 			addon, _, state = open_world()
 			addon.island_experience.on_event("PLAYER_XP_UPDATE")

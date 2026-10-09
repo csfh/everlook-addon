@@ -498,13 +498,13 @@ function quests.distance_text(record)
 end
 
 local function reason(record)
-	return (record.ready and "Ready to turn in" or (record.level and "Level " .. record.level or "Level unavailable")) .. " · " .. quests.distance_text(record)
+	return (record.ready and "ready to turn in" or (record.level and "level " .. record.level or "level unavailable")) .. ", " .. quests.distance_text(record)
 end
 
 -- Where a quest is: its zone from the log, and how far it is.
 function quests.where(record)
 	local far = quests.distance_text(record)
-	return record.zone and (record.zone .. " · " .. far) or far
+	return record.zone and (record.zone .. ", " .. far) or far
 end
 
 -- Why the route puts a quest where it does, in the same terms the ranking
@@ -531,7 +531,7 @@ function quests.why(record)
 		else parts[#parts + 1] = "level " .. record.level .. ", " .. -difference .. " below you" end
 	end
 	if #parts == 0 then return "next on the list" end
-	return table.concat(parts, " · ")
+	return table.concat(parts, "; ")
 end
 
 -- The island's feed addons hear every refresh. Only an unforced one, the
@@ -697,8 +697,7 @@ function quests.ensure_ui(adapter)
 		local target = CreateFrame("Button", nil, ui.panel)
 		call(target, "RegisterForClicks", "LeftButtonUp")
 		local visual = adapter.visual(target, true)
-		local node = { frame = target, visual = visual, title = adapter.label(visual, "LEFT"), detail = adapter.label(visual, "LEFT", true), why = adapter.label(visual, "LEFT", true) }
-		call(node.why, "SetTextColor", 0.68, 0.46, 0.94, 1)
+		local node = { frame = target, visual = visual, title = adapter.label(visual, "LEFT"), detail = adapter.label(visual, "LEFT", true) }
 		call(target, "SetScript", "OnClick", function() if node.record then adapter.pin(node.record.id) end end)
 		adapter.hover(target, node)
 		adapter.controls[#adapter.controls + 1] = target
@@ -783,7 +782,7 @@ function quests.inspection(view, visible, width)
 	local top, current = 12, view.current
 	if current then
 		top = line(ui.heading, current.title, width - 22, top, true)
-		top = line(ui.explanation, view.reason .. " · " .. reason(current), width, top)
+		top = line(ui.explanation, view.reason .. ", " .. reason(current), width, top)
 		-- Four objectives fit above the inbox. Any more fold into one line.
 		local shown = math.min(#current.objectives, #ui.objectives, OBJECTIVES_SHOWN)
 		for index = 1, shown do
@@ -820,7 +819,7 @@ function quests.inspection(view, visible, width)
 	end
 	local route, from_pin = quests.route(view)
 	if #route > 0 then
-		top = line(ui.plan_heading, from_pin and "Next up · nearest your pinned quest" or "Next up · closest to you, matched to your level", width, top)
+		top = line(ui.plan_heading, from_pin and "Next up, nearest your pinned quest" or "Next up, closest to you and matched to your level", width, top)
 		for index, node in ipairs(ui.plan) do
 			local record = route[index]
 			if record then
@@ -831,15 +830,11 @@ function quests.inspection(view, visible, width)
 				call(node.title, "SetMaxLines", 2)
 				call(node.title, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 0, 0)
 				local title_height = call(node.title, "GetStringHeight") or 16
-				call(node.detail, "SetText", where)
+				call(node.detail, "SetText", record.ready and where .. ", ready to turn in" or where)
 				call(node.detail, "SetWidth", width - 24)
 				call(node.detail, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 0, -title_height - 2)
 				local detail_height = call(node.detail, "GetStringHeight") or 14
-				call(node.why, "SetText", "Why: " .. why)
-				call(node.why, "SetWidth", width - 24)
-				call(node.why, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 0, -title_height - detail_height - 4)
-				local why_height = call(node.why, "GetStringHeight") or 14
-				local height = title_height + detail_height + why_height + 16
+				local height = title_height + detail_height + 14
 				call(node.frame, "SetSize", width - 24, height)
 				call(node.frame, "ClearAllPoints")
 				call(node.frame, "SetPoint", "TOPLEFT", ui.panel, "TOPLEFT", 12, -top)

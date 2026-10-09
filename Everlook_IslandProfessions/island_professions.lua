@@ -42,7 +42,7 @@ local function note_profession(id, line)
 		state.prof_lines[#state.prof_lines + 1] = line
 		state.prof_ids[id] = #state.prof_lines
 	end
-	local text = table.concat(state.prof_lines, " · ")
+	local text = table.concat(state.prof_lines, ". ")
 	if #text > 512 then text = text:sub(1, 512) end
 	state.prof_handle = notify({
 		source = "everlook.professions", key = "professions:" .. state.prof_seq, kind = "profession", stack = "craft", text = text,
