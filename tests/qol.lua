@@ -2643,9 +2643,18 @@ return function(root, check)
 		addon.module.set("smart_island", "quest_plan", true)
 		env.everlook_smart_island_key("down")
 		check("expanded quest inspection shows objective counts", label("Collect things  1/6"))
-		check("expanded quest plan explains its order", label("Next up, closest to you and matched to your level"))
+		check("expanded quest plan is headed Next up and explains its order", label("NEXT UP") and label("Closest to you and matched to your level"))
 		local pin
 		for _, frame in ipairs(frames) do if frame.name == "EverlookIslandPinQuest" then pin = frame end end
+		local current = addon.smart_island.view().quests.current
+		local release_button
+		for _, frame in ipairs(frames) do if frame.name == "EverlookIslandReleaseQuest" then release_button = frame end end
+		local title, count = label(current.title), label("Collect things  1/6")
+		-- 12 edge, a 14 high title, 4 to the explanation, 14 high, 8 to the first objective.
+		check("the card's lines follow the spacing scale: edge, within a group, between siblings",
+			title and title.point[5] == -12 and count.point[5] == -(12 + 14 + 4 + 14 + 8) and count.point[4] == 12)
+		check("the pin action sits in the quests heading row, not in the card, and only the one that applies shows",
+			pin.shown ~= false and pin.point[1] == "TOPRIGHT" and pin.parent.shown ~= false and release_button.shown == false)
 		pin.scripts.OnClick(pin)
 		check("native pin button changes only Island context", addon.smart_island.view().quests.pinned == 23 and state.selected == 22)
 		local release
@@ -2669,6 +2678,28 @@ return function(root, check)
 	end
 
 	do
+		local addon, env, _, state, _, _, frames = quest_world()
+		addon.module.set("smart_island", "quest_context", true)
+		state.quests[2].objectives = {
+			{ text = "Slay the first", numFulfilled = 8, numRequired = 8, finished = true },
+			{ text = "Slay the second", numFulfilled = 2, numRequired = 5, finished = false },
+		}
+		addon.island_quests.refresh(true)
+		env.everlook_smart_island_key("down")
+		local function shown(text)
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do if region.shown ~= false and type(region.text) == "string" and region.text:find(text, 1, true) then return region end end
+			end
+		end
+		local done, todo = shown("Slay the first"), shown("Slay the second")
+		local meters = 0
+		for _, frame in ipairs(frames) do
+			if frame.value and frame.shown == true and frame.height == 3 and frame.width and frame.width > 100 then meters = meters + 1 end
+		end
+		check("a finished objective steps back and draws no fill, one still to do stays bright and has one",
+			done and todo and done.color[1] < 0.6 and todo.color[1] > 0.9 and meters == 1)
+	end
+	do
 		local addon, env, _, state = quest_world()
 		addon.module.set("smart_island", "quest_context", true)
 		addon.module.set("smart_island", "quest_plan", true)
@@ -2677,7 +2708,7 @@ return function(root, check)
 		check("the quest card starts at its top beside an empty notice list", #view.notices == 0 and view.quest_height > 0 and view.quest_offset == 0)
 		check("a typical card with its route fits without scrolling", view.quest_height <= view.scroll_height)
 		-- On a short screen the panes lose height and the card has to scroll.
-		env.UIParent.GetHeight = function() return 400 end
+		env.UIParent.GetHeight = function() return 330 end
 		env.Everlook.island.notify({ text = "A notice" })
 		view = addon.smart_island.view()
 		check("a tall card scrolls on its own, and the notices stay where they were",

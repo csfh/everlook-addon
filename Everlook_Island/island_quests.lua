@@ -675,7 +675,7 @@ function quests.ensure_ui(adapter)
 	call(ui.heading_arrow, "SetPoint", "TOPRIGHT", ui.visual, "TOPRIGHT", -8, -12)
 	ui.heading = adapter.label(ui.visual, "LEFT")
 	ui.explanation = adapter.label(ui.visual, "LEFT", true)
-	for index = 1, 20 do ui.objectives[index] = adapter.label(ui.visual, "LEFT", true) end
+	for index = 1, 20 do ui.objectives[index] = adapter.label(ui.visual, "LEFT", "text") end
 	for index = 1, 20 do
 		local track = call(ui.visual, "CreateTexture", nil, "BACKGROUND")
 		call(track, "SetColorTexture", 1, 1, 1, 0.12)
@@ -687,17 +687,20 @@ function quests.ensure_ui(adapter)
 		call(bar, "Hide")
 		ui.meters[index] = { track = track, bar = bar }
 	end
-	ui.pin = adapter.control(ui.panel, "EverlookIslandPinQuest", "Pin quest", 92, function()
+	-- The two actions sit in the quests heading row, outside the card, so the card scrolls without them.
+	ui.pin = adapter.link(adapter.head, "EverlookIslandPinQuest", "Pin quest", function()
 		local view = quests.view()
 		if view and view.current then adapter.pin(view.current.id) end
 	end)
-	ui.release = adapter.control(ui.panel, "EverlookIslandReleaseQuest", "Release pin", 92, function() adapter.pin(nil) end)
-	ui.plan_heading = adapter.label(ui.visual, "LEFT", true)
+	ui.release = adapter.link(adapter.head, "EverlookIslandReleaseQuest", "Release pin", function() adapter.pin(nil) end)
+	for _, link in ipairs({ ui.pin, ui.release }) do adapter.size_link(link, link.label.text) end
+	ui.plan_heading = adapter.label(ui.visual, "LEFT", "heading")
+	ui.plan_reason = adapter.label(ui.visual, "LEFT", "caption")
 	for index = 1, 3 do
 		local target = CreateFrame("Button", nil, ui.panel)
 		call(target, "RegisterForClicks", "LeftButtonUp")
 		local visual = adapter.visual(target, true)
-		local node = { frame = target, visual = visual, title = adapter.label(visual, "LEFT"), detail = adapter.label(visual, "LEFT", true) }
+		local node = { frame = target, visual = visual, title = adapter.label(visual, "LEFT", "text"), detail = adapter.label(visual, "LEFT", "caption") }
 		call(target, "SetScript", "OnClick", function() if node.record then adapter.pin(node.record.id) end end)
 		adapter.hover(target, node)
 		adapter.controls[#adapter.controls + 1] = target
@@ -759,17 +762,27 @@ local function objective_text(objective)
 	return text
 end
 
-local function line(label, value, width, top, primary)
+-- Puts a label at `top` and returns where it ends. The caller adds the gap.
+local function line(label, value, width, top)
+	local edge = ui.adapter.space.edge
 	call(label, "Show")
 	call(label, "SetText", value)
-	call(label, "SetWidth", width - 24)
+	call(label, "SetWidth", width - 2 * edge)
 	call(label, "ClearAllPoints")
-	call(label, "SetPoint", "TOPLEFT", ui.visual, "TOPLEFT", 12, -top)
-	return top + (call(label, "GetStringHeight") or (primary and 16 or 14)) + 6
+	call(label, "SetPoint", "TOPLEFT", ui.visual, "TOPLEFT", edge, -top)
+	return top + (call(label, "GetStringHeight") or 14)
+end
+
+-- The two pin actions, so the island can place the one that shows.
+function quests.actions()
+	return ui and { ui.pin, ui.release } or {}
 end
 
 function quests.inspection(view, visible, width)
 	if not ui then return 0 end
+	local adapter = ui.adapter
+	local space, tones = adapter.space, adapter.tones
+	local edge = space.edge
 	call(ui.panel, visible and view and "Show" or "Hide")
 	if not view then quests.aim(); return 0 end
 	for _, label in ipairs(ui.objectives) do call(label, "Hide") end
@@ -778,74 +791,83 @@ function quests.inspection(view, visible, width)
 		call(meter.bar, "Hide")
 	end
 	for _, node in ipairs(ui.plan) do call(node.frame, "Hide"); node.record = nil end
-	for _, control in ipairs({ ui.pin, ui.release, ui.plan_heading }) do call(control, "Hide") end
-	local top, current = 12, view.current
+	for _, control in ipairs({ ui.pin, ui.release, ui.plan_heading, ui.plan_reason }) do call(control, "Hide") end
+	local top, current = edge, view.current
 	if current then
-		top = line(ui.heading, current.title, width - 22, top, true)
-		top = line(ui.explanation, view.reason .. ", " .. reason(current), width, top)
-		-- Four objectives fit above the inbox. Any more fold into one line.
+		-- The title leaves room for the arrow beside it.
+		top = line(ui.heading, current.title, width - 22, top) + space.within
+		top = line(ui.explanation, view.reason .. ", " .. reason(current), width, top) + space.near
+		-- Four objectives fit in the card. Any more fold into one line.
 		local shown = math.min(#current.objectives, #ui.objectives, OBJECTIVES_SHOWN)
 		for index = 1, shown do
 			local objective = current.objectives[index]
+			-- A finished objective steps back, and only one still to do draws a fill.
+			call(ui.objectives[index], "SetTextColor", unpack(objective.finished and tones.muted or tones.primary))
 			top = line(ui.objectives[index], objective_text(objective), width, top)
-			-- A countable objective gets a thin fill under its line.
 			local meter = ui.meters[index]
-			if objective.progress ~= nil then
-				call(meter.track, "ClearAllPoints")
-				call(meter.track, "SetPoint", "TOPLEFT", ui.visual, "TOPLEFT", 12, -(top - 3))
-				call(meter.track, "SetSize", width - 24, 3)
+			if objective.progress ~= nil and not objective.finished then
+				top = top + space.within
+				for _, part in ipairs({ meter.track, meter.bar }) do
+					call(part, "ClearAllPoints")
+					call(part, "SetPoint", "TOPLEFT", ui.visual, "TOPLEFT", edge, -top)
+					call(part, "SetSize", width - 2 * edge, space.rail)
+				end
 				call(meter.track, "Show")
-				call(meter.bar, "ClearAllPoints")
-				call(meter.bar, "SetPoint", "TOPLEFT", ui.visual, "TOPLEFT", 12, -(top - 3))
-				call(meter.bar, "SetSize", width - 24, 3)
 				call(meter.bar, "SetValue", objective.progress)
-				call(meter.bar, "SetStatusBarColor", objective.finished and 0.5 or 0.68, objective.finished and 0.9 or 0.46, objective.finished and 0.65 or 0.94, 1)
+				call(meter.bar, "SetStatusBarColor", 0.68, 0.46, 0.94, 1)
 				call(meter.bar, "Show")
-				top = top + 6
+				top = top + space.rail
 			end
+			top = top + space.near
 		end
 		local hidden = #current.objectives - shown
 		if hidden > 0 then
-			top = line(ui.objectives[shown + 1], "+" .. hidden .. (hidden == 1 and " more objective" or " more objectives"), width, top)
+			call(ui.objectives[shown + 1], "SetTextColor", unpack(tones.muted))
+			top = line(ui.objectives[shown + 1], "+" .. hidden .. (hidden == 1 and " more objective" or " more objectives"), width, top) + space.near
 		end
-		local button = view.pinned and ui.release or ui.pin
-		call(button, "Show")
-		call(button, "ClearAllPoints")
-		call(button, "SetPoint", "TOPLEFT", ui.panel, "TOPLEFT", 12, -top)
-		top = top + 36
+		call(view.pinned and ui.release or ui.pin, "Show")
 	else
-		top = line(ui.heading, "Select a quest in the tracker", width, top, true)
+		top = line(ui.heading, "Select a quest in the tracker", width, top) + space.near
 		call(ui.explanation, "Hide")
 	end
 	local route, from_pin = quests.route(view)
 	if #route > 0 then
-		top = line(ui.plan_heading, from_pin and "Next up, nearest your pinned quest" or "Next up, closest to you and matched to your level", width, top)
+		-- A section gap from whatever is above, less the gap that line already left.
+		top = top - space.near + space.section
+		adapter.heading(ui.plan_heading, "Next up")
+		call(ui.plan_heading, "Show")
+		call(ui.plan_heading, "SetWidth", width - 2 * edge)
+		call(ui.plan_heading, "ClearAllPoints")
+		call(ui.plan_heading, "SetPoint", "TOPLEFT", ui.visual, "TOPLEFT", edge, -top)
+		top = top + (call(ui.plan_heading, "GetStringHeight") or 12) + space.within
+		top = line(ui.plan_reason, from_pin and "Nearest your pinned quest" or "Closest to you and matched to your level", width, top) + space.near
 		for index, node in ipairs(ui.plan) do
 			local record = route[index]
 			if record then
 				local where, why = quests.where(record), quests.why(record)
 				node.record, node.tooltip = record, "Pin quest: " .. record.title .. "\n" .. where .. "\nWhy: " .. why
 				call(node.title, "SetText", index .. ". " .. record.title)
-				call(node.title, "SetWidth", width - 24)
+				call(node.title, "SetWidth", width - 2 * edge)
 				call(node.title, "SetMaxLines", 2)
 				call(node.title, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 0, 0)
-				local title_height = call(node.title, "GetStringHeight") or 16
+				local title_height = call(node.title, "GetStringHeight") or 14
 				call(node.detail, "SetText", record.ready and where .. ", ready to turn in" or where)
-				call(node.detail, "SetWidth", width - 24)
-				call(node.detail, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 0, -title_height - 2)
-				local detail_height = call(node.detail, "GetStringHeight") or 14
-				local height = title_height + detail_height + 14
-				call(node.frame, "SetSize", width - 24, height)
+				call(node.detail, "SetWidth", width - 2 * edge)
+				call(node.detail, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 0, -title_height - space.within)
+				local detail_height = call(node.detail, "GetStringHeight") or 12
+				local height = title_height + space.within + detail_height
+				call(node.frame, "SetSize", width - 2 * edge, height)
 				call(node.frame, "ClearAllPoints")
-				call(node.frame, "SetPoint", "TOPLEFT", ui.panel, "TOPLEFT", 12, -top)
+				call(node.frame, "SetPoint", "TOPLEFT", ui.panel, "TOPLEFT", edge, -top)
 				call(node.frame, "Show")
-				top = top + height
+				top = top + height + space.near
 			end
 		end
 	end
-	call(ui.panel, "SetSize", width, top + 8)
+	top = top - space.near + edge
+	call(ui.panel, "SetSize", width, top)
 	quests.aim()
-	return top + 8
+	return top
 end
 
 function quests.show_inspection(visible)

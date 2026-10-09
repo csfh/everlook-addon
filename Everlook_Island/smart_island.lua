@@ -26,11 +26,12 @@ local COLORS = {
 	muted = { 136 / 255, 145 / 255, 160 / 255, 1 },
 }
 -- WoW fonts have one weight, so a role is a size and a tone. Display is the
--- level, a title names a thing, body explains it, a caption names a figure and
+-- level, a title names a thing, text lists things, body explains it, a caption names a figure and
 -- a heading names a section. Headings are set in capitals through shell.heading.
 local ROLES = {
 	display = { "GameFontHighlightLarge", COLORS.primary },
 	title = { "GameFontHighlightMedium", COLORS.primary },
+	text = { "GameFontHighlight", COLORS.primary },
 	body = { "GameFontHighlight", COLORS.secondary },
 	caption = { "GameFontHighlightSmall", COLORS.secondary },
 	heading = { "GameFontHighlightSmall", COLORS.muted },
@@ -83,7 +84,7 @@ local resting_slots = {}
 -- The open summary spaces everything from these steps. A gap inside a group is
 -- `within`, a gap between siblings `near`, and a gap between groups `section`,
 -- which is at least twice the one inside. `edge` is the inset the rows below share.
-shell.space = { within = 4, near = 8, section = 16, edge = 12, rail = 3, gauge = 4, icon = 20, head = 44, pane_min = 48, pane_max = 320 }
+shell.space = { within = 4, near = 8, section = 16, edge = 12, rail = 3, gauge = 4, icon = 20, head = 40, pane_min = 48, pane_max = 320 }
 local function refresh_quests(force)
 	quest_context.refresh(force)
 end
@@ -1339,6 +1340,13 @@ local function layout_expanded(list, status, inspection_height)
 	call(footer, "ClearAllPoints")
 	call(footer, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", left_w, -header_height)
 	call(footer, "SetSize", right_w, space.head)
+	call(shell.quest_head, "ClearAllPoints")
+	call(shell.quest_head, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", 0, -header_height)
+	call(shell.quest_head, "SetSize", left_w, space.head)
+	for _, action in ipairs(quest_context.actions()) do
+		call(action, "ClearAllPoints")
+		call(action, "SetPoint", "TOPRIGHT", shell.quest_head, "TOPRIGHT", -space.edge, -space.near)
+	end
 	call(clear_button, #notices > 0 and "Show" or "Hide")
 	call(undo_button, undo_state and "Show" or "Hide")
 	call(undo_button, "ClearAllPoints")
@@ -2339,6 +2347,7 @@ end
 local function hover_target(target, node)
 	call(target, "SetScript", "OnEnter", function()
 		on_enter()
+		if node.on_hover then node.on_hover(true) end
 		if node.tooltip and GameTooltip then
 			call(GameTooltip, "SetOwner", target, "ANCHOR_RIGHT")
 			call(GameTooltip, "SetText", node.tooltip, 1, 1, 1, 1, true)
@@ -2347,6 +2356,7 @@ local function hover_target(target, node)
 	end)
 	call(target, "SetScript", "OnLeave", function()
 		call(GameTooltip, "Hide")
+		if node.on_hover then node.on_hover(false) end
 		on_leave()
 	end)
 end
@@ -2362,7 +2372,39 @@ local function make_control(parent, name, title, width, callback)
 	call(label, "SetPoint", "CENTER")
 	call(label, "SetText", title)
 	call(button, "SetScript", "OnClick", callback)
-	button.label, button.background, button.hover = label, background, { tooltip = title }
+	button.label, button.background, button.pad, button.hover = label, background, 24, { tooltip = title }
+	hover_target(button, button.hover)
+	preview_controls[#preview_controls + 1] = button
+	return button
+end
+
+-- A quiet action for a heading row: words with an underline and no frame, so
+-- it does not outweigh the list beside it. Hover lights the words and a wash behind them.
+shell.make_link = function(parent, name, title, callback)
+	local button = CreateFrame("Button", name, parent)
+	call(button, "SetSize", 48, 24)
+	call(button, "RegisterForClicks", "LeftButtonUp")
+	local visual = make_visual(button, true)
+	local wash = call(visual, "CreateTexture", nil, "BACKGROUND")
+	call(wash, "SetAllPoints", visual)
+	call(wash, "SetColorTexture", 1, 1, 1, 0.08)
+	call(wash, "Hide")
+	local label = make_label(visual, "CENTER", true)
+	call(label, "SetPoint", "CENTER")
+	call(label, "SetText", title)
+	local underline = call(visual, "CreateTexture", nil, "ARTWORK")
+	call(underline, "SetColorTexture", unpack(COLORS.secondary))
+	call(underline, "SetAlpha", 0.4)
+	call(underline, "SetHeight", 1)
+	call(underline, "SetPoint", "BOTTOMLEFT", label, "BOTTOMLEFT", 0, -2)
+	call(underline, "SetPoint", "BOTTOMRIGHT", label, "BOTTOMRIGHT", 0, -2)
+	call(button, "SetScript", "OnClick", callback)
+	button.label, button.pad = label, 16
+	button.hover = { tooltip = nil, on_hover = function(inside)
+		call(label, "SetTextColor", unpack(inside and COLORS.primary or COLORS.secondary))
+		call(underline, "SetAlpha", inside and 0.9 or 0.4)
+		call(wash, inside and "Show" or "Hide")
+	end }
 	hover_target(button, button.hover)
 	preview_controls[#preview_controls + 1] = button
 	return button
@@ -2371,9 +2413,9 @@ end
 -- A control whose words change sizes itself to them.
 shell.set_control_text = function(button, text)
 	call(button.label, "SetText", text)
-	local width = math.max(48, math.ceil(call(button.label, "GetStringWidth") or 0) + 24)
+	local width = math.max(48, math.ceil(call(button.label, "GetStringWidth") or 0) + button.pad)
 	call(button, "SetWidth", width)
-	island_surface.size(button.background, width, 28, 8)
+	if button.background then island_surface.size(button.background, width, 28, 8) end
 end
 
 local function ensure_frame()
@@ -2530,6 +2572,7 @@ local function ensure_frame()
 	shell.quest_empty = make_label(panes_visual, "LEFT", true)
 	call(shell.quest_empty, "SetText", "Turn on Show active quest in the Smart island settings to follow a quest here.")
 	call(shell.quest_empty, "Hide")
+	shell.quest_head = CreateFrame("Frame", nil, expanded)
 	quest_scroll = CreateFrame("ScrollFrame", nil, expanded)
 	call(quest_scroll, "EnableMouseWheel", true)
 	preview_controls[#preview_controls + 1] = quest_scroll
@@ -2563,9 +2606,11 @@ local function ensure_frame()
 		preview_controls[#preview_controls + 1] = target
 	end
 	footer = CreateFrame("Frame", nil, expanded)
-	clear_button = make_control(footer, "EverlookIslandClearHistory", "Clear history", 108, island.clear_history)
+	clear_button = shell.make_link(footer, "EverlookIslandClearHistory", "Clear history", island.clear_history)
+	shell.set_control_text(clear_button, "Clear history")
 	call(clear_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -shell.space.edge, -shell.space.near)
-	undo_button = make_control(footer, "EverlookIslandUndo", "Undo", 48, island.undo_clear)
+	undo_button = shell.make_link(footer, "EverlookIslandUndo", "Undo", island.undo_clear)
+	shell.set_control_text(undo_button, "Undo")
 	-- The pill floats over the foot of the list, so it sits above the edge fades.
 	new_button = make_control(expanded, "EverlookIslandNewNotices", "New notices", 96, function() island.scroll_to(shell.unread_first or content_height) end)
 	call(new_button, "SetFrameLevel", 64)
@@ -2576,7 +2621,8 @@ local function ensure_frame()
 	shell.quest_scrollbar = shell.scroll_api.make(expanded, { name = "EverlookIslandQuestScrollThumb", scroll_to = island.scroll_quests, ratio = drag_ratio })
 	preview_controls[#preview_controls + 1] = shell.quest_scrollbar.thumb
 	quest_context.ensure_ui({ root = shell.face, content = quest_content, label = make_label, visual = make_visual,
-		control = make_control, hover = hover_target, controls = preview_controls, pin = island.pin_quest,
+		head = shell.quest_head, link = shell.make_link, size_link = shell.set_control_text, space = shell.space, heading = shell.heading,
+		tones = { primary = COLORS.primary, muted = COLORS.muted }, hover = hover_target, controls = preview_controls, pin = island.pin_quest,
 		repaint = function() paint() end })
 	preview_group = call(expanded, "CreateAnimationGroup")
 	if preview_group then
