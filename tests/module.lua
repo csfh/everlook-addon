@@ -60,8 +60,38 @@ return function(root, check)
 	end
 
 	do
+		local registry, env, finish = load_registry()
+		plain(registry, "sliders", "map", 10, {
+			options = {
+				whole = { name = "Whole", default = 12, min = 10, max = 20, step = 1 },
+				fraction = { name = "Fraction", default = 0.5, min = 0, max = 1, step = 0.1 },
+				quarter = { name = "Quarter", default = 1, min = 0.25, max = 4, step = 0.25 },
+				coarse = { name = "Coarse", default = 100, min = 80, max = 150, step = 5 },
+			},
+		})
+		finish("Everlook_sliders")
+		registry.set("sliders", "whole", 13.47)
+		check("a slider value snaps to its nearest step", registry.get("sliders", "whole") == 13 and env.EverlookDB.qol.sliders.whole == 13)
+		registry.set("sliders", "coarse", 97)
+		check("a step wider than one snaps to its multiple", registry.get("sliders", "coarse") == 95)
+		registry.set("sliders", "coarse", 98)
+		check("a value halfway past a step rounds up", registry.get("sliders", "coarse") == 100)
+		registry.set("sliders", "fraction", 0.1 + 0.2)
+		check("a fractional step stores exactly the number it names", env.EverlookDB.qol.sliders.fraction == 0.3)
+		registry.set("sliders", "quarter", 0.4)
+		check("a quarter step snaps from the minimum", registry.get("sliders", "quarter") == 0.5)
+		registry.set("sliders", "coarse", 500)
+		check("a value above the maximum is held at it", registry.get("sliders", "coarse") == 150)
+		registry.set("sliders", "coarse", 1)
+		check("a value below the minimum is held at it", registry.get("sliders", "coarse") == 80)
+		env.EverlookDB.qol.sliders.fraction = 0.1 + 0.2
+		env.EverlookDB.qol.sliders.whole = 13.4
+		check("a saved value off its step reads back on it", registry.get("sliders", "fraction") == 0.3 and registry.get("sliders", "whole") == 13)
+	end
+
+	do
 		local registry = load_registry()
-		check("a module that is not loaded counts as off", registry.enabled("missing") == false and registry.loaded("missing") == false)
+		check("a module that is not loaded counts as off",registry.enabled("missing") == false and registry.loaded("missing") == false)
 		check("an unknown page is refused", not pcall(plain, registry, "lost", "nowhere", 10))
 		check("a module must name its addon", not pcall(registry.register, { id = "anonymous", name = "x", page = "map", order = 10 }))
 		check("a module must have a place on its page", not pcall(plain, registry, "unplaced", "map"))

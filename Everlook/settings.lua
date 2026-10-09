@@ -3,12 +3,32 @@ local registry = Everlook.module
 Everlook.settings = {}
 local category
 
+local function whole(number)
+	return math.floor(number + 0.5)
+end
+
+-- An option with `percent` is saved as a fraction, such as 0.8, and shown as
+-- 80%, so a slider counts in whole numbers and the saved value keeps its meaning.
+local function shown(option, value)
+	if option.percent and type(value) == "number" then return whole(value * 100) end
+	return value
+end
+
+-- The native slider hands over the value under the thumb. The label shows the
+-- step that value will be saved on.
+local function slider_label(option)
+	local unit = option.percent and "%" or option.unit or ""
+	return function(value)
+		return tostring(whole(shown(option, registry.snap(option, option.percent and value / 100 or value)))) .. unit
+	end
+end
+
 local function setting(page, module, key)
 	local option = module.options[key]
 	local variable = "Everlook_QoL_" .. module.id .. "_" .. key
-	local proxy = Settings.RegisterProxySetting(page, variable, type(option.default), option.name, option.default,
-		function() return registry.get(module.id, key) end,
-		function(value) registry.set(module.id, key, value) end)
+	local proxy = Settings.RegisterProxySetting(page, variable, type(option.default), option.name, shown(option, option.default),
+		function() return shown(option, registry.get(module.id, key)) end,
+		function(value) registry.set(module.id, key, option.percent and value / 100 or value) end)
 	if option.choices then
 		local function choices()
 			local container = Settings.CreateControlTextContainer()
@@ -19,9 +39,9 @@ local function setting(page, module, key)
 	elseif type(option.default) == "boolean" then
 		return Settings.CreateCheckbox(page, proxy, option.description or module.description)
 	else
-		local slider = Settings.CreateSliderOptions(option.min, option.max, option.step or 1)
+		local slider = Settings.CreateSliderOptions(shown(option, option.min), shown(option, option.max), shown(option, option.step or 1))
 		if MinimalSliderWithSteppersMixin then
-			slider:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, tostring)
+			slider:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, slider_label(option))
 		end
 		return Settings.CreateSlider(page, proxy, slider, option.description or module.description)
 	end

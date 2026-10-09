@@ -88,7 +88,7 @@ module.register({
 	name = "Swing timers",
 	description = "Sets the main hand, off hand, and ranged swing timers to the size on Timer scale, and leaves Edit Mode's saved size alone. The change waits until combat ends, a bar that is not initialized or has no scale setting is left alone, and turning this off puts back the size it last took over when the bar still shows this size.",
 	options = {
-		scale = { name = "Timer scale", default = 0.5, min = 0.5, max = 1, step = 0.1, description = "Sets the main hand, off hand, and ranged bars from half size to full size, in steps of 0.1, and leaves Edit Mode's saved size alone. The change waits until combat ends, a bar that is not initialized or has no scale setting is left alone, and this number does nothing until Swing timers is on." },
+		scale = { name = "Timer scale", default = 0.5, min = 0.5, max = 1, step = 0.1, percent = true, description = "Sets the main hand, off hand, and ranged bars from 50% to 100% of full size, in steps of 10%, and leaves Edit Mode's saved size alone. The change waits until combat ends, a bar that is not initialized or has no scale setting is left alone, and this number does nothing until Swing timers is on." },
 	},
 	apply = apply,
 	out_of_combat = true,

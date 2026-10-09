@@ -41,12 +41,32 @@ local function allowed(option, value)
 	return false
 end
 
+-- How many decimals a step or minimum is written with, so a value that lands
+-- on a step is stored as that number and not as 0.30000000000000004.
+local function decimals(number)
+	for places = 0, 6 do
+		local scaled = number * 10 ^ places
+		if math.abs(scaled - math.floor(scaled + 0.5)) < 1e-9 then return places end
+	end
+	return 6
+end
+
+-- A slider's value held between its ends and on its steps, counted from the minimum.
+local function on_step(option, value)
+	local step = option.step or 1
+	value = option.min + math.floor((value - option.min) / step + 0.5) * step
+	value = math.max(option.min, math.min(option.max, value))
+	return tonumber(string.format("%." .. math.max(decimals(step), decimals(option.min)) .. "f", value))
+end
+
 local function fill_defaults(id, options)
 	local values = saved(id)
 	for key, option in pairs(options) do
 		if type(values[key]) ~= type(option.default) or not allowed(option, values[key]) then values[key] = option.default end
 	end
 end
+
+registry.snap = on_step
 
 function registry.get(id, key)
 	local module = assert(by_id[id], "Unknown Everlook module")
@@ -55,7 +75,7 @@ function registry.get(id, key)
 	if option and not (issecretvalue and issecretvalue(value)) and type(value) == type(option.default) and allowed(option, value) then
 		if type(value) == "number" then
 			if value ~= value or value == math.huge or value == -math.huge then return option.default end
-			if option.min then return math.max(option.min, math.min(option.max, value)) end
+			if option.min then return on_step(option, value) end
 		end
 		return value
 	end
@@ -89,7 +109,7 @@ function registry.set(id, key, value)
 	local option = assert(module.options[key], "Unknown Everlook module option")
 	assert(not (issecretvalue and issecretvalue(value)) and type(value) == type(option.default) and allowed(option, value), "Invalid Everlook module option")
 	if type(value) == "number" then assert(value == value and value > -math.huge and value < math.huge, "Invalid Everlook module number") end
-	if option.min then value = math.max(option.min, math.min(option.max, value)) end
+	if option.min then value = on_step(option, value) end
 	saved(id)[key] = value
 	apply(module)
 end

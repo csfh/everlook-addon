@@ -162,6 +162,21 @@ return function(root, check)
 	for _, module in ipairs(addon.module.modules) do
 		check(module.id .. " starts disabled", not addon.module.enabled(module.id))
 	end
+	for _, module in ipairs(addon.module.modules) do
+		for key, option in pairs(module.options) do
+			if option.min then
+				local name = module.id .. "." .. key
+				local steps = (option.max - option.min) / (option.step or 1)
+				check(name .. " has a whole number of steps from its minimum to its maximum", math.abs(steps - math.floor(steps + 0.5)) < 1e-9)
+				addon.module.set(module.id, key, option.default)
+				check(name .. " has a default on one of its steps", addon.module.get(module.id, key) == option.default)
+				for _, preset in pairs(option.presets or {}) do
+					addon.module.set(module.id, key, preset)
+					check(name .. " has presets on its steps", addon.module.get(module.id, key) == preset)
+				end
+			end
+		end
+	end
 	do
 		local function action_button(text)
 			local button = { binding_text = text, HotKey = { text = text } }
@@ -1579,7 +1594,7 @@ return function(root, check)
 	local root_category = { GetID = function() return 42 end }
 	local layout = { AddInitializer = function(_, row) rows[#rows + 1] = row end }
 	local subpages, canvas_pages, page_of_variable = {}, {}, {}
-	local children, settings_buttons = {}, {}
+	local children, settings_buttons, sliders = {}, {}, {}
 	local function control()
 		return { SetParentInitializer = function(self, parent, predicate)
 			self.parent, self.predicate = parent, predicate; children[#children + 1] = self
@@ -1607,10 +1622,10 @@ return function(root, check)
 			return page, {}
 		end,
 		RegisterAddOnCategory = function(page) assert(page == root_category) end,
-		RegisterProxySetting = function(page, variable, _, _, _, get, set)
+		RegisterProxySetting = function(page, variable, _, _, default, get, set)
 			assert(page ~= root_category, "module settings belong on a subpage, not the Everlook page")
 			assert(not registered[variable], "duplicate setting variable")
-			registered[variable] = { get = get, set = set }; page_of_variable[variable] = page.name; return {}
+			registered[variable] = { get = get, set = set, default = default }; page_of_variable[variable] = page.name; return { variable = variable }
 		end,
 		CreateCheckbox = control,
 		CreateControlTextContainer = function()
@@ -1618,7 +1633,12 @@ return function(root, check)
 			return { Add = function(_, value, label) data[#data + 1] = { value = value, label = label } end, GetData = function() return data end }
 		end,
 		CreateDropdown = control,
-		CreateSliderOptions = function() return {} end, CreateSlider = control,
+		CreateSliderOptions = function(minimum, maximum, step)
+			local options = { minimum = minimum, maximum = maximum, step = step }
+			function options:SetLabelFormatter(_, format) self.format = format end
+			return options
+		end,
+		CreateSlider = function(_, proxy, options) sliders[proxy.variable] = options; return control() end,
 		OpenToCategory = function(id) opened = id end,
 	}
 	env2.CreateSettingsListSectionHeaderInitializer = function(name)
@@ -1629,6 +1649,7 @@ return function(root, check)
 	end
 	env2.EventUtil.ContinueOnAddOnLoaded = function(_, callback) callback() end
 	env2.EventUtil.ContinueOnPlayerLogin = function(callback) callback() end
+	env2.MinimalSliderWithSteppersMixin = { Label = { Right = "right" } }
 	local settings = assert(loadfile(source("settings"))); setfenv(settings, env2); settings("Everlook", addon2)
 	check("native settings register one Everlook page", pages == 1)
 	check("modules can add native settings buttons after their options", settings_buttons["Preview notifications"] and settings_buttons["Reset Island position"])
@@ -1686,6 +1707,17 @@ return function(root, check)
 	check("subpage toggles retain saved preferences", registered.Everlook_QoL_quest_interface_enabled.get())
 	registered.Everlook_QoL_fonts_size_offset.set(100)
 	check("settings clamp font size to supported range", addon2.module.get("fonts", "size_offset") == 8)
+	check("a plain slider shows its number", sliders.Everlook_QoL_fonts_size_offset.format(3) == "3")
+	check("a slider with a unit shows it after the number", sliders.Everlook_QoL_smart_island_size.format(105) == "105%" and sliders.Everlook_QoL_chat_tweaks_fade_seconds.format(120) == "120 s")
+	check("a label shows the step the value will be stored on", sliders.Everlook_QoL_smart_island_size.format(97) == "95%" and sliders.Everlook_QoL_smart_island_size.format(98) == "100%")
+	local scale = sliders.Everlook_QoL_swing_timers_scale
+	check("a percentage label shows the step too", scale.format(83) == "80%" and scale.format(87) == "90%")
+	check("a fraction shown as a percentage runs in whole percents", scale.minimum == 50 and scale.maximum == 100 and scale.step == 10 and scale.format(80) == "80%")
+	check("a percentage slider starts from the stored fraction", registered.Everlook_QoL_swing_timers_scale.default == 50 and registered.Everlook_QoL_swing_timers_scale.get() == 50)
+	registered.Everlook_QoL_swing_timers_scale.set(80)
+	check("a percentage slider stores the fraction", addon2.module.get("swing_timers", "scale") == 0.8 and registered.Everlook_QoL_swing_timers_scale.get() == 80)
+	registered.Everlook_QoL_smart_island_quest_distance_weight.set(150)
+	check("a quarter step shows as a whole percentage", addon2.module.get("smart_island", "quest_distance_weight") == 1.5 and registered.Everlook_QoL_smart_island_quest_distance_weight.get() == 150)
 	addon2.settings.toggle()
 	check("the toggle opens the Everlook page", opened == 42)
 	local hidden_panels = 0

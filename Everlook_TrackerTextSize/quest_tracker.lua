@@ -83,7 +83,7 @@ module.register({
 	name = "Quest tracker",
 	description = "Sets the quest tracker objectives to the size on Objective size, from 12 to 20, and keeps the headers two points larger. The change waits until combat ends, the Edit Mode layout stays as it is, a tracker that is missing, not initialized, has no text-size setting, or is already outside that range is left alone, the size does nothing until this is on, and turning this off puts back the size it last took over while the tracker still shows this size.",
 	options = {
-		text_size = { name = "Objective size", default = 16, min = 12, max = 20, step = 1, description = "Sets the quest tracker objective lines to this many points, from 12 to 20, and the headers stay two points larger. The change waits until combat ends, the Edit Mode layout stays as it is, a tracker that is missing, not initialized, has no text-size setting, or is already outside this size range is left alone, and this number does nothing until Quest tracker is on." },
+		text_size = { name = "Objective size", default = 16, min = 12, max = 20, step = 1, unit = " pt", description = "Sets the quest tracker objective lines to this many points, from 12 to 20, and the headers stay two points larger. The change waits until combat ends, the Edit Mode layout stays as it is, a tracker that is missing, not initialized, has no text-size setting, or is already outside this size range is left alone, and this number does nothing until Quest tracker is on." },
 	},
 	apply = apply,
 	out_of_combat = true,
