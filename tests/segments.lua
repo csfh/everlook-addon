@@ -600,7 +600,7 @@ return function(root, check)
 		env.clock_now = 5000
 		addon.world.flush(true)
 		local db = env.EverlookDB
-		check("the indexes are saved as pages and never uploaded", db.pages["ixItemVendors.0"] ~= nil and db.pages["ixNpcQuests.0"] ~= nil and db.segments["ixItemVendors.1.0"] == nil and not db.manifest:find("ix", 1, true) and db.ixVersion == 1)
+		check("the indexes are saved as pages and never uploaded", db.pages["ixItemVendors.0"] ~= nil and db.pages["ixNpcQuests.0"] ~= nil and db.segments["ixItemVendors.1.0"] == nil and not db.manifest:find("ix", 1, true) and db.ixVersion == 2)
 
 		local next_addon = open(db)
 		local at_login = next_addon.pages.stats().decodes
@@ -646,7 +646,7 @@ return function(root, check)
 		later_env.debugprofilestop = nil
 		while later.world.index_step(1000) do
 		end
-		check("the index is built from the rows", not later.world.index_pending() and db.ixVersion == 1 and table.concat(later.world.lookup("item", 20), "|"):find("Vendor: Creature", 1, true) == nil and #later.world.lookup("item", 20) == 3 and later.world.lookup("npc", 2000)[1] == "Sells Cloth")
+		check("the index is built from the rows", not later.world.index_pending() and db.ixVersion == 2 and table.concat(later.world.lookup("item", 20), "|"):find("Vendor: Creature", 1, true) == nil and #later.world.lookup("item", 20) == 3 and later.world.lookup("npc", 2000)[1] == "Sells Cloth")
 		later_env.clock_now = 9000
 		later.world.flush(true)
 		local third = open(db)
@@ -694,6 +694,48 @@ return function(root, check)
 		local table_addon = load()
 		table_addon.world.reset()
 		check("without pages the rows are one page", table_addon.world.page_count("npcs") >= 1)
+	end
+
+	-- A map's pins come from a list kept for the map.
+	do
+		local addon, env = open({})
+		local function names(list)
+			local found = {}
+			for index = 1, #list do
+				found[#found + 1] = list[index].bucket .. ":" .. list[index].key
+			end
+			table.sort(found)
+			return table.concat(found, " ")
+		end
+		local spot = function(map) return { { mapId = map, x = 10, y = 20 } } end
+		addon.world.store("npcs", { id = 1, name = "Plain wolf", classification = "normal", locations = spot(37) })
+		addon.world.store("npcs", { id = 2, name = "Rare wolf", classification = "rare", locations = spot(37) })
+		addon.world.store("npcs", { id = 3, name = "Trainer", isTrainer = true, locations = spot(37) })
+		addon.world.store("npcs", { id = 4, name = "Seller", classification = "normal", locations = spot(37) })
+		addon.world.store("objects", { id = 50, name = "Chest", locations = spot(37) })
+		addon.world.store("quests", { id = 60, title = "Giver", locations = { { mapId = 37, x = 1, y = 1, role = 1 }, { mapId = 38, x = 1, y = 1, role = 3 } } })
+		addon.world.store("taxiNodes", { id = 7, name = "Flight", mapId = 37, x = 5, y = 5 })
+		check("only what is drawn is listed for a map", names(addon.world.on_map(37)) == "npcs:2 npcs:3 objects:50 quests:60 taxiNodes:7")
+		check("a role that is not drawn lists no map", names(addon.world.on_map(38)) == "")
+		addon.world.store("vendors", { npcId = 4, itemId = 9 })
+		check("a creature that starts selling is listed", names(addon.world.on_map(37)):find("npcs:4", 1, true) ~= nil)
+		check("it asks the lookup whether a creature sells", addon.world.sells(4) and not addon.world.sells(1))
+		addon.world.store("npcs", { id = 2, name = "Rare wolf", classification = "rare", locations = spot(37) })
+		addon.world.store("npcs", { id = 2, name = "Rare wolf", locations = { { mapId = 37, x = 99, y = 99 }, { mapId = 38, x = 1, y = 1 } } })
+		check("a row is listed once on a map and again on a new one", names(addon.world.on_map(37)):find("npcs:2 npcs:3", 1, true) ~= nil and names(addon.world.on_map(38)) == "npcs:2")
+		env.clock_now = 5000
+		addon.world.flush(true)
+		local later = open(env.EverlookDB)
+		check("the lists are saved and read without reading every row", names(later.world.on_map(37)) == names(addon.world.on_map(37)) and later.pages.stats().decodes <= 12)
+
+		-- Built again from the rows when the version changes.
+		local db = env.EverlookDB
+		db.ixVersion = nil
+		local again = open(db)
+		while again.world.index_step(1000) do
+		end
+		check("a list built again from the rows is the same", names(again.world.on_map(37)) == names(addon.world.on_map(37)) and names(again.world.on_map(38)) == "npcs:2")
+		check("a map with nothing on it lists nothing", #again.world.on_map(999) == 0 and #again.world.on_map("x") == 0)
 	end
 
 	-- A client whose encoder cannot hand a page back whole keeps rows as tables.

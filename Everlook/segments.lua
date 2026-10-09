@@ -51,6 +51,7 @@ local pads, pads_secret
 local last_commit = 0
 local last_check = 0
 local next_poll = 0
+local index_turn = false
 local total_bytes = 0
 local stats = {}
 local frame
@@ -374,9 +375,11 @@ end
 local function pick(force, only)
 	local t = now()
 	local best, best_kind, best_score
-	for index = 1, #queue do
+	for index = #queue, 1, -1 do
 		local page = queue[index]
-		if not page.job and not page.failed and (force or (t - page.touched >= QUIET) or (t - page.first_dirty >= MAX_WAIT)) then
+		if page.cleared then
+			dequeue(page)
+		elseif not page.job and not page.failed and (force or (t - page.touched >= QUIET) or (t - page.first_dirty >= MAX_WAIT)) then
 			local kind
 			if page.raw_dirty then
 				kind = "raw"
@@ -636,8 +639,11 @@ function S.tick()
 	end
 	local slow = type(GetFramerate) == "function" and (GetFramerate() or 60) < 30
 	local budget = slow and SLOW_WORK_MS or WORK_MS
-	-- Indexes still being built take the frame's time first.
-	if Everlook.world.index_step(budget) then
+	-- An index still being built and the saving of pages take the frames in turn,
+	-- so the pages it changes are saved as it goes and not all held until it ends.
+	index_turn = not index_turn
+	if index_turn and Everlook.world.index_pending() then
+		Everlook.world.index_step(budget)
 		return
 	end
 	if not work(budget, false) then

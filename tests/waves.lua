@@ -898,6 +898,15 @@ return function(root, check)
 	end
 	addon.world.store("objects", { id = 8, name = "Box", locations = { { mapId = 37, x = 1, y = 1 } } })
 	check("a new place refreshes pins while the map is attached", refreshes == 1)
+	play.WorldMapFrame.GetMapID = function()
+		return 37
+	end
+	addon.world.store("objects", { id = 11, name = "Far crate", locations = { { mapId = 1, x = 1, y = 1 } } })
+	check("a place on another map does not redraw this one", refreshes == 1)
+	addon.world.store("objects", { id = 12, name = "Near crate", locations = { { mapId = 37, x = 1, y = 1 } } })
+	check("a place on this map does", refreshes == 2)
+	refreshes = 1
+	play.WorldMapFrame.GetMapID = nil
 	local queued = {}
 	play.C_Timer.After = function(_, callback)
 		queued[#queued + 1] = callback

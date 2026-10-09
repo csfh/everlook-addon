@@ -41,7 +41,7 @@ end
 
 function Everlook.map_pins.for_map(map_id)
 	local pins = {}
-	if type(map_id) ~= "number" or not Everlook.world or not Everlook.world.each then
+	if type(map_id) ~= "number" or not Everlook.world or not Everlook.world.on_map then
 		return pins
 	end
 	local function add(bucket, row, key, location, kind, label)
@@ -71,52 +71,44 @@ function Everlook.map_pins.for_map(map_id)
 			add(bucket, row, key, row.locations[index], kind, label)
 		end
 	end
-	Everlook.world.each("quests", function(key, row)
-		if type(row) == "table" and type(row.locations) == "table" then
-			for index = 1, #row.locations do
-				local location = row.locations[index]
-				local label = type(location) == "table" and QUEST_LABELS[location.role] or nil
-				if label then
-					add("quests", row, key, location, "quest", label)
+	-- Only the rows that have a place on this map are read.
+	local candidates = Everlook.world.on_map(map_id)
+	for index = 1, #candidates do
+		local bucket, row, key = candidates[index].bucket, candidates[index].row, candidates[index].key
+		if type(row) == "table" then
+			if bucket == "quests" then
+				if type(row.locations) == "table" then
+					for position = 1, #row.locations do
+						local location = row.locations[position]
+						local label = type(location) == "table" and QUEST_LABELS[location.role] or nil
+						if label then
+							add("quests", row, key, location, "quest", label)
+						end
+					end
 				end
+			elseif bucket == "objects" then
+				add_locations("objects", row, key, "object", "object")
+			elseif bucket == "npcs" then
+				if rare(row.classification) then
+					add_locations("npcs", row, key, "rare", "rare")
+				else
+					local trainer = row.isTrainer == true
+					local seller = Everlook.world.sells(row.id)
+					if trainer or seller then
+						local label = "vendor"
+						if trainer and seller then
+							label = "vendor, trainer"
+						elseif trainer then
+							label = "trainer"
+						end
+						add_locations("npcs", row, key, "vendor", label)
+					end
+				end
+			elseif bucket == "taxiNodes" then
+				add("taxiNodes", row, key, row, "flight", "flight master")
 			end
 		end
-	end)
-	Everlook.world.each("objects", function(key, row)
-		add_locations("objects", row, key, "object", "object")
-	end)
-	local sellers = {}
-	Everlook.world.each("vendors", function(_, row)
-		if type(row) == "table" and type(row.npcId) == "number" then
-			sellers[row.npcId] = true
-		end
-	end)
-	Everlook.world.each("npcs", function(key, row)
-		if type(row) ~= "table" then
-			return
-		end
-		if rare(row.classification) then
-			add_locations("npcs", row, key, "rare", "rare")
-			return
-		end
-		local trainer = row.isTrainer == true
-		local seller = sellers[row.id] == true
-		if not trainer and not seller then
-			return
-		end
-		local label = "vendor"
-		if trainer and seller then
-			label = "vendor, trainer"
-		elseif trainer then
-			label = "trainer"
-		end
-		add_locations("npcs", row, key, "vendor", label)
-	end)
-	Everlook.world.each("taxiNodes", function(key, row)
-		if type(row) == "table" then
-			add("taxiNodes", row, key, row, "flight", "flight master")
-		end
-	end)
+	end
 	return pins
 end
 
@@ -216,9 +208,39 @@ local function refresh_pins()
 	provider:RefreshAllData()
 end
 
-local function queue_pins()
+-- The map being looked at, when the stock map says.
+local function shown_map()
+	if WorldMapFrame and type(WorldMapFrame.GetMapID) == "function" then
+		local map_id = WorldMapFrame:GetMapID()
+		if type(map_id) == "number" then
+			return map_id
+		end
+	end
+end
+
+local function row_on_map(row, map_id)
+	if row.mapId == map_id then
+		return true
+	end
+	local locations = row.locations
+	for index = 1, type(locations) == "table" and #locations or 0 do
+		if type(locations[index]) == "table" and locations[index].mapId == map_id then
+			return true
+		end
+	end
+	return false
+end
+
+local function queue_pins(bucket, row)
 	if not attached or not provider then
 		return
+	end
+	-- A place on another map changes nothing here, and drawing a big map reads many pages.
+	if type(row) == "table" and bucket ~= "vendors" then
+		local looked_at = shown_map()
+		if looked_at and not row_on_map(row, looked_at) then
+			return
+		end
 	end
 	if not map_open() then
 		pins_stale = true
@@ -287,8 +309,8 @@ local function apply(enabled)
 end
 
 if Everlook.world and Everlook.world.watch then
-	Everlook.world.watch(function()
-		queue_pins()
+	Everlook.world.watch(function(bucket, row)
+		queue_pins(bucket, row)
 	end)
 end
 

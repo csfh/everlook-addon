@@ -27,6 +27,7 @@ local CAP = {
 -- but never uploaded.
 local DERIVED = {
 	ixItemVendors = true, ixNpcSells = true, ixItemDrops = true, ixNpcCasts = true, ixNpcQuests = true, ixObjectLoot = true,
+	ixMapPins = true,
 }
 for name in pairs(DERIVED) do
 	CAP[name] = 2048
@@ -170,6 +171,36 @@ function P.index_of(bucket, key)
 	return index
 end
 
+-- Forgets every page of a bucket, saved copies too, so it can be built again.
+function P.clear_bucket(bucket)
+	local dir = dirs[bucket]
+	if not dir then
+		return
+	end
+	local db = EverlookDB
+	for index = 1, #dir.pages do
+		local page = dir.pages[index]
+		if page.rows then
+			for _, row in pairs(page.rows) do
+				page_of[row] = nil
+			end
+			loaded_count = loaded_count - 1
+		end
+		by_name[page.name] = nil
+		if type(db) == "table" then
+			if type(db.pages) == "table" then
+				db.pages[page.name] = nil
+			end
+			if type(db.pageCounts) == "table" then
+				db.pageCounts[page.name] = nil
+			end
+		end
+		page.raw_dirty, page.seg_dirty = false, false
+		page.cleared = true
+	end
+	dirs[bucket] = nil
+end
+
 function P.derived(bucket)
 	return DERIVED[bucket] == true
 end
@@ -198,6 +229,7 @@ local function forget(page)
 	end
 	page.rows = nil
 	page.pins = nil
+	page.sets = nil
 	page.records = nil
 	loaded_count = loaded_count - 1
 	stats.evictions = stats.evictions + 1

@@ -926,7 +926,7 @@ local INDEX_BUCKETS = {
 	npc_casts = "ixNpcCasts", npc_quests = "ixNpcQuests", object_loot = "ixObjectLoot",
 }
 -- Bump this to have every index rebuilt from the rows next session.
-local INDEX_VERSION = 1
+local INDEX_VERSION = 2
 
 function Everlook.world.forget_lookup()
 	lookup = {
@@ -1015,6 +1015,154 @@ end
 -- first time, and a tooltip says nothing until then.
 local index_ready = true
 local index_job
+
+-- Whether a creature sells something, from the index a tooltip reads.
+local function sells(npc_id)
+	if type(npc_id) ~= "number" then
+		return false
+	end
+	local list = index_list("npc_sells", npc_id)
+	return list ~= nil and #list > 0
+end
+
+function Everlook.world.sells(npc_id)
+	return sells(npc_id)
+end
+
+-- Map pins. A map's pins are found from a list kept for the map, of the quests,
+-- objects, flight masters, and the creatures that are rare, train or sell, that
+-- have a place on it. Drawing a map reads that list and those rows, and not
+-- every row of every bucket.
+local PIN_SOURCES = { quests = true, objects = true, npcs = true, taxiNodes = true }
+local PIN_QUEST_ROLES = { [1] = true, [2] = true, [4] = true }
+local PIN_RARE = { rare = true, rareelite = true, worldboss = true }
+
+local function pin_maps(bucket, row, maps)
+	if bucket == "taxiNodes" then
+		if type(row.mapId) == "number" then
+			maps[row.mapId] = true
+		end
+		return
+	end
+	if bucket == "npcs" and not (PIN_RARE[type(row.classification) == "string" and row.classification:lower() or ""] or row.isTrainer == true or sells(row.id)) then
+		return
+	end
+	local locations = row.locations
+	if type(locations) ~= "table" then
+		return
+	end
+	for index = 1, #locations do
+		local location = locations[index]
+		if type(location) == "table" and type(location.mapId) == "number" and (bucket ~= "quests" or PIN_QUEST_ROLES[location.role]) then
+			maps[location.mapId] = true
+		end
+	end
+end
+
+local pin_scratch = {}
+
+-- Which entries a map's list already holds, kept with the page that holds the
+-- list and let go with it, so adding a row costs one lookup however long the
+-- list is.
+local function pin_set(list)
+	local holder = Everlook.pages.page_of(list)
+	if not holder then
+		return nil
+	end
+	local sets = holder.sets
+	if not sets then
+		sets = {}
+		holder.sets = sets
+	end
+	local set = sets[list]
+	if not set then
+		set = {}
+		for index = 1, #list do
+			set[list[index]] = true
+		end
+		sets[list] = set
+	end
+	return set
+end
+
+-- Lists a row on each map it is drawn on, once.
+local function pin_index(bucket, row)
+	if not paged or not PIN_SOURCES[bucket] or type(row) ~= "table" then
+		return
+	end
+	for map_id in pairs(pin_scratch) do
+		pin_scratch[map_id] = nil
+	end
+	pin_maps(bucket, row, pin_scratch)
+	local key = row_key(bucket, row)
+	if key == nil then
+		return
+	end
+	local entry = bucket .. ":" .. key
+	for map_id in pairs(pin_scratch) do
+		local list = Everlook.pages.get("ixMapPins", map_id)
+		if not list then
+			Everlook.pages.add("ixMapPins", map_id, { entry })
+		else
+			local set = pin_set(list)
+			if not (set and set[entry]) then
+				if not set then
+					for index = 1, #list do
+						if list[index] == entry then
+							set = false
+						end
+					end
+				end
+				if set ~= false then
+					list[#list + 1] = entry
+					if set then
+						set[entry] = true
+					end
+					Everlook.pages.touch(list)
+				end
+			end
+		end
+	end
+end
+
+-- The rows that may be drawn on a map. Where rows are tables, every row that has a place on it.
+function Everlook.world.on_map(map_id)
+	local found = {}
+	if type(map_id) ~= "number" then
+		return found
+	end
+	if paged then
+		if not index_ready then
+			return found
+		end
+		local list = Everlook.pages.get("ixMapPins", map_id)
+		for index = 1, list and #list or 0 do
+			local bucket, key = list[index]:match("^(%a+):(.+)$")
+			key = tonumber(key) or key
+			local row = bucket and get_row(bucket, key)
+			if row then
+				found[#found + 1] = { bucket = bucket, key = key, row = row }
+			end
+		end
+		return found
+	end
+	for bucket in pairs(PIN_SOURCES) do
+		each_row(bucket, function(key, row)
+			local here = bucket == "taxiNodes" and row.mapId == map_id
+			local locations = row.locations
+			for index = 1, type(locations) == "table" and #locations or 0 do
+				if type(locations[index]) == "table" and locations[index].mapId == map_id then
+					here = true
+				end
+			end
+			if here then
+				found[#found + 1] = { bucket = bucket, key = key, row = row }
+			end
+		end)
+	end
+	return found
+end
+
 
 local LOOKUP_BUCKETS = { vendors = true, drops = true, npcSpells = true, quests = true, objectLoot = true }
 
@@ -1135,7 +1283,7 @@ function Everlook.world.store(bucket, row)
 	end
 	if (changed or created) and pin_buckets[bucket] then
 		for index = 1, #pin_watchers do
-			pin_watchers[index](bucket)
+			pin_watchers[index](bucket, existing)
 		end
 	end
 	if LOOKUP_BUCKETS[bucket] and (created or changed) then
@@ -1148,6 +1296,14 @@ function Everlook.world.store(bucket, row)
 			end
 		end
 		lookup_index(bucket, existing)
+	end
+	if paged and (created or changed) then
+		if PIN_SOURCES[bucket] then
+			pin_index(bucket, existing)
+		elseif bucket == "vendors" and type(existing.npcId) == "number" then
+			-- A creature that sells is drawn, so it may now belong on its maps.
+			pin_index("npcs", get_row("npcs", existing.npcId))
+		end
 	end
 	return changed
 end
@@ -1768,7 +1924,7 @@ end
 
 -- The paged indexes are built from the rows once, a page at a time in the
 -- background, and kept up to date as rows are stored.
-local INDEX_SOURCES = { "vendors", "drops", "npcSpells", "quests", "objectLoot" }
+local INDEX_SOURCES = { "vendors", "drops", "npcSpells", "objectLoot", "quests", "objects", "taxiNodes", "npcs" }
 
 function Everlook.world.start_index()
 	index_job = nil
@@ -1788,6 +1944,8 @@ function Everlook.world.start_index()
 		return
 	end
 	index_ready = false
+	-- The map lists are made again from the rows.
+	Everlook.pages.clear_bucket("ixMapPins")
 	index_job = { source = 1, from = 0 }
 end
 
@@ -1838,7 +1996,11 @@ function Everlook.world.index_step(limit_ms)
 				last = #list
 			end
 			for index = job.at, last do
-				lookup_index(bucket, list[index])
+				local row = list[index]
+				lookup_index(bucket, row)
+				if PIN_SOURCES[bucket] then
+					pin_index(bucket, row)
+				end
 			end
 			job.at = last + 1
 			if job.at > #list then
