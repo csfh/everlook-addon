@@ -13,7 +13,7 @@ local LIST_MAX, STATUS_MAX = 30, 10 -- LIST_MAX sizes the pooled inbox rows; the
 local CLOSED_W, CLOSED_H = 64, 36
 local QUEUE_MAX = 5
 local TOAST_GAP = 6
-local MOTION = { enter = 0.2, exit = 0.15, open = 0.15, close = 0.125, handoff = 0.125, complete = 0.15, level = 0.2 }
+local MOTION = { enter = 0.2, exit = 0.15, open = 0.15, close = 0.125, handoff = 0.125, complete = 0.15 }
 local ENTER_TIME, EXIT_TIME = MOTION.enter, MOTION.exit
 -- Two columns when there is a quest to show beside the notifications, one when there is not.
 local OPEN_W, NARROW_W = 720, 440
@@ -72,7 +72,6 @@ local expanded, expanded_surface, resting
 local preview_group, preview_fade
 local preview_targets, preview_translations, preview_controls = {}, {}, {}
 local preview = { phase = "settled", y = 0, alpha = 0, open = false }
-local level_overlay, level_group, level_fade, level_token
 local readout = {}
 local quest_context = Everlook.island_quests
 local vitals = Everlook.island_vitals
@@ -82,12 +81,12 @@ local island_surface = Everlook.island_surface
 local island_notice = Everlook.island_notice
 local island_inbox = Everlook.island_inbox
 local island_toasts = Everlook.island_toasts
-local shell = { quest_offset = 0, quest_height = 0, stats = Everlook.island_stats, rim_api = Everlook.island_rim, scroll_api = Everlook.island_scroll, width = CLOSED_W, height = CLOSED_H, from_w = CLOSED_W, to_w = CLOSED_W, from_h = CLOSED_H, to_h = CLOSED_H }
+local shell = { quest_offset = 0, quest_height = 0, stats = Everlook.island_stats, scroll_api = Everlook.island_scroll, width = CLOSED_W, height = CLOSED_H, from_w = CLOSED_W, to_w = CLOSED_W, from_h = CLOSED_H, to_h = CLOSED_H }
 local resting_slots = {}
 -- The open summary spaces everything from these steps. A gap inside a group is
 -- `within`, a gap between siblings `near`, and a gap between groups `section`,
 -- which is at least twice the one inside. `edge` is the inset the rows below share.
-shell.space = { within = 4, near = 8, section = 16, edge = 12, rail = 3, ring = 28, icon = 14, mark = 16, capsule_ring = 24, head = 40, pane_min = 48, pane_max = 320 }
+shell.space = { within = 4, near = 8, section = 16, edge = 12, ring = 28, icon = 14, mark = 16, capsule_ring = 24, head = 40, pane_min = 48, pane_max = 320 }
 local function refresh_quests(force)
 	quest_context.refresh(force)
 end
@@ -127,12 +126,6 @@ end
 
 local function finite(value)
 	return usable(value) and type(value) == "number" and value == value and value > -math.huge and value < math.huge
-end
-
--- UnitXP can return a secret value in combat. type() may not be "number",
--- but StatusBar:SetValue still accepts it.
-local function bar_value(value)
-	return type(value) == "number" or (issecretvalue and issecretvalue(value))
 end
 
 local function call(object, method, ...)
@@ -631,7 +624,6 @@ function island.view()
 		can_undo = undo_state ~= nil,
 		status = active_status() and copy_notice(active_status()) or nil,
 		status_height = status_height,
-		rim = { top = shell.rim_api.fraction(shell.rim, "top"), bottom = shell.rim_api.fraction(shell.rim, "bottom") },
 		shell = { width = shell.width, height = shell.height, from = shell.from_w, to = shell.to_w, playing = shell.playing == true },
 		preview = { phase = preview.phase, y = preview_y, alpha = preview_alpha, duration = preview.motion and preview.motion.duration },
 	}
@@ -762,8 +754,6 @@ end
 -- The open summary is a header, an Experience table and a Status heading over
 -- a grid of cells. Each cell has a mark, a small name over its value and, for a
 -- figure with a fraction, a ring around the mark that fills to it.
-local EDGE_OPTIONS = { top = "rim_top", bottom = "rim_bottom" }
-
 -- The open island is two columns that the summary and the panes share: the
 -- left one runs to `left_w`, the right one begins there. With no left column
 -- (`left_w` is 0) the summary stacks: the table, then the status cells under it.
@@ -792,9 +782,7 @@ local function layout_summary(width, left_w)
 	local left_line, right_line = call(left_text, "GetLineHeight") or 14, call(right_text, "GetLineHeight") or 14
 	call(right_text, "ClearAllPoints")
 	call(right_text, "SetPoint", "TOPRIGHT", shell.header_visual, "TOPRIGHT", -edge, -(edge + math.max(0, left_line - right_line - 1)))
-	local rail_top = edge + heading_height + space.near
-	shell.rail_top = rail_top
-	local block_top = (shell.rail_wanted() and rail_top + space.rail or edge + heading_height) + space.section
+	local block_top = edge + heading_height + space.section
 	-- The Experience table takes the left column. Status takes the right, or
 	-- the whole width in one row when there is no table to sit beside.
 	local stacked = left_w == 0
@@ -882,94 +870,10 @@ local function layout_summary(width, left_w)
 	call(shell.divider, "SetPoint", "BOTTOMLEFT", summary, "BOTTOMLEFT", edge, 0)
 	call(shell.divider, "SetPoint", "BOTTOMRIGHT", summary, "BOTTOMRIGHT", -edge, 0)
 	call(shell.divider, "SetHeight", 1)
-	call(fill, "ClearAllPoints")
-	call(fill, "SetPoint", "TOPLEFT", summary, "TOPLEFT", edge, -rail_top)
-	call(fill, "SetSize", width - 2 * edge, space.rail)
 end
 
--- Each edge of the Island tracks one figure the player chose. Every reading is
--- a fraction and a colour, or nil when there is nothing plain to read.
-local RESTED_COLOR = { 0.35, 0.6, 0.95, 1 }
 local QUEST_COLOR = { 1, 0.82, 0.25, 1 }
 shell.quest_color = QUEST_COLOR
-
-local function edge_reading(kind)
-	if kind == "experience" then
-		local xp, xp_max = readout.xp, readout.xp_max
-		if usable(xp) and usable(xp_max) and type(xp) == "number" and type(xp_max) == "number" and xp_max > 0 then
-			return xp / xp_max, COLORS.accent
-		end
-	elseif kind == "rested" then
-		local rested = GetXPExhaustion and GetXPExhaustion()
-		local xp_max = readout.xp_max
-		if finite(rested) and usable(xp_max) and type(xp_max) == "number" and xp_max > 0 then
-			return math.min(1, rested / xp_max), RESTED_COLOR
-		end
-	elseif kind == "quest" then
-		local view = quest_context.view()
-		local current = view and view.current
-		if current then
-			if current.ready then return 1, QUEST_COLOR end
-			local total, count = 0, 0
-			for _, objective in ipairs(current.objectives or {}) do
-				if type(objective.progress) == "number" then total, count = total + objective.progress, count + 1 end
-			end
-			if count > 0 then return total / count, QUEST_COLOR end
-		end
-	elseif kind == "durability" then
-		local durability = readout.durability
-		if finite(durability) then
-			return math.max(0, math.min(1, durability / 100)),
-				durability <= 10 and COLORS.error or durability <= 30 and COLORS.warning or COLORS.success
-		end
-	elseif kind == "bags" then
-		local free, total = readout.bags, readout.bags_total
-		if finite(free) and finite(total) and total > 0 then
-			return math.max(0, math.min(1, free / total)),
-				free == 0 and COLORS.error or free <= module.get(id, "low_slots") and COLORS.warning or COLORS.success
-		end
-	end
-end
-
--- The XP rail under the level only draws for a reading an edge bar cannot show:
--- a secret one cannot be divided, so the native status bar keeps it, as it always has.
--- The layout asks this too, so it reserves room for the rail only when it draws.
-shell.rail_wanted = function()
-	local wants_experience = false
-	for _, option in pairs(EDGE_OPTIONS) do
-		if module.get(id, option) == "experience" then
-			wants_experience = true
-			if edge_reading("experience") ~= nil then return false end
-		end
-	end
-	local xp, xp_max = readout.xp, readout.xp_max
-	if not wants_experience or not bar_value(xp) or not bar_value(xp_max) then return false end
-	return not usable(xp_max) or (type(xp_max) == "number" and xp_max > 0)
-end
-
-local function paint_fill()
-	if not fill then return end
-	for edge, option in pairs(EDGE_OPTIONS) do
-		local fraction, color = edge_reading(module.get(id, option))
-		-- A quest or status capsule already draws along its bottom edge.
-		if edge == "bottom" and shell.busy_bottom then fraction = nil end
-		shell.rim_api.set(shell.rim, edge, fraction, color)
-	end
-	local xp, xp_max = readout.xp, readout.xp_max
-	if not shell.rail_wanted() then
-		call(fill, "Hide")
-		return
-	end
-	-- OverrideActionBarMixin:UpdateXpBar passes UnitXP and UnitXPMax to the bar.
-	-- Arithmetic on a secret value is an error, so the range stays 0 to max.
-	if usable(xp) and usable(xp_max) then
-		call(fill, "SetMinMaxValues", math.min(0, xp), xp_max)
-	else
-		call(fill, "SetMinMaxValues", 0, xp_max)
-	end
-	call(fill, "SetValue", xp)
-	call(fill, "Show")
-end
 
 local function show_label(label, visible, text)
 	if not label then return end
@@ -1434,7 +1338,6 @@ end
 
 local function apply_visual(width, height)
 	shell.width, shell.height = width, height
-	shell.rim_api.resize(shell.rim, width, height)
 	call(resting, "SetSize", width, height)
 	call(resting, "SetAlpha", 1)
 	call(resting, "Show")
@@ -1603,17 +1506,6 @@ shell.sample = function()
 		call(closed_text, "ClearAllPoints")
 		call(closed_text, "SetPoint", "CENTER", resting, "TOPLEFT", from_x + (to_x - from_x) * travel, from_y + (to_y - from_y) * travel)
 	end
-	if motion.rail then
-		local y0 = -((motion.closed_h or CLOSED_H) - 6)
-		local y1 = -(motion.rail_top or 20)
-		local y = motion.quest and y1 or (y0 + (y1 - y0) * travel)
-		call(fill, "SetParent", motion.quest and expanded or resting)
-		call(fill, "ClearAllPoints")
-		call(fill, "SetPoint", "TOPLEFT", motion.quest and expanded or resting, "TOPLEFT", shell.space.edge, y)
-		call(fill, "SetSize", math.max(1, width - 2 * shell.space.edge), shell.space.rail)
-		call(fill, "SetAlpha", motion.quest and alpha or 1)
-		call(fill, "Show")
-	end
 end
 
 -- Width moves only when the measured pill changes by at least 4. A one-step
@@ -1752,8 +1644,8 @@ paint = function(reason)
 	call(frame, "SetHitRectInsets", hit_inset, hit_inset, hit_inset, hit_inset)
 	call(frame, "Show")
 	frame.shown = true
-	shell.busy_bottom = (quest or layout) and (now == "closed" or morphing) and true or false
-	paint_fill()
+	-- Only a status capsule draws a bar now, along its own bottom edge, and only while closed.
+	call(fill, "Hide")
 	if now == "closed" and layout and status and not morphing then
 		local progress = status.capsule.progress
 		if progress == nil then progress = status.progress end
@@ -1820,11 +1712,9 @@ paint = function(reason)
 		local motion = preview.motion
 		motion.to_w, motion.to_h = width, height
 		motion.closed_w, motion.closed_h = closed_w, closed_h
-		motion.rail_top = shell.rail_top
 		motion.quest = quest and true or false
 		motion.capsule = layout and true or false
 		motion.nudge = status and not layout and 4 or -4
-		motion.rail = fill and fill.shown ~= false
 		if not motion.sized then
 			motion.from_w, motion.from_h = shell.width, shell.height
 			motion.sized = true
@@ -1964,24 +1854,6 @@ local function refresh_status(entry)
 	end
 end
 
-local function celebrate_level()
-	if not level_overlay then return end
-	call(level_group, "Stop")
-	local token = {}
-	level_token = token
-	call(level_overlay, "SetAlpha", 1)
-	call(level_overlay, "Show")
-	call(level_fade, "SetFromAlpha", 1)
-	call(level_fade, "SetToAlpha", 0)
-	call(level_fade, "SetDuration", MOTION.level)
-	call(level_group, "SetScript", "OnFinished", function()
-		if level_token ~= token then return end
-		level_token = nil
-		call(level_overlay, "Hide")
-	end)
-	if level_group then call(level_group, "Play") else call(level_overlay, "Hide") end
-end
-
 function island.notify(payload)
 	if not module.enabled(id) then return nil, "disabled" end
 	if not usable(payload) or type(payload) ~= "table" or getmetatable(payload) ~= nil then return nil, "invalid_notification" end
@@ -2043,7 +1915,6 @@ function island.notify(payload)
 	if entry.removed then entry.removed, entry.expire_row = nil, nil end
 	local continued_status = presentation == "status" and entry.presentation == "status"
 	entry.completing = presentation == "toast" and entry.presentation == "status"
-	if kind == "level" and source == "smart_island" and entry.text ~= text then celebrate_level() end
 	if joined or entry.text ~= text or entry.severity ~= severity or (not continued_status and
 		(entry.detail ~= detail or entry.money ~= next_money or entry.presentation ~= presentation)) then entry.unread, entry.read_timer = true, nil end
 	entry.updated_at = clock_now()
@@ -2278,9 +2149,6 @@ local function hide()
 	end
 	clear_toasts()
 	settle_preview(false)
-	level_token = nil
-	call(level_group, "Stop")
-	call(level_overlay, "Hide")
 	for _, entry in ipairs(statuses) do entry.status_timer = nil end
 	statuses = {}
 	undo_state, close_token, scroll_anchor, follow_end = nil, nil, nil, nil
@@ -2289,7 +2157,6 @@ local function hide()
 	pinned, hovering, holding, hold_was_pinned, hold_at, was_open = nil, nil, nil, nil, nil, nil
 	notices, readout = kept, {}
 	vitals.follow("hide")
-	for _, edge in ipairs(shell.rim_api.edges) do shell.rim_api.set(shell.rim, edge, nil) end
 	shell.signature, shell.incoming, shell.playing, shell.fading, shell.sizing = nil, nil, false, false, false
 	shell.width, shell.height = CLOSED_W, CLOSED_H
 	shell.from_w, shell.to_w, shell.from_h, shell.to_h = CLOSED_W, CLOSED_W, CLOSED_H, CLOSED_H
@@ -2508,7 +2375,6 @@ local function ensure_frame()
 	call(resting, "SetSize", CLOSED_W, CLOSED_H)
 	call(resting, "SetAlpha", 1)
 	surface = island_surface.make(resting)
-	shell.rim = shell.rim_api.make(resting)
 	shell.face = CreateFrame("Frame", "EverlookIslandFace", frame)
 	call(shell.face, "EnableMouse", false)
 	call(shell.face, "SetFrameLevel", 52)
@@ -2533,17 +2399,6 @@ local function ensure_frame()
 		call(fill, "SetMinMaxValues", 0, 1)
 		call(fill, "SetValue", 0)
 		call(fill, "EnableMouse", false)
-		level_overlay = CreateFrame("Frame", "EverlookIslandLevelAccent", fill)
-		call(level_overlay, "SetAllPoints", fill)
-		call(level_overlay, "EnableMouse", false)
-		local accent = call(level_overlay, "CreateTexture", nil, "OVERLAY")
-		call(accent, "SetAllPoints", level_overlay)
-		call(accent, "SetColorTexture", unpack(COLORS.success))
-		level_group = call(level_overlay, "CreateAnimationGroup")
-		level_fade = call(level_group, "CreateAnimation", "Alpha")
-		call(level_fade, "SetSmoothing", "OUT")
-		call(level_group, "SetToFinalAlpha", true)
-		call(level_overlay, "Hide")
 	end
 	closed_text = make_label(shell.face, "CENTER")
 	call(closed_text, "SetPoint", "CENTER", shell.face, "CENTER", -4, 0)
@@ -2919,9 +2774,6 @@ actions.use({
 	end,
 })
 
--- Each edge bar picks from the same list.
-local EDGE_CHOICES = { { "none", "Nothing" }, { "experience", "Experience" }, { "rested", "Rested experience" }, { "quest", "Quest progress" }, { "durability", "Gear durability" }, { "bags", "Free bag space" } }
-
 registered = module.register({
 	addon = addon_name, page = "smart_island", order = 10,
 	id = id,
@@ -2939,8 +2791,6 @@ registered = module.register({
 		closed_xp = { name = "Experience percent on the pill", default = true, description = "Show your experience percent beside the level while the Island is closed.", presets = { Quiet = false, Standard = true, Informative = true } },
 		closed_clock = { name = "Clock on the pill", default = false, description = "Show the game time beside the level while the Island is closed.", presets = { Quiet = false, Standard = false, Informative = true } },
 		closed_bags = { name = "Free slots on the pill", default = false, description = "Show free bag slots beside the level while the Island is closed. A warning shows there when slots run low, whether this is on or not.", presets = { Quiet = false, Standard = false, Informative = true } },
-		rim_top = { name = "Top bar", default = "experience", choices = EDGE_CHOICES, description = "What the bar along the top edge tracks. Experience fills with your progress to the next level.", presets = { Quiet = "experience", Standard = "experience", Informative = "experience" } },
-		rim_bottom = { name = "Bottom bar", default = "quest", choices = EDGE_CHOICES, description = "What the bar along the bottom edge tracks. Quest progress is the average of the current quest's objectives. A quest or status capsule keeps its own bottom edge.", presets = { Quiet = "none", Standard = "quest", Informative = "quest" } },
 		hide_when_idle = { name = "Hide when idle", default = false, description = "Fade the closed pill out after five quiet seconds. It returns for a notice, a status, an active quest or the pointer. Hover where it was to bring it back." },
 		hover_preview = { name = "Preview on hover", default = true, description = "Opens the Island while the pointer is over it, and closes that preview shortly after the pointer leaves. Click and the bound key still open and close it when this is off, and a pinned or held Island stays open after the pointer leaves." },
 		combat_toasts = { name = "Show routine toasts in combat", default = false, description = "Lets a notice that is not a warning or an error toast during combat, while Show notification toasts is on. With this off, that notice stays in the inbox and does not toast, including after combat ends, while a warning, an error, or a notice with an item or spell button can still toast.", presets = { Quiet = false, Standard = false, Informative = false } },
@@ -2986,7 +2836,6 @@ registered = module.register({
 		},
 		{ name = "Opening", keys = { "hover_preview", "hide_when_idle", "read_time" } },
 		{ name = "Closed pill", keys = { "closed_xp", "closed_clock", "closed_bags" } },
-		{ name = "Edge bars", keys = { "rim_top", "rim_bottom" } },
 		{
 			name = "Quest display",
 			keys = { "quest_title", "quest_context", "quest_nearby", "quest_recent", "quest_plan", "quest_distance_weight", "quest_level_weight" },

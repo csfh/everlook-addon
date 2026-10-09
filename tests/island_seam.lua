@@ -562,15 +562,6 @@ return function(root, check, island_world, quest_world, secret_stat)
 		check("the opacity option tints the native fill", centers[1].color[4] == 0.7)
 	end
 	do
-		local addon = island_world()
-		local rim = addon.island_rim
-		check("bars keep clear of the corners on the open island", rim.length(100, 60) == 66)
-		check("a small pill keeps its bars closer to the border", rim.length(100, 36) == 70)
-		check("a bar too short to read is left out", rim.length(30, 60) == nil)
-		check("a half full bar lights half its length", rim.lit(0.5, 66) == 33 and rim.lit(0, 66) == 0 and rim.lit(1, 66) == 66)
-		check("a fraction outside the range is held to it", rim.lit(3, 66) == 66 and rim.lit(-1, 66) == 0)
-	end
-	do
 		local addon, _, _, state, _, _, frames = island_world()
 		addon.module.set("smart_island", "enabled", true)
 		local function face() for _, f in ipairs(frames) do if f.name == "EverlookIslandFace" then return f end end end
@@ -611,10 +602,9 @@ return function(root, check, island_world, quest_world, secret_stat)
 		check("the open summary has a Status heading", label("STATUS") ~= nil)
 		local money, gear, bags = cell("Money"), cell("Gear"), cell("Bags")
 		-- Worked from the scale by hand: edge 12, a 14 high level line, 16 to
-		-- Status, 14 high Status, 8 to the cells. The XP rail is not drawn here,
-		-- because the top edge bar already shows experience, so it takes no room.
+		-- Status, 14 high Status, 8 to the cells.
 		local status = label("STATUS")
-		check("the Status heading is a section gap below the level line, with no room kept for a hidden rail",
+		check("the Status heading is a section gap below the level line",
 			-status.point[5] == 12 + 14 + 16)
 		-- With no quest the island is 440 wide and stacked: 416 inside the edges,
 		-- one gap of 8, so two columns of 204. Money has the first row, and gear
@@ -710,10 +700,6 @@ return function(root, check, island_world, quest_world, secret_stat)
 		check("an unlabeled gain shows as Other", data.rows[2] and data.rows[2][1] == "Other" and data.rows[2][2] == "120")
 		check("slices with nothing in them stay out", #data.rows == 2)
 		check("the footer carries rested and pace", type(data.footer) == "string" and data.footer:find("rested", 1, true) ~= nil)
-	end
-	do
-		local addon = island_world()
-		check("the edges are top and bottom", table.concat(addon.island_rim.edges, ",") == "top,bottom")
 	end
 	do
 		local addon, env, _, state, _, _, frames = quest_world()
@@ -850,38 +836,6 @@ return function(root, check, island_world, quest_world, secret_stat)
 		check("leaving it restarts the full time", restarted == 4)
 	end
 	do
-		local addon, env, _, state = island_world()
-		env.GetXPExhaustion = function() return 250 end
-		env.C_Container.GetContainerNumSlots = function(bag) return bag <= 1 and 20 or 0 end
-		addon.module.set("smart_island", "enabled", true)
-		env.everlook_smart_island_key("down")
-		local rim = addon.smart_island.view().rim
-		check("the top bar tracks experience", rim.top == 0.45)
-		check("the bottom bar has no quest to track yet", rim.bottom == nil)
-		addon.module.set("smart_island", "rim_top", "rested")
-		check("an edge can track rested experience instead", addon.smart_island.view().rim.top == 0.25)
-		addon.module.set("smart_island", "rim_bottom", "bags")
-		check("an edge can track free bag space", addon.smart_island.view().rim.bottom == 8 / 40)
-		addon.module.set("smart_island", "rim_bottom", "durability")
-		check("or gear durability", addon.smart_island.view().rim.bottom == 0.5)
-		addon.module.set("smart_island", "rim_bottom", "none")
-		check("an edge set to Nothing is empty", addon.smart_island.view().rim.bottom == nil)
-		check("an unknown choice is refused", not pcall(addon.module.set, "smart_island", "rim_top", "mana"))
-		check("the side bars are gone", not pcall(addon.module.set, "smart_island", "rim_left", "none"))
-	end
-	do
-		local addon, env, _, state = quest_world()
-		addon.module.set("smart_island", "quest_context", true)
-		env.everlook_smart_island_key("down")
-		check("the bottom bar tracks the current quest's objectives", addon.smart_island.view().rim.bottom == 1 / 6)
-	end
-	do
-		local addon = island_world()
-		addon.module.set("smart_island", "enabled", true)
-		local closed = addon.smart_island.view()
-		check("the closed pill has room for the top and bottom bars", addon.island_rim.length(closed.width, closed.height) ~= nil)
-	end
-	do
 		local addon, env, event, state, _, _, frames = island_world()
 		env.C_Container.GetContainerNumSlots = function(bag) return bag <= 1 and 20 or 0 end
 		addon.module.set("smart_island", "enabled", true)
@@ -928,13 +882,16 @@ return function(root, check, island_world, quest_world, secret_stat)
 			return count
 		end
 		check("gear and bags each carry a ring", rings() == 2)
-		addon.module.set("smart_island", "rim_bottom", "bags")
-		check("a figure on an edge bar keeps its ring, since the cell is where its number is", rings() == 2)
+	end
+	do
+		local addon = island_world()
+		check("the edge bars are gone as options", not pcall(addon.module.set, "smart_island", "rim_top", "experience")
+			and not pcall(addon.module.set, "smart_island", "rim_bottom", "quest"))
+		check("and so is their module", addon.island_rim == nil)
 	end
 	do
 		local addon, env, _, _, _, _, frames = island_world()
 		addon.module.set("smart_island", "enabled", true)
-		addon.module.set("smart_island", "rim_top", "experience")
 		local function marks()
 			local found = 0
 			for _, frame in ipairs(frames) do

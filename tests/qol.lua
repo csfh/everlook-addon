@@ -148,7 +148,7 @@ return function(root, check)
 			frames[#frames + 1] = frame
 			return frame
 		end
-		for _, file in ipairs({ "links", "module", "quest_interface", "flight_time", "friend_conveniences", "useful_tooltips", "faster_loot", "quest_automation", "auto_repair", "sell_junk", "open_containers", "fonts", "site_links", "hide_clutter", "auto_responses", "chat_tweaks", "map_pins", "coordinates", "quest_levels", "cinematic_skip", "camera", "swing_timers", "unit_names", "npc_titles", "quest_tracker", "mail", "gossip_continue", "tooltip_cursor", "chat_format", "radial_wheel", "radial_menu", "island_quests", "island_actions", "island_capsule", "island_vitals", "island_history", "island_surface", "island_rim", "island_scroll", "island_notice", "island_inbox", "island_toasts", "smart_island", "island_feed_kit", "island_share", "island_quest_notices", "island_loot", "island_hearth", "island_reputation", "island_professions", "island_mail", "island_invites", "island_buffs", "island_recap", "island_experience", "island_warnings", "action_shortcuts" }) do
+		for _, file in ipairs({ "links", "module", "quest_interface", "flight_time", "friend_conveniences", "useful_tooltips", "faster_loot", "quest_automation", "auto_repair", "sell_junk", "open_containers", "fonts", "site_links", "hide_clutter", "auto_responses", "chat_tweaks", "map_pins", "coordinates", "quest_levels", "cinematic_skip", "camera", "swing_timers", "unit_names", "npc_titles", "quest_tracker", "mail", "gossip_continue", "tooltip_cursor", "chat_format", "radial_wheel", "radial_menu", "island_quests", "island_actions", "island_capsule", "island_vitals", "island_history", "island_surface", "island_scroll", "island_notice", "island_inbox", "island_toasts", "smart_island", "island_feed_kit", "island_share", "island_quest_notices", "island_loot", "island_hearth", "island_reputation", "island_professions", "island_mail", "island_invites", "island_buffs", "island_recap", "island_experience", "island_warnings", "action_shortcuts" }) do
 			if not left_out[file] then
 				local chunk = assert(loadfile(source(file)))
 				setfenv(chunk, env)
@@ -3582,13 +3582,6 @@ return function(root, check)
 		addon.module.set("smart_island", "enabled", true)
 		if old_finish then old_finish() end
 		check("an old preview completion cannot reopen a new session", addon.smart_island.view().mode == "closed" and addon.smart_island.view().preview.alpha == 0)
-		state.level = 13
-		event("PLAYER_LEVEL_UP", 13)
-		local accent
-		for _, object in ipairs(frames) do if object.name == "EverlookIslandLevelAccent" then accent = object end end
-		check("level gain uses one native fading accent", accent and accent.shown and accent.animation_groups[1].animations[1].duration == 0.2)
-		finish_animations(frames)
-		check("the level accent settles without a loop", accent and not accent.shown)
 	end
 	do
 		local addon, env, _, _, _, _, frames = island_world()
@@ -3800,7 +3793,7 @@ return function(root, check)
 			if key ~= "enabled" and not seen[key] then missing = true end
 		end
 		check("island sections name every option once",
-			found and not missing and table.concat(names, ",") == "Presets,Placement,Opening,Closed pill,Edge bars,Quest display,Notices,Activity")
+			found and not missing and table.concat(names, ",") == "Presets,Placement,Opening,Closed pill,Quest display,Notices,Activity")
 		check("the smart island starts disabled", not island.module.enabled("smart_island"))
 		check("the island key is not the radial menu key",
 			found.keybinding ~= "CLICK EverlookRadialButton:LeftButton" and island_env.BINDING_NAME_EVERLOOK_SMART_ISLAND == "Open smart island")
@@ -3820,23 +3813,22 @@ return function(root, check)
 	do
 		local addon, env, _, state, afters, _, frames = island_world()
 		addon.module.set("smart_island", "enabled", true)
-		local bar = island_fill(frames)
-		check("the initial closed chip has an XP rail inside its bounds", bar.point and bar.width and bar.point[2].name == "EverlookSmartIsland" and -bar.point[5] + bar.height <= addon.smart_island.view().height and bar.width < addon.smart_island.view().width)
+		check("the closed chip draws no bar", island_fill(frames).shown ~= true)
 		env.everlook_smart_island_key("down")
-		local heading, metric, clear, undo, experience
+		local heading, metric, clear, undo, experience, status
 		for _, object in ipairs(frames) do
 			if object.name == "EverlookIslandClearHistory" then clear = object end
 			if object.name == "EverlookIslandUndo" then undo = object end
 			for _, region in ipairs(object.regions) do
 				if region.text == "Level 12" then heading = region end
+				if region.text == "STATUS" then status = region end
 				if region.text == "14:05    45%" then experience = region end
 				if region.text == "Money" then metric = region end
 			end
 		end
-		local rail_top = bar.point and -bar.point[5] or 0
 		check("the open bar shows the phrased experience", experience ~= nil)
-		check("expanded XP rail clears the level text", rail_top >= -heading.point[5] + heading:GetStringHeight() + 6)
-		check("expanded metrics begin below the XP rail", -metric.parent.parent.point[5] >= rail_top + bar.height + 6)
+		check("the first section clears the level text", -status.point[5] >= -heading.point[5] + heading:GetStringHeight() + 6)
+		check("expanded metrics begin below the Status heading", -metric.parent.parent.point[5] >= -status.point[5] + 6)
 		check("empty history has no disabled Clear button", clear.shown == false)
 		check("an empty island holds its panes to the height of its empty message", addon.smart_island.view().scroll_height >= 48 and addon.smart_island.view().scroll_height <= 80)
 		local empty_height = addon.smart_island.view().height
@@ -3859,11 +3851,10 @@ return function(root, check)
 		check("expired Undo returns to the compact empty state", clear.shown == false and undo.shown == false and addon.smart_island.view().height == empty_height)
 		state.time = state.time + 1
 		env.everlook_smart_island_key("up")
-		check("closing returns the XP rail to the capsule bounds", bar.point and bar.width < addon.smart_island.view().width and -bar.point[5] + bar.height <= addon.smart_island.view().height)
 		env.everlook_smart_island_key("down")
 		heading.GetStringHeight = function() return 28 end
 		addon.module.set("smart_island", "size", 150)
-		check("larger native text keeps clear space above the XP rail", -bar.point[5] >= -heading.point[5] + heading:GetStringHeight() + 6)
+		check("larger native text keeps clear space above the first section", -status.point[5] >= -heading.point[5] + heading:GetStringHeight() + 6)
 	end
 
 	do
@@ -4074,22 +4065,19 @@ return function(root, check)
 		local addon, env, event, state, _, _, frames = island_world()
 		addon.module.set("smart_island", "enabled", true)
 		local bar = island_fill(frames)
-		check("numeric experience fills the rim of the closed pill",
-			addon.smart_island.view().xp == 450 and addon.smart_island.view().rim.top == 0.45 and bar.shown == false)
+		check("the closed pill draws no experience bar, with a numeric reading or a secret one",
+			addon.smart_island.view().xp == 450 and bar.shown ~= true)
 		local xp, xp_max = secret_stat(), secret_stat()
 		check("a secret experience reading is not a number", type(xp) ~= "number" and type(xp_max) ~= "number")
 		env.issecretvalue = function(value) return value == xp or value == xp_max end
 		state.xp, state.xp_max = xp, xp_max
 		event("PLAYER_XP_UPDATE", "player")
-		bar = island_fill(frames)
-		check("a secret experience value fills the closed pill",
-			addon.smart_island.view().xp == xp and addon.smart_island.view().xp_max == xp_max
-			and bar.value == xp and bar.min == 0 and bar.max == xp_max)
+		check("a secret reading is kept as it arrived and draws nothing",
+			addon.smart_island.view().xp == xp and addon.smart_island.view().xp_max == xp_max and island_fill(frames).shown ~= true)
 		env.everlook_smart_island_key("down")
-		bar = island_fill(frames)
 		local open = addon.smart_island.view()
-		check("a secret experience value fills the open bar",
-			open.mode == "open" and bar.value == xp and bar.min == 0 and bar.max == xp_max
+		check("the open island still reads its other figures, and draws no bar either",
+			open.mode == "open" and island_fill(frames).shown ~= true
 			and open.money == "1g 23s 45c" and open.durability == "50%" and open.bags == "8 free slots" and open.clock == "14:05")
 		local function status_top()
 			for _, object in ipairs(frames) do
@@ -4098,15 +4086,11 @@ return function(root, check)
 				end
 			end
 		end
-		check("a rail that draws takes its place under the level line: edge, line, gap, rail, section",
-			status_top() == 12 + 14 + 8 + 3 + 16)
+		check("the Status heading is a section gap under the level line: edge, line, section", status_top() == 12 + 14 + 16)
 		state.xp, state.xp_max = 700, 2000
 		env.issecretvalue = nil
 		event("PLAYER_XP_UPDATE", "player")
-		bar = island_fill(frames)
-		check("with the rail gone the Status heading moves up by the rail and its gap", status_top() == 12 + 14 + 16)
-		check("numeric experience still fills the rim after a secret reading",
-			addon.smart_island.view().xp == 700 and addon.smart_island.view().rim.top == 0.35 and bar.shown == false)
+		check("a numeric reading after a secret one is read again", addon.smart_island.view().xp == 700)
 	end
 	do
 		local addon, env = island_world()
@@ -4305,7 +4289,7 @@ return function(root, check)
 			if module.id == "smart_island" then island = module end
 		end
 		for _, section in ipairs(addon.module.sections(island)) do names[#names + 1] = section.name end
-		check("the island keeps its own sections without its feeds", table.concat(names, ",") == "Presets,Placement,Opening,Closed pill,Edge bars,Quest display,Notices,Activity")
+		check("the island keeps its own sections without its feeds", table.concat(names, ",") == "Presets,Placement,Opening,Closed pill,Quest display,Notices,Activity")
 	end
 
 	do

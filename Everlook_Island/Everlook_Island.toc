@@ -12,7 +12,6 @@ island_capsule.lua
 island_vitals.lua
 island_history.lua
 island_surface.lua
-island_rim.lua
 island_scroll.lua
 island_notice.lua
 island_inbox.lua
