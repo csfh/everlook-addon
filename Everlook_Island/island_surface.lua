@@ -82,6 +82,18 @@ function surface.set_opacity(alpha)
 	end
 end
 
+-- The colour the open island's body shows, as one opaque-ish colour, so a fade
+-- laid over its content ends in the same dark as the surface around it.
+function surface.body_color()
+	if native_available() then
+		local red, green, blue = FILL[1], FILL[2], FILL[3]
+		local color = TOOLTIP_DEFAULT_BACKGROUND_COLOR
+		if color and color.GetRGB then red, green, blue = color:GetRGB() end
+		return red, green, blue, 1 - (1 - native_alpha) * (1 - native_alpha * BACKING_SHARE)
+	end
+	return FILL[1], FILL[2], FILL[3], FILL[4]
+end
+
 function surface.make(parent)
 	if native_available() then
 		NineSliceUtil.ApplyLayoutByName(parent, NATIVE_LAYOUT)

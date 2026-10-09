@@ -9,7 +9,7 @@ Everlook.island_rim = rim
 -- A small pill keeps its bars close to the border so its text stays clear. The
 -- open island has room to hold them further in. CORNER keeps them off the
 -- rounded corners.
-local INSET_SMALL, INSET_LARGE, THICKNESS, CORNER, MARK = 5, 7, 2, 10, 8
+local INSET_SMALL, INSET_LARGE, THICKNESS, CORNER = 5, 7, 2, 10
 local SMALL_HEIGHT = 44
 local EDGES = { "top", "bottom" }
 local TRACK = { 1, 1, 1, 0.12 }
@@ -33,11 +33,7 @@ function rim.make(parent)
 		call(track, "Hide")
 		local fill = call(parent, "CreateTexture", nil, "OVERLAY", nil, 6)
 		call(fill, "Hide")
-		-- A small mark sits in one corner per bar, so each bar says what it tracks.
-		local mark = call(parent, "CreateTexture", nil, "OVERLAY", nil, 7)
-		call(mark, "SetSize", MARK, MARK)
-		call(mark, "Hide")
-		handle.bars[edge] = { track = track, fill = fill, mark = mark }
+		handle.bars[edge] = { track = track, fill = fill }
 	end
 	return handle
 end
@@ -53,16 +49,12 @@ function rim.lit(fraction, length)
 	return math.max(0, math.min(1, fraction)) * length
 end
 
--- Each bar's mark sits in the corner where the bar starts.
-local MARK_CORNERS = { top = { "TOPLEFT", 1, -1 }, bottom = { "BOTTOMLEFT", 1, 1 } }
-
 local function place(handle, edge)
 	local bar = handle.bars[edge]
 	local length = bar.fraction ~= nil and rim.length(handle.width, handle.height) or nil
 	if not length then
 		call(bar.track, "Hide")
 		call(bar.fill, "Hide")
-		call(bar.mark, "Hide")
 		return
 	end
 	local parent, inset = handle.parent, inset_for(handle.height)
@@ -76,16 +68,6 @@ local function place(handle, edge)
 	end
 	call(bar.track, "SetSize", length, THICKNESS)
 	call(bar.track, "Show")
-	-- Only the open island has the room; a small pill keeps its text clear.
-	if bar.mark_name and handle.apply_mark and handle.height > SMALL_HEIGHT then
-		local corner = MARK_CORNERS[edge]
-		handle.apply_mark(bar.mark, bar.mark_name)
-		call(bar.mark, "ClearAllPoints")
-		call(bar.mark, "SetPoint", corner[1], parent, corner[1], corner[2] * (inset + 1), corner[3] * (inset + 1))
-		call(bar.mark, "Show")
-	else
-		call(bar.mark, "Hide")
-	end
 	call(bar.fill, "SetColorTexture", unpack(bar.color))
 	if lit >= 0.5 then
 		call(bar.fill, "SetSize", lit, THICKNESS)
@@ -95,12 +77,11 @@ local function place(handle, edge)
 	end
 end
 
--- fraction is nil to hide the bar. color is { r, g, b, a }. mark names the icon
--- that says what the bar tracks.
-function rim.set(handle, edge, fraction, color, mark)
+-- fraction is nil to hide the bar. color is { r, g, b, a }.
+function rim.set(handle, edge, fraction, color)
 	local bar = handle and handle.bars[edge]
 	if not bar then return end
-	bar.fraction, bar.color, bar.mark_name = fraction, color or { 1, 1, 1, 1 }, mark
+	bar.fraction, bar.color = fraction, color or { 1, 1, 1, 1 }
 	place(handle, edge)
 end
 

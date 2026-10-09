@@ -54,7 +54,7 @@ local function update_island(now, elapsed, known)
 	if known then
 		progress = math.min(1, elapsed / known.seconds)
 		if elapsed < known.seconds then clock = duration(known.seconds - elapsed) end
-		detail = detail .. (elapsed < known.seconds and " · ~" .. duration(known.seconds - elapsed) .. " left" or " · Estimate exceeded")
+		detail = detail .. (elapsed < known.seconds and ", ~" .. duration(known.seconds - elapsed) .. " left" or ", estimate exceeded")
 	end
 	local compact = { icon = "flight", text = clock }
 	if #route.destination <= 16 and route.destination:find("|", 1, true) == nil and route.destination:find("\n", 1, true) == nil then

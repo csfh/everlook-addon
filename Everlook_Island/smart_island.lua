@@ -530,6 +530,8 @@ function island.view()
 		summary_height = summary_height,
 		unread_count = unread_count(),
 		unread_below = shell.unread_below,
+		more_above = shell.scrollbar ~= nil and shell.scrollbar.above == true,
+		more_below = shell.scrollbar ~= nil and shell.scrollbar.below == true,
 		scroll_offset = scroll_offset,
 		scroll_height = scroll_height,
 		content_height = content_height,
@@ -758,7 +760,6 @@ end
 -- a fraction and a colour, or nil when there is nothing plain to read.
 local RESTED_COLOR = { 0.35, 0.6, 0.95, 1 }
 local QUEST_COLOR = { 1, 0.82, 0.25, 1 }
-local EDGE_MARKS = { experience = "experience", rested = "rested", quest = "quest", durability = "repair", bags = "bags" }
 
 local function edge_reading(kind)
 	if kind == "experience" then
@@ -807,7 +808,7 @@ local function paint_fill()
 		if kind == "experience" then wants_experience, read_experience = true, fraction ~= nil end
 		-- A quest or status capsule already draws along its bottom edge.
 		if edge == "bottom" and shell.busy_bottom then fraction = nil end
-		shell.rim_api.set(shell.rim, edge, fraction, color, EDGE_MARKS[kind])
+		shell.rim_api.set(shell.rim, edge, fraction, color)
 	end
 	local xp, xp_max = readout.xp, readout.xp_max
 	-- A secret experience reading cannot be divided, so the native status bar
@@ -1226,7 +1227,7 @@ local function layout_expanded(list, status, inspection_height)
 	else
 		call(new_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", 0, 0)
 	end
-	shell.scroll_api.layout(shell.scrollbar, header_height, scroll_height, content_height, scroll_offset)
+	shell.scroll_api.layout(shell.scrollbar, header_height, scroll_height, content_height, scroll_offset, width - 24)
 	local height = header_height + scroll_height + footer_height + 12
 	call(expanded, "SetSize", width, height)
 	island_surface.size(expanded_surface, width, height, 12)
@@ -2259,7 +2260,6 @@ local function ensure_frame()
 	call(resting, "SetAlpha", 1)
 	surface = island_surface.make(resting)
 	shell.rim = shell.rim_api.make(resting)
-	shell.rim.apply_mark = function(texture, name) compact_api.apply(texture, name) end
 	shell.face = CreateFrame("Frame", "EverlookIslandFace", frame)
 	call(shell.face, "EnableMouse", false)
 	call(shell.face, "SetFrameLevel", 52)

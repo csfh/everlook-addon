@@ -10,6 +10,7 @@ return function(root, check)
 		env.Everlook = addon
 		env.EverlookDB = {}
 		env.IsShiftKeyDown = function() return false end
+		env.CreateColor = function(red, green, blue, alpha) return { r = red, g = green, b = blue, a = alpha } end
 		env.InCombatLockdown = function() return false end
 		env.EventUtil = {
 			ContinueOnAddOnLoaded = function(_, callback) callbacks[#callbacks + 1] = callback end,
@@ -72,6 +73,7 @@ return function(root, check)
 					SetTexture = function(self, path) self.path = path end, SetTexCoord = function() end,
 					SetAtlas = function(self, atlas) self.atlas = atlas end,
 					SetVertexColor = function(self, ...) self.color = { ... } end,
+					SetGradient = function(self, orientation, low, high) self.gradient = { orientation = orientation, low = low, high = high } end,
 					SetPoint = function(self, ...) self.point = { ... } end, ClearAllPoints = function() end,
 					SetSize = function(self, width, height) self.width, self.height = width, height end,
 					SetRotation = function(self, radians) self.rotation = radians end,
@@ -3539,8 +3541,25 @@ return function(root, check)
 		env.everlook_smart_island_key("down")
 		local controls = {}
 		for _, button in ipairs(frames) do if button.name then controls[button.name] = button end end
+		local island_scroll_to = addon.smart_island.scroll_to
 		local view = addon.smart_island.view()
 		check("the inbox exposes overflow inside a bounded viewport", view.scroll_height <= 240 and view.content_height > view.scroll_height and view.height <= 400)
+		local function shown_fades()
+			local fades = {}
+			for _, object in ipairs(frames) do
+				for _, region in ipairs(object.regions or {}) do
+					if region.gradient and region.shown ~= false then fades[#fades + 1] = region end
+				end
+			end
+			return fades
+		end
+		check("each fade has a white base for the gradient to tint", #shown_fades() == 1 and shown_fades()[1].color ~= nil and shown_fades()[1].color[4] == 1)
+		check("a list with more below fades out at its bottom edge", view.more_below and not view.more_above and #shown_fades() == 1
+			and shown_fades()[1].gradient.low.a > 0.9 and shown_fades()[1].gradient.high.a == 0)
+		island_scroll_to(view.scroll_height)
+		check("a list scrolled into the middle fades at both edges", addon.smart_island.view().more_below and addon.smart_island.view().more_above and #shown_fades() == 2)
+		island_scroll_to(0)
+		view = addon.smart_island.view()
 		local function button_text()
 			for _, region in ipairs(controls.EverlookIslandNewNotices.regions or {}) do
 				if type(region.text) == "string" then return region.text end
@@ -3563,6 +3582,9 @@ return function(root, check)
 			if addon.smart_island.view().unread_below == 0 then break end
 			controls.EverlookIslandNewNotices.scripts.OnClick()
 		end
+		island_scroll_to(addon.smart_island.view().content_height)
+		check("a list scrolled to its end fades only at its top", addon.smart_island.view().more_above and not addon.smart_island.view().more_below and #shown_fades() == 1
+			and shown_fades()[1].gradient.high.a > 0.9 and shown_fades()[1].gradient.low.a == 0)
 		check("with nothing unread below, the button goes away", controls.EverlookIslandNewNotices.shown == false)
 		controls.EverlookIslandClearHistory.scripts.OnClick()
 		check("clear history acknowledges the inbox with Undo", #addon.smart_island.view().notices == 0 and addon.smart_island.view().can_undo)

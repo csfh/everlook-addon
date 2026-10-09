@@ -8,6 +8,9 @@ Everlook.island_scroll = scroll
 
 -- The thumb sits inside the experience rim, in the margin the quest panel leaves.
 local THUMB_MIN, WIDTH, OFFSET = 24, 6, 14
+-- A fade this tall tells you the list goes on past that edge. It sits above the
+-- rows and below the thumb.
+local FADE_HEIGHT, FADE_LEVEL = 20, 58
 
 local function call(object, method, ...)
 	local fn = object and object[method]
@@ -29,6 +32,17 @@ function scroll.make(parent, options)
 	call(face, "SetColorTexture", 0.75, 0.78, 0.85, 0.55)
 	handle.face = face
 	call(handle.thumb, "Hide")
+	handle.fades = CreateFrame("Frame", nil, parent)
+	call(handle.fades, "SetAllPoints", parent)
+	call(handle.fades, "SetFrameLevel", FADE_LEVEL)
+	call(handle.fades, "EnableMouse", false)
+	handle.fade_top = call(handle.fades, "CreateTexture", nil, "OVERLAY")
+	handle.fade_bottom = call(handle.fades, "CreateTexture", nil, "OVERLAY")
+	-- A gradient only tints a texture that already draws, so each starts as plain white.
+	call(handle.fade_top, "SetColorTexture", 1, 1, 1, 1)
+	call(handle.fade_bottom, "SetColorTexture", 1, 1, 1, 1)
+	call(handle.fade_top, "Hide")
+	call(handle.fade_bottom, "Hide")
 	local function stop()
 		handle.drag = nil
 		call(handle.thumb, "SetScript", "OnUpdate", nil)
@@ -62,9 +76,35 @@ function scroll.metrics(view_height, content_height, offset)
 	return { thumb = thumb, travel = travel, range = range, at = at }
 end
 
-function scroll.layout(handle, top, view_height, content_height, offset)
+-- One edge's fade: dark at the edge it sits on, clear toward the rows. The
+-- colour is the surface's own, so the rows seem to slide under it.
+local function fade(handle, texture, edge, top, view_height, width, visible)
+	if not visible then
+		call(texture, "Hide")
+		return
+	end
+	local red, green, blue, alpha = Everlook.island_surface.body_color()
+	local dark, clear = CreateColor(red, green, blue, alpha), CreateColor(red, green, blue, 0)
+	call(texture, "ClearAllPoints")
+	if edge == "top" then
+		call(texture, "SetPoint", "TOPLEFT", handle.parent, "TOPLEFT", 12, -top)
+		call(texture, "SetGradient", "VERTICAL", clear, dark)
+	else
+		call(texture, "SetPoint", "TOPLEFT", handle.parent, "TOPLEFT", 12, -(top + view_height - math.min(FADE_HEIGHT, view_height / 3)))
+		call(texture, "SetGradient", "VERTICAL", dark, clear)
+	end
+	call(texture, "SetSize", width, math.min(FADE_HEIGHT, view_height / 3))
+	call(texture, "Show")
+end
+
+-- width is the list's width. Each edge fades while there is more past it.
+function scroll.layout(handle, top, view_height, content_height, offset, width)
 	if not handle then return end
 	local m = scroll.metrics(view_height, content_height, offset)
+	handle.above = m ~= nil and offset > 0.5
+	handle.below = m ~= nil and offset < m.range - 0.5
+	fade(handle, handle.fade_top, "top", top, view_height, width or 0, handle.above)
+	fade(handle, handle.fade_bottom, "bottom", top, view_height, width or 0, handle.below)
 	if not m then
 		call(handle.track, "Hide")
 		call(handle.thumb, "Hide")
@@ -84,6 +124,9 @@ end
 
 function scroll.hide(handle)
 	if not handle then return end
+	handle.above, handle.below = false, false
+	call(handle.fade_top, "Hide")
+	call(handle.fade_bottom, "Hide")
 	call(handle.track, "Hide")
 	call(handle.thumb, "Hide")
 end

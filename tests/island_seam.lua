@@ -890,9 +890,9 @@ return function(root, check, island_world, quest_world, secret_stat)
 			end
 			return found
 		end
-		check("the closed pill has no room for a corner mark", marks() == 0)
+		check("the closed pill has no corner mark", marks() == 0)
 		env.everlook_smart_island_key("down")
-		check("the open island marks the top bar as experience", marks() == 1)
+		check("the open island has none either, so nothing sits on the level text", marks() == 0)
 	end
 	do
 		local addon, _, _, state, afters, _, frames = island_world()
