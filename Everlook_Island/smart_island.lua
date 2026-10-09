@@ -690,7 +690,7 @@ local function layout_summary(width)
 		call(left_text, "GetLineHeight") or 14, call(right_text, "GetLineHeight") or 14)
 	local rail_top = edge + heading_height + space.near
 	shell.rail_top = rail_top
-	local block_top = rail_top + space.rail + space.section
+	local block_top = (shell.rail_wanted() and rail_top + space.rail or edge + heading_height) + space.section
 	local y = block_top + experience_height(width, block_top)
 	-- Money and position share a row, and the two gauges share the next, so the
 	-- gauges line up whichever readouts are missing.
@@ -826,21 +826,32 @@ local function edge_reading(kind)
 	end
 end
 
+-- The XP rail under the level only draws for a reading an edge bar cannot show:
+-- a secret one cannot be divided, so the native status bar keeps it, as it always has.
+-- The layout asks this too, so it reserves room for the rail only when it draws.
+shell.rail_wanted = function()
+	local wants_experience = false
+	for _, option in pairs(EDGE_OPTIONS) do
+		if module.get(id, option) == "experience" then
+			wants_experience = true
+			if edge_reading("experience") ~= nil then return false end
+		end
+	end
+	local xp, xp_max = readout.xp, readout.xp_max
+	if not wants_experience or not bar_value(xp) or not bar_value(xp_max) then return false end
+	return not usable(xp_max) or (type(xp_max) == "number" and xp_max > 0)
+end
+
 local function paint_fill()
 	if not fill then return end
-	local wants_experience, read_experience = false, false
 	for edge, option in pairs(EDGE_OPTIONS) do
-		local kind = module.get(id, option)
-		local fraction, color = edge_reading(kind)
-		if kind == "experience" then wants_experience, read_experience = true, fraction ~= nil end
+		local fraction, color = edge_reading(module.get(id, option))
 		-- A quest or status capsule already draws along its bottom edge.
 		if edge == "bottom" and shell.busy_bottom then fraction = nil end
 		shell.rim_api.set(shell.rim, edge, fraction, color)
 	end
 	local xp, xp_max = readout.xp, readout.xp_max
-	-- A secret experience reading cannot be divided, so the native status bar
-	-- keeps it, as it always has.
-	if not wants_experience or read_experience or not bar_value(xp) or not bar_value(xp_max) then
+	if not shell.rail_wanted() then
 		call(fill, "Hide")
 		return
 	end
@@ -852,8 +863,7 @@ local function paint_fill()
 		call(fill, "SetMinMaxValues", 0, xp_max)
 	end
 	call(fill, "SetValue", xp)
-	local visible = not usable(xp_max) or (type(xp_max) == "number" and xp_max > 0)
-	call(fill, visible and "Show" or "Hide")
+	call(fill, "Show")
 end
 
 local function show_label(label, visible, text)

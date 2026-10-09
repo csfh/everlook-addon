@@ -3928,10 +3928,20 @@ return function(root, check)
 		check("a secret experience value fills the open bar",
 			open.mode == "open" and bar.value == xp and bar.min == 0 and bar.max == xp_max
 			and open.money == "1g 23s 45c" and open.durability == "50%" and open.bags == "8 free slots" and open.clock == "14:05")
+		local function status_top()
+			for _, object in ipairs(frames) do
+				for _, region in ipairs(object.regions or {}) do
+					if region.text == "Status" and region.shown ~= false then return -region.point[5] end
+				end
+			end
+		end
+		check("a rail that draws takes its place under the level line: edge, line, gap, rail, section",
+			status_top() == 12 + 14 + 8 + 3 + 16)
 		state.xp, state.xp_max = 700, 2000
 		env.issecretvalue = nil
 		event("PLAYER_XP_UPDATE", "player")
 		bar = island_fill(frames)
+		check("with the rail gone the Status heading moves up by the rail and its gap", status_top() == 12 + 14 + 16)
 		check("numeric experience still fills the rim after a secret reading",
 			addon.smart_island.view().xp == 700 and addon.smart_island.view().rim.top == 0.35 and bar.shown == false)
 	end

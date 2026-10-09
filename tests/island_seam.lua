@@ -607,10 +607,12 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local function cell(text) local found = label(text); return found and found.parent and found.parent.parent end
 		check("the open summary has a Status heading", label("Status") ~= nil)
 		local money, gear, bags = cell("Money"), cell("Gear"), cell("Bags")
-		-- Worked from the scale by hand: edge 12, a 14 high level line, 8 to the
-		-- rail, the 3 high rail, 16 to Status, 14 high Status, 8 to the cells.
+		-- Worked from the scale by hand: edge 12, a 14 high level line, 16 to
+		-- Status, 14 high Status, 8 to the cells. The XP rail is not drawn here,
+		-- because the top edge bar already shows experience, so it takes no room.
 		local status = label("Status")
-		check("the Status heading is a section gap below the rail", -status.point[5] == 12 + 14 + 8 + 3 + 16)
+		check("the Status heading is a section gap below the level line, with no room kept for a hidden rail",
+			-status.point[5] == 12 + 14 + 16)
 		check("the cells share one width and the summary's left edge",
 			money.width == gear.width and gear.width == bags.width and money.point[4] == 12 and gear.point[4] == 12)
 		check("the cells begin one step below the Status heading", -money.point[5] == -status.point[5] + 14 + 8)
