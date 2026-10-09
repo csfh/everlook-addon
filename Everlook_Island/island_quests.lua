@@ -668,8 +668,8 @@ function quests.ensure_ui(adapter)
 	ui.arrow = make_arrow(ui.capsule)
 	call(ui.arrow, "SetPoint", "TOPLEFT", ui.capsule, "TOPLEFT", 8, -8)
 	-- The ring around the arrow fills as the quest does, and goes green when it can be handed in.
-	ui.ring = adapter.rings.make(ui.capsule, adapter.space.ring)
-	adapter.rings.place(ui.ring, ui.capsule, 2, 2)
+	ui.ring = adapter.rings.make(ui.capsule, adapter.space.capsule_ring)
+	adapter.rings.place(ui.ring, ui.capsule, 4, 4)
 	ui.panel = CreateFrame("Frame", "EverlookIslandQuestInspection", adapter.content)
 	call(ui.panel, "EnableMouse", false)
 	call(ui.panel, "SetPoint", "TOPLEFT", adapter.content, "TOPLEFT", 0, 0)
@@ -683,9 +683,9 @@ function quests.ensure_ui(adapter)
 	for index = 1, OBJECTIVES_SHOWN do
 		local check = call(ui.visual, "CreateTexture", nil, "OVERLAY")
 		call(check, "SetAtlas", "common-icon-checkmark")
-		call(check, "SetSize", adapter.space.icon, adapter.space.icon)
+		call(check, "SetSize", adapter.space.mark, adapter.space.mark)
 		call(check, "Hide")
-		ui.marks[index] = { check = check, ring = adapter.rings.make(ui.visual, adapter.space.icon) }
+		ui.marks[index] = { check = check, ring = adapter.rings.make(ui.visual, adapter.space.mark) }
 	end
 	-- The two actions sit in the quests heading row, outside the card, so the card scrolls without them.
 	ui.pin = adapter.link(adapter.head, "EverlookIslandPinQuest", "Pin quest", function()
@@ -803,7 +803,7 @@ function quests.inspection(view, visible, width)
 		top = line(ui.explanation, view.reason .. ", " .. reason(current), width, top) + space.near
 		-- Four objectives fit in the card. Any more fold into one line.
 		local shown = math.min(#current.objectives, #ui.objectives, OBJECTIVES_SHOWN)
-		local lead = space.icon + space.near
+		local lead = space.mark + space.near
 		for index = 1, shown do
 			local objective = current.objectives[index]
 			-- A finished objective steps back and takes a check, one that counts shows how far it is, and the text says the same.
@@ -811,7 +811,7 @@ function quests.inspection(view, visible, width)
 			local line_top = top
 			top = line(ui.objectives[index], objective_text(objective), width, top, lead)
 			local mark = ui.marks[index]
-			local mark_top = line_top + math.floor((top - line_top - space.icon) / 2)
+			local mark_top = line_top + math.floor((top - line_top - space.mark) / 2)
 			if objective.finished then
 				call(mark.check, "ClearAllPoints")
 				call(mark.check, "SetPoint", "TOPLEFT", ui.visual, "TOPLEFT", edge, -mark_top)

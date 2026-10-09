@@ -2797,10 +2797,11 @@ return function(root, check)
 		addon.module.set("smart_island", "quest_context", true)
 		local function ring()
 			for _, frame in ipairs(frames) do
-				if frame.cooldown and frame.width == 28 and frame.shown == true then return frame end
+				if frame.cooldown and frame.width == 24 and frame.shown == true then return frame end
 			end
 		end
 		local seen = ring()
+		check("rings keep addons that count cooldowns from printing a number on them", seen and seen.noCooldownCount == true)
 		check("the closed quest capsule has a ring round its arrow, filled to the quest's progress",
 			seen and math.abs((env.GetTime() - seen.cooldown.start) / seen.cooldown.duration - 1 / 6) < 1e-9 and seen.swipe_color[1] == 1)
 		state.selected = 23

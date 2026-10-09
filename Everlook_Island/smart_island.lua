@@ -86,7 +86,7 @@ local resting_slots = {}
 -- The open summary spaces everything from these steps. A gap inside a group is
 -- `within`, a gap between siblings `near`, and a gap between groups `section`,
 -- which is at least twice the one inside. `edge` is the inset the rows below share.
-shell.space = { within = 4, near = 8, section = 16, edge = 12, rail = 3, ring = 28, icon = 16, head = 40, pane_min = 48, pane_max = 320 }
+shell.space = { within = 4, near = 8, section = 16, edge = 12, rail = 3, ring = 28, icon = 14, mark = 16, capsule_ring = 24, head = 40, pane_min = 48, pane_max = 320 }
 local function refresh_quests(force)
 	quest_context.refresh(force)
 end
@@ -161,6 +161,8 @@ shell.make_ring = function(parent, size)
 	ring.fill = CreateFrame("Cooldown", nil, parent)
 	call(ring.fill, "SetSize", size, size)
 	call(ring.fill, "EnableMouse", false)
+	-- Addons that print a countdown on every cooldown leave this one alone.
+	ring.fill.noCooldownCount = true
 	call(ring.fill, "SetSwipeTexture", ART .. "island_ring.tga")
 	call(ring.fill, "SetReverse", true)
 	call(ring.fill, "SetDrawEdge", false)
