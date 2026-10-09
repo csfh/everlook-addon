@@ -2407,21 +2407,38 @@ end)()
 		end
 		return value
 	end
-	local function combine(left, right, keep)
-		left, right = left % range, right % range
-		local result, place = 0, 1
-		for _ = 1, 32 do
-			if keep(left % 2, right % 2) then
-				result = result + place
+	-- One xor works a nibble at a time. And and or follow from it: a + b = (a xor b) + 2 * (a and b).
+	local nibble_xor = {}
+	for a = 0, 15 do
+		nibble_xor[a] = {}
+		for b = 0, 15 do
+			local result, place, left, right = 0, 1, a, b
+			for _ = 1, 4 do
+				result = result + (left % 2 ~= right % 2 and place or 0)
+				left, right, place = (left - left % 2) / 2, (right - right % 2) / 2, place * 2
 			end
-			left, right, place = (left - left % 2) / 2, (right - right % 2) / 2, place * 2
+			nibble_xor[a][b] = result
 		end
-		return signed(result)
+	end
+	local function xor_unsigned(left, right)
+		local result, place = 0, 1
+		for _ = 1, 8 do
+			local a, b = left % 16, right % 16
+			result = result + nibble_xor[a][b] * place
+			left, right, place = (left - a) / 16, (right - b) / 16, place * 16
+		end
+		return result
 	end
 	local shim = {
-		band = function(left, right) return combine(left, right, function(a, b) return a == 1 and b == 1 end) end,
-		bor = function(left, right) return combine(left, right, function(a, b) return a == 1 or b == 1 end) end,
-		bxor = function(left, right) return combine(left, right, function(a, b) return a ~= b end) end,
+		band = function(left, right)
+			left, right = left % range, right % range
+			return signed((left + right - xor_unsigned(left, right)) / 2)
+		end,
+		bor = function(left, right)
+			left, right = left % range, right % range
+			return signed((left + right + xor_unsigned(left, right)) / 2)
+		end,
+		bxor = function(left, right) return signed(xor_unsigned(left % range, right % range)) end,
 		bnot = function(value) return signed(-1 - value) end,
 		lshift = function(value, count) return signed((value % range) * 2 ^ (count % 32)) end,
 		rshift = function(value, count) return signed(math.floor((value % range) / 2 ^ (count % 32))) end,
@@ -2454,18 +2471,19 @@ end)()
 	for _, lib in ipairs({ fast, slow }) do
 		for _, length in ipairs({ 0, 1, 55, 56, 63, 64, 65, 127, 128, 129, 400, 1000 }) do
 			local body = string.rep("q", length)
+			local digest, mac, key = lib.sha256(body), lib.hmac_sha256("secret", body), lib.hmac_key("secret")
 			for _, blocks in ipairs({ 1, 2, 5, 1000 }) do
 				local walker = lib.stream(body)
 				local steps = 0
 				while not walker:step(blocks) do
 					steps = steps + 1
 				end
-				if walker:hex() ~= lib.sha256(body) or steps > length / 64 / blocks + 1 then
+				if walker:hex() ~= digest or steps > length / 64 / blocks + 1 then
 					streams = false
 				end
-				local signer = lib.hmac_stream(lib.hmac_key("secret"), body)
+				local signer = lib.hmac_stream(key, body)
 				while not signer:step(blocks) do end
-				if signer:hex() ~= lib.hmac_sha256("secret", body) then
+				if signer:hex() ~= mac then
 					streams = false
 				end
 			end
