@@ -620,7 +620,7 @@ return function(root, check, island_world, quest_world, secret_stat)
 			name.point[4] == figure.point[4] and name.point[5] == 0 and figure.point[5] == -(14 + 4))
 		check("the summary ends one edge below the last row",
 			addon.smart_island.view().summary_height == -money.point[5] + 32 + 8 + 32 + 12)
-		check("the clock moved to the header beside the percent", label("14:05    45%") ~= nil and cell("Time") == nil)
+		check("the clock moved to the header beside the percent, which is purple as on the pill", label("14:05    |cffad76ef45%|r") ~= nil and cell("Time") == nil)
 	end
 	do
 		local addon, env, _, state, _, _, frames = quest_world()
@@ -858,7 +858,7 @@ return function(root, check, island_world, quest_world, secret_stat)
 			text_of("50%") == "50%" and not text_of("|cff80e6a6"))
 		check("bags read as free of the total, with the total set back in the dimmer grey",
 			text_of("8 free") == "8 free |cff8891a0of 40|r")
-		for _, color in ipairs(swipes()) do check("a healthy ring is the neutral grey", color[1] < 0.75) end
+		for _, color in ipairs(swipes()) do check("a healthy ring is the quiet grey, dimmer than the caption beside it", color[1] < 0.6) end
 		state.slots[1] = { 10, 50 }
 		event("UPDATE_INVENTORY_DURABILITY")
 		check("a low figure takes the warning amber", text_of("|cffff9e4020%|r") ~= nil)

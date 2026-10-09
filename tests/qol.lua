@@ -3822,7 +3822,7 @@ return function(root, check)
 			for _, region in ipairs(object.regions) do
 				if region.text == "Level 12" then heading = region end
 				if region.text == "STATUS" then status = region end
-				if region.text == "14:05    45%" then experience = region end
+				if region.text == "14:05    |cffad76ef45%|r" then experience = region end
 				if region.text == "Money" then metric = region end
 			end
 		end

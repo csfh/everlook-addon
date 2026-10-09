@@ -556,7 +556,8 @@ end
 function island.header_figures()
 	local parts = {}
 	if readout.clock_text and readout.clock_text ~= "" then parts[#parts + 1] = readout.clock_text end
-	if readout.xp_text and readout.xp_text ~= "" then parts[#parts + 1] = readout.xp_text end
+	-- The percent is the purple of experience, as on the pill.
+	if readout.xp_text and readout.xp_text ~= "" then parts[#parts + 1] = shell.tone(COLORS.accent) .. readout.xp_text .. "|r" end
 	return #parts > 0 and table.concat(parts, "    ") or nil
 end
 
@@ -843,7 +844,7 @@ local function layout_summary(width, left_w)
 			call(node.icon, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", (space.ring - space.icon) / 2, -(box_top + (space.ring - space.icon) / 2))
 			if metric.fraction then
 				shell.place_ring(node.ring, node.label_parent, 0, box_top)
-				shell.set_ring(node.ring, metric.fraction, metric.state and COLORS[metric.state] or COLORS.secondary)
+				shell.set_ring(node.ring, metric.fraction, metric.state and COLORS[metric.state] or COLORS.muted)
 			else
 				shell.hide_ring(node.ring)
 			end
