@@ -11,6 +11,47 @@ local function public(value)
 	end
 end
 
+-- Spells whose result opens a loot window that no creature dropped. The loot
+-- source on those windows is an item, and may be unreadable, so the cast
+-- itself is the signal that keeps the target from being credited.
+local NON_CREATURE_LOOT = {
+	[1804] = true, -- Pick Lock
+	[13262] = true, -- Disenchant
+	[31252] = true, -- Prospecting
+	[51005] = true, -- Milling
+}
+local CAST_WINDOW = 10
+local RESULT_WINDOW = 3
+
+local item_loot_until = 0
+
+local function clock()
+	return type(GetTime) == "function" and public(GetTime()) or nil
+end
+
+-- A cast that starts holds the window open for its channel, one that lands
+-- shortens it to the moment its loot appears, and one that fails closes it.
+function Everlook.drops.note_cast(spellId, phase)
+	local now = clock()
+	if not (now and NON_CREATURE_LOOT[spellId]) then
+		return
+	end
+	if phase == "failed" then
+		item_loot_until = 0
+	else
+		item_loot_until = now + (phase == "landed" and RESULT_WINDOW or CAST_WINDOW)
+	end
+end
+
+local function item_loot_open()
+	local now = clock()
+	if now and now <= item_loot_until then
+		item_loot_until = 0
+		return true
+	end
+	return false
+end
+
 local function loot_is_item(slot)
 	if GetLootSlotType then
 		local slotType = GetLootSlotType(slot)
@@ -22,6 +63,7 @@ end
 
 local function source_ids(slot)
 	local npcId, objectId, guid
+	local foreign = false
 	if GetLootSourceInfo then
 		local sources = { GetLootSourceInfo(slot) }
 		guid = sources[1]
@@ -32,12 +74,19 @@ local function source_ids(slot)
 				if not npcId then
 					npcId = creature
 				end
-			elseif not objectId then
-				objectId = Everlook.world.guid_id(source, "GameObject")
+			else
+				local object = not objectId and Everlook.world.guid_id(source, "GameObject")
+				if object then
+					objectId = object
+				elseif Everlook.world.usable(source) and type(source) == "string" then
+					-- An Item or Player source: disenchanting, prospecting, milling,
+					-- or opening a container. No creature dropped it.
+					foreign = true
+				end
 			end
 		end
 	end
-	if not npcId and not objectId then
+	if not npcId and not objectId and not foreign then
 		local npc = UnitGUID and UnitGUID("npc")
 		npcId = Everlook.npcs.creature_id(npc)
 			or Everlook.npcs.creature_id(UnitGUID and UnitGUID("target"))
@@ -77,6 +126,9 @@ function Everlook.drops.scan()
 		return
 	end
 	if not GetNumLootItems then
+		return
+	end
+	if item_loot_open() then
 		return
 	end
 	local killed = {}
@@ -122,6 +174,22 @@ end
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("LOOT_OPENED")
-frame:SetScript("OnEvent", function()
-	Everlook.drops.scan()
+frame:RegisterEvent("UNIT_SPELLCAST_SENT")
+frame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+frame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
+frame:RegisterEvent("UNIT_SPELLCAST_FAILED")
+local CAST_PHASES = {
+	UNIT_SPELLCAST_SENT = "sent",
+	UNIT_SPELLCAST_SUCCEEDED = "landed",
+	UNIT_SPELLCAST_INTERRUPTED = "failed",
+	UNIT_SPELLCAST_FAILED = "failed",
+}
+frame:SetScript("OnEvent", function(_, event, unit, second, third, fourth)
+	if event == "LOOT_OPENED" then
+		Everlook.drops.scan()
+	elseif public(unit) == "player" then
+		-- SENT carries the spell as its fourth value, the others as their third.
+		local phase = CAST_PHASES[event]
+		Everlook.drops.note_cast(public(phase == "sent" and fourth or third), phase)
+	end
 end)

@@ -242,6 +242,62 @@ EverlookDrops.drops.scan()
 local counted = EverlookDrops.world.document()
 check("repeat loot counts without storing the rows", loot_stores == 0 and counted.drops[1][3] == repeat_drops + 1 and counted.kills[1][2] == repeat_kills + 1 and counted.drops[1][4] == repeat_quantity + 4)
 EverlookDrops.world.store = store_loot
+
+do
+	-- Disenchanting opens a loot window whose source is the item, not a creature.
+	-- Whoever the player happens to be targeting or talking to did not drop it.
+	local function has_drop(document, itemId)
+		for _, row in ipairs(document.drops or {}) do
+			if row[2] == itemId then
+				return true
+			end
+		end
+		return false
+	end
+	local previous_link = _G.GetLootSlotLink
+	local previous_source = _G.GetLootSourceInfo
+	local previous_guid = _G.UnitGUID
+	_G.GetLootSlotLink = function()
+		return "|Hitem:10940|h[Strange Dust]|h"
+	end
+	_G.UnitGUID = function(unit)
+		if unit == "npc" then
+			return "Creature-0-1-0-2-3000-abc"
+		end
+		return "Creature-0-1-0-2-3001-abc"
+	end
+	_G.GetLootSourceInfo = function()
+		return "Item-1-0-99", 2
+	end
+	EverlookDrops.drops.scan()
+	check("an item-sourced loot window is not a creature drop", not has_drop(EverlookDrops.world.document(), 10940))
+	_G.GetLootSourceInfo = function() end
+	EverlookDrops.drops.scan()
+	check("a loot window with no source info still falls back to the target", has_drop(EverlookDrops.world.document(), 10940))
+	-- The cast alone is enough when the client gives no readable source.
+	_G.GetLootSlotLink = function()
+		return "|Hitem:10939|h[Greater Magic Essence]|h"
+	end
+	_G.GetTime = function()
+		return 2000
+	end
+	EverlookDrops.drops.note_cast(13262, "sent")
+	EverlookDrops.drops.scan()
+	check("a loot window right after a disenchant cast is not a creature drop", not has_drop(EverlookDrops.world.document(), 10939))
+	EverlookDrops.drops.scan()
+	check("the next loot window after it is attributed again", has_drop(EverlookDrops.world.document(), 10939))
+	_G.GetLootSlotLink = function()
+		return "|Hitem:10937|h[Lesser Magic Essence]|h"
+	end
+	EverlookDrops.drops.note_cast(13262, "sent")
+	EverlookDrops.drops.note_cast(13262, "failed")
+	EverlookDrops.drops.scan()
+	check("a failed disenchant cast does not hide the next loot", has_drop(EverlookDrops.world.document(), 10937))
+	_G.GetTime = nil
+	_G.GetLootSlotLink = previous_link
+	_G.GetLootSourceInfo = previous_source
+	_G.UnitGUID = previous_guid
+end
 _G.GetNumLootItems = env.GetNumLootItems
 
 _G.GetNumLootItems = function()
