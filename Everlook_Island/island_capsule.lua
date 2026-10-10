@@ -132,6 +132,77 @@ local function read_capsule(value, presentation)
 	return { text = value.text, icon = icon, trailing = trailing, progress = value.progress }
 end
 
+-- A tone is a name from TONES. Callers that paint get it as a colour table.
+function capsule.tone_color(name)
+	local hex = TONES[name]
+	if not hex then return nil end
+	return { tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255, tonumber(hex:sub(7, 8), 16) / 255, 1 }
+end
+
+local ROW_KEYS = { icon = true, title = true, ring = true, labels = true, badge = true }
+local RING_KEYS = { fraction = true, tone = true }
+local LABEL_KEYS = { text = true, tone = true }
+local MAX_LABELS = 3
+
+local function read_tone(value, default)
+	if value == nil then return capsule.tone_color(default) end
+	if type(value) ~= "string" then return nil end
+	return capsule.tone_color(value)
+end
+
+-- Reads one row: the same parts the capsule has, each optional but at least one,
+-- as { icon, title, ring = { fraction, tone }, labels = { text or { text, tone } }, badge }.
+-- Returns a copy with tones turned into colour tables, or nil and a reason.
+function capsule.read_row(value)
+	if secret(value) or not plain_table(value) or not known_keys(value, ROW_KEYS) or any_secret(value) then return nil, "invalid_row" end
+	local row = {}
+	if value.icon ~= nil then
+		local icon, reason = copy_mark(value.icon)
+		if reason then return nil, reason end
+		if not icon then return nil, "invalid_row" end
+		row.icon = icon
+	end
+	if value.title ~= nil then
+		if not plain_line(value.title, 64) then return nil, "invalid_row" end
+		row.title = value.title
+	end
+	if value.ring ~= nil then
+		local ring = value.ring
+		if not plain_table(ring) or not known_keys(ring, RING_KEYS) then return nil, "invalid_row" end
+		local fraction = ring.fraction
+		if type(fraction) ~= "number" or fraction ~= fraction or fraction < 0 or fraction > 1 then return nil, "invalid_row" end
+		local tone = read_tone(ring.tone, "accent")
+		if not tone then return nil, "invalid_row" end
+		row.ring = { fraction = fraction, tone = tone }
+	end
+	if value.labels ~= nil then
+		local labels = value.labels
+		if not plain_table(labels) or #labels > MAX_LABELS then return nil, "invalid_row" end
+		for key in pairs(labels) do
+			if type(key) ~= "number" or key < 1 or key > #labels or key % 1 ~= 0 then return nil, "invalid_row" end
+		end
+		row.labels = {}
+		for index = 1, #labels do
+			local label = labels[index]
+			if type(label) == "string" then
+				if not plain_line(label, 24) then return nil, "invalid_row" end
+				row.labels[index] = label
+			else
+				if not plain_table(label) or not known_keys(label, LABEL_KEYS) or not plain_line(label.text, 24) then return nil, "invalid_row" end
+				local tone = read_tone(label.tone, "secondary")
+				if not tone then return nil, "invalid_row" end
+				row.labels[index] = { text = label.text, tone = tone }
+			end
+		end
+	end
+	if value.badge ~= nil then
+		if not plain_line(value.badge, 16) then return nil, "invalid_row" end
+		row.badge = value.badge
+	end
+	if row.title == nil and row.labels == nil and row.badge == nil and row.icon == nil and row.ring == nil then return nil, "invalid_row" end
+	return row
+end
+
 local function read_run(value)
 	if secret(value) or not plain_table(value) or not known_keys(value, RUN_KEYS) then return nil, "invalid_run" end
 	if any_secret(value) then return nil, "invalid_run" end

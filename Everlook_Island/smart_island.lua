@@ -3,6 +3,8 @@ local Everlook = Everlook
 local module = Everlook.module
 local id = "smart_island"
 local grid = Everlook.island_grid
+local island_section = Everlook.island_section
+local island_blocks = Everlook.island_blocks
 
 BINDING_HEADER_EVERLOOK = BINDING_HEADER_EVERLOOK or "Everlook"
 BINDING_NAME_EVERLOOK_SMART_ISLAND = "Open smart island"
@@ -64,6 +66,11 @@ local active_toasts, toast_queue, toast_pool = {}, {}, {}
 local paint
 local mark_removed
 local next_notice_id = 0
+-- Sections share the notices' counter, so one number names one thing.
+local sections = island_section.new_store(function()
+	next_notice_id = next_notice_id + 1
+	return next_notice_id
+end)
 local notices = {}
 local statuses = {}
 local status_node, capsule_icon
@@ -602,6 +609,11 @@ local function opened()
 	return pinned or hovering or holding
 end
 
+-- A section changed. The panes redraw only while the island is open; closed, nothing shows them.
+local function sections_changed()
+	if opened() then paint("section") end
+end
+
 local function mode()
 	if opened() then return "open" end
 	return "closed"
@@ -620,6 +632,7 @@ function island.view()
 	local preview_y, preview_alpha = preview_position()
 	return {
 		mode = mode(),
+		sections = sections.count(),
 		quests = quest_context.view(true),
 		pinned = pinned == true,
 		hovering = hovering == true,
@@ -1266,7 +1279,10 @@ local function layout_expanded(list, status, inspection_height, two)
 	end
 	local header_height = summary_height + status_height
 	local viewport_top = header_height + space.head
-	content_height = 0
+	-- Sections in the notifications pane come first, with the history under them.
+	local b_list = sections.list("pane_b")
+	local b_end = shell.blocks_b:paint(b_list, space.near, right_w)
+	content_height = #b_list > 0 and (b_end + space.section) or 0
 	call(empty_text, "ClearAllPoints")
 	call(empty_text, "SetPoint", "TOPLEFT", inbox_content, "TOPLEFT", space.edge, -content_height - space.near)
 	call(empty_text, "SetWidth", right_w - 2 * space.edge)
@@ -1292,6 +1308,14 @@ local function layout_expanded(list, status, inspection_height, two)
 	end
 	-- Both lists share one height, so the divider between them runs clean.
 	local quest_height = two and inspection_height or 0
+	-- Sections in the quests pane sit under the quest card. With no quest, the first one's title
+	-- is the pane's heading and the card's place is empty.
+	local a_list = two and sections.list("pane_a") or {}
+	local quest_title = not quest_context.has_content() and a_list[1] and a_list[1].title or nil
+	call(shell.quest_heading, "Show")
+	shell.heading(shell.quest_heading, quest_title or "Quests")
+	local a_end = shell.blocks_a:paint(a_list, quest_height > 0 and (quest_height - space.edge + space.section) or space.near, left_w, quest_title ~= nil)
+	if #a_list > 0 then quest_height = a_end + space.edge end
 	local room = math.max(space.pane_min, screen_size("GetHeight") - viewport_top - space.edge - space.block)
 	scroll_height = math.min(math.max(content_height, quest_height, space.pane_min), space.pane_max, room)
 	if follow_end then
@@ -1628,7 +1652,7 @@ paint = function(reason)
 	if compact and compact.progress == nil and type(status.progress) == "number" then
 		compact = { text = compact.text, icon = compact.icon, trailing = compact.trailing, progress = status.progress }
 	end
-	local page_width, two = shell.panel(visual_open and quest_context.has_content())
+	local page_width, two = shell.panel(visual_open and (quest_context.has_content() or #sections.list("pane_a") > 0))
 	local available = math.max(64, screen_size("GetWidth") - 32)
 	local morphing = preview.phase == "opening" or preview.phase == "closing"
 	local face = quest_context.present({
@@ -1976,6 +2000,11 @@ end
 
 function island.dismiss(handle)
 	if not usable(handle) or type(handle) ~= "number" then return false end
+	if sections.get(handle) then
+		sections.remove(handle)
+		sections_changed()
+		return true
+	end
 	for _, list in ipairs({ statuses, notices, toast_queue, active_toasts }) do
 		for index = 1, #list do
 			if list[index].id == handle and list[index].frozen then return nil, "combat_locked" end
@@ -2031,11 +2060,46 @@ local function payload_of(entry)
 	}
 end
 
+-- Adds a section to a pane, or replaces the one this source made under the same key.
+-- Returns its handle, or nil and a reason.
+function island.section(spec)
+	if not module.enabled(id) then return nil, "disabled" end
+	local record, reason = island_section.read(spec)
+	if not record then return nil, reason end
+	local handle, limit = sections.put(record, clock_now())
+	if not handle then return nil, limit end
+	sections_changed()
+	return handle
+end
+
+local SECTION_CHANGES = { title = true, order = true, blocks = true, expires = true }
+
+local function update_section(record, changes)
+	for name in pairs(changes) do
+		if not SECTION_CHANGES[name] then return nil, "invalid_update" end
+	end
+	local merged = { source = record.source, key = record.key, region = record.region, title = record.title,
+		order = record.order, expires = record.expires, blocks = changes.blocks or {} }
+	for name in pairs(SECTION_CHANGES) do
+		if changes[name] ~= nil and name ~= "blocks" then merged[name] = changes[name] end
+	end
+	local next_record, reason = island_section.read(merged)
+	if not next_record then return nil, reason end
+	-- Blocks that were not changed are kept as they were read.
+	if changes.blocks == nil then next_record.blocks, next_record.bytes = record.blocks, record.bytes end
+	local handle, limit = sections.put(next_record, clock_now())
+	if not handle then return nil, limit end
+	sections_changed()
+	return handle
+end
+
 function island.update(handle, changes)
 	if not module.enabled(id) then return nil, "disabled" end
 	if not usable(handle) or type(handle) ~= "number" then return nil, "invalid_handle" end
 	if not usable(changes) or type(changes) ~= "table" or getmetatable(changes) ~= nil then return nil, "invalid_update" end
 	if changes.source ~= nil or changes.key ~= nil or changes.id ~= nil then return nil, "invalid_update" end
+	local record = sections.get(handle)
+	if record then return update_section(record, changes) end
 	local entry = find_notice(handle)
 	if not entry or entry.removed then return nil, "unknown_handle" end
 	if entry.frozen then return nil, "combat_locked" end
@@ -2139,6 +2203,9 @@ Everlook.island = {
 	set_action_enabled = island.set_action_enabled,
 	register_event = island.register_event,
 	unregister_event = island.unregister_event,
+	section = island.section,
+	-- Raised only when something is added, so an addon can test for what it needs.
+	api = 1,
 }
 
 local function hide()
@@ -2148,6 +2215,7 @@ local function hide()
 		ticker = nil
 	end
 	painted = {}
+	sections.clear()
 	local kept = {}
 	for _, entry in ipairs(notices) do
 		if entry.frozen then kept[#kept + 1] = entry else mark_removed(entry) end
@@ -2538,6 +2606,15 @@ local function ensure_frame()
 		tones = { primary = COLORS.primary, muted = COLORS.muted, success = COLORS.success, quest = shell.quest_color },
 		rings = { make = shell.make_ring, place = shell.place_ring, chain = shell.chain_ring, set = shell.set_ring, hide = shell.hide_ring }, hover = hover_target, controls = preview_controls, pin = island.pin_quest,
 		repaint = function() paint() end })
+	local block_host = { label = make_label, visual = make_visual, link = shell.make_link, set_link_text = shell.set_control_text,
+		hover = function(target, node)
+			hover_target(target, node)
+			preview_controls[#preview_controls + 1] = target
+		end,
+		heading = shell.heading, space = shell.space, ring_size = shell.space.capsule_ring,
+		rings = { make = shell.make_ring, place = shell.place_ring, chain = shell.chain_ring, set = shell.set_ring, hide = shell.hide_ring } }
+	shell.blocks_a = island_blocks.new(quest_content, block_host)
+	shell.blocks_b = island_blocks.new(inbox_content, block_host)
 	preview_group = call(expanded, "CreateAnimationGroup")
 	if preview_group then
 		preview_fade = call(preview_group, "CreateAnimation", "Alpha")
@@ -2640,6 +2717,10 @@ local function apply(enabled)
 		-- The frame itself stays put until a visible label changes: the open
 		-- clock and coordinates, a notice's minute, or the quest chip.
 		local open = opened()
+		if sections.prune(clock_now()) and open then
+			paint("section")
+			return
+		end
 		if open then
 			read_clock()
 			read_coords()

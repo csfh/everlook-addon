@@ -155,6 +155,59 @@ The most recently started status owns the row, while earlier statuses remain in 
 
 Clear history removes the inbox entries and toasts; a live activity remains active until its producer completes, dismisses or stops updating it. Undo restores history without replay. Disabling clears live activities and invalidates their deadlines. Neither a stale deadline nor a toast timeout can affect the completed notice.
 
+## Put content in the open island
+
+A section is a block of content your addon places in one of the open island's two panes. It shows while the island is open and never as a toast. Everlook draws it; your addon decides what it says and when it changes.
+
+```lua
+local api = Everlook.island
+if api and type(api.section) == "function" then
+    local handle = api.section({
+        source = "MyAddon",
+        key = "bosses",
+        region = "pane_b",          -- pane_a (beside the quests) or pane_b (above the notifications)
+        title = "Bosses",
+        order = 500,                -- optional, 100 to 999, lower is higher in the pane
+        blocks = {
+            { kind = "text", text = "Phase two starts at 40 percent." },
+            { kind = "row",
+              row = { icon = "quest", title = "Ragnaros", ring = { fraction = 0.4, tone = "warning" },
+                      labels = { "3/8" }, badge = "60%" },
+              action = { id = "mark", label = "Mark", on_click = function(handle, action_id) end },
+              tooltip = { title = "Ragnaros", lines = { "Fire Lord" } } },
+        },
+    })
+    -- Later, with the same functions as a notice:
+    api.update(handle, { blocks = { ... } })    -- replaces the blocks, keeps the handle
+    api.dismiss(handle)
+end
+```
+
+`Everlook.island.api` is a whole number that goes up only when something is added, so an addon can test for what it needs. It is `1` now.
+
+`section` returns a handle, or `nil` and a reason. A second `section` call with the same `source` and `key` replaces that section and returns the same handle, so it is safe to push your sections again at login. Sections are never saved: they are gone after a reload, and your addon pushes them again. `update(handle, changes)` takes `title`, `order`, `blocks` and `expires`. `blocks` replaces the whole list; leave a field out to keep it. A section cannot change its `source`, `key` or `region`. `dismiss(handle)` removes it and returns `true`. A handle from `section` and a handle from `notify` are both numbers from one counter and work in the same `update` and `dismiss`.
+
+**Regions.** `pane_a` and `pane_b`. The header and the metrics may be added later. A section that names a region that is not listed is rejected with `invalid_region`. A pane with no quest shows the first section's title as its heading. When pane A holds a section and there is no quest, the island opens with two panes anyway.
+
+**Order.** Sections sort by `order`, then by when they were first made. Everlook's own sources take 0 to 99. Yours is 100 to 999, 500 if you leave it out, and the notification history always comes last.
+
+**Blocks.** A block is a table with a `kind` and nothing else but that kind's fields. An unknown key is rejected, so a later release can add fields without breaking yours.
+
+| Kind | Fields |
+| --- | --- |
+| `row` | `row` (below), optional `action`, optional `tooltip` |
+| `text` | `text`, up to 320 bytes and four lines |
+| `heading` | `text`, up to 48 bytes |
+| `gap` | `size` of `within` (4), `near` (8) or `section` (16) |
+
+A row has any of `icon` (a mark, as for a capsule), `title` (64 bytes), `ring = { fraction, tone }` with `fraction` from 0 to 1, up to three `labels` (24 bytes each, or `{ text, tone }`) and a `badge` (16 bytes). A tone is `primary`, `secondary`, `accent`, `success`, `warning` or `error`. An action has an `id`, a `label` (24 bytes) and `on_click(handle, action_id)`. It is a plain button: a section never carries an item or a spell. Errors in `on_click` go to the addon error handler. A tooltip is a `title` and up to six `lines` of plain text.
+
+All text is plain: a pipe, which starts a colour code, a link or a texture, is rejected.
+
+**Limits.** At most 12 sections in the island, 30 blocks in a section, and 8 KB of text for one source. A section that pushes the island or the source past a limit gets `nil, "limit"`. A section can set `expires` (1 to 3600 seconds) to be removed when it is not updated in that time; without it, a section stays until you dismiss it.
+
+**Reasons.** `disabled` (Smart Island is off), `invalid_section`, `invalid_source`, `invalid_key`, `invalid_region`, `invalid_title`, `invalid_order`, `invalid_expires`, `invalid_blocks`, `invalid_block`, `invalid_row`, `invalid_action`, `invalid_action_id`, `invalid_action_label`, `invalid_action_callback`, `invalid_tooltip`, `invalid_update`, `unknown_handle`, `limit`. Turning Smart Island off removes every section.
+
 ## Feed a WoW event
 
 ```lua

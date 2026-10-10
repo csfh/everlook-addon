@@ -55,7 +55,8 @@ local Row = {}
 Row.__index = Row
 
 -- host brings the island's own pieces: label(parent, justify, role), the rings
--- table (make, chain, set, hide) and ring_size.
+-- table (make, chain, set, hide), ring_size and, optionally, the font role of the
+-- title (the capsule's is the large one; a list row's is the text size).
 function row.new(parent, host)
 	local self = setmetatable({ parent = parent, host = host, labels = {}, label_count = 0 }, Row)
 	self.icon = call(parent, "CreateTexture", nil, "OVERLAY")
@@ -64,7 +65,7 @@ function row.new(parent, host)
 	call(self.icon, "Hide")
 	self.arrow = row.make_arrow(parent)
 	call(self.arrow, "SetPoint", "LEFT", parent, "LEFT", SPACE.lead, 0)
-	self.title = host.label(parent, "LEFT")
+	self.title = host.label(parent, "LEFT", host.title_role)
 	call(self.title, "SetMaxLines", 1)
 	call(self.title, "Hide")
 	self.badge = host.label(parent, "RIGHT", true)
