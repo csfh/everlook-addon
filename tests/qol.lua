@@ -119,7 +119,7 @@ return function(root, check)
 					font = font, parent = self,
 					SetPoint = function(self, ...) self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end,
 					ClearAllPoints = function(self) self.point, self.points = nil, {} end,
-					SetJustifyH = function() end, SetWordWrap = function(self, enabled) self.wrap = enabled end,
+					SetJustifyH = function(self, justify) self.justify = justify end, SetWordWrap = function(self, enabled) self.wrap = enabled end,
 					SetText = function(self, text) self.text = text end,
 					SetWidth = function(self, width) self.width = width end, SetHeight = function(self, height) self.height = height end,
 					SetTextColor = function(self, ...) self.color = { ... } end, SetSpacing = function(self, spacing) self.spacing = spacing end,
@@ -5911,15 +5911,31 @@ return function(root, check)
 	end
 	do
 		local layout = dofile(root .. "/tests/layout.lua")
-		local addon, _, _, _, _, _, frames = quest_world()
+		local addon, env, _, _, _, _, frames = quest_world()
 		addon.module.set("smart_island", "quest_context", true)
-		-- Reduced motion snaps the open panel to its final size, which the fake frames cannot animate.
+		-- Reduced motion snaps the closed pill and the open panel to their final size, which the fake frames cannot animate.
 		addon.module.set("smart_island", "reduced_motion", true)
+		layout.settle(frames)
+		local closed_root
+		for _, frame in ipairs(frames) do if frame.name == "EverlookSmartIsland" then closed_root = frame end end
+		if os.getenv("ISLAND_LAYOUT_DIR") then
+			local handle = assert(io.open(os.getenv("ISLAND_LAYOUT_DIR") .. "/closed.json", "w"))
+			handle:write(layout.export(frames, closed_root, env.GetTime()))
+			handle:close()
+		end
 		local root_frame
 		for _, frame in ipairs(frames) do if frame.name == "EverlookSmartIsland" then root_frame = frame end end
 		root_frame.scripts.OnClick(root_frame, "LeftButton")
+		layout.settle(frames)
 		-- Run with ISLAND_LAYOUT=1 to print every region's rectangle, relative to the island's corner.
 		if os.getenv("ISLAND_LAYOUT") then print(layout.describe(frames, root_frame)) end
+		-- ISLAND_LAYOUT_DIR=<dir> also writes open.json for scripts/island_layout_html.py.
+		local dump_dir = os.getenv("ISLAND_LAYOUT_DIR")
+		if dump_dir then
+			local handle = assert(io.open(dump_dir .. "/open.json", "w"))
+			handle:write(layout.export(frames, root_frame, env.GetTime()))
+			handle:close()
+		end
 		local problems = layout.lint(frames, { skip = function(frame) return frame.name == "EverlookIslandResting" end })
 		check("nothing in the open island sits outside the frame that holds it, and no two lines of text overlap", #problems == 0)
 		if #problems > 0 then print(table.concat(problems, "\n")) end

@@ -98,6 +98,27 @@ function layout.new()
 	return { rectangle = resolve }
 end
 
+-- The fake frames cannot play an animation, so this plays every one to its end:
+-- each animation reports full progress, then every frame's OnUpdate runs and
+-- each group's OnFinished fires. What the island sized or faded is then final.
+function layout.settle(frames)
+	for _ = 1, 3 do
+		for _, frame in ipairs(frames) do
+			for _, group in ipairs(frame.animation_groups or {}) do
+				for _, animation in ipairs(group.animations) do animation.progress = 1 end
+			end
+		end
+		for _, frame in ipairs(frames) do
+			if frame.scripts and frame.scripts.OnUpdate then frame.scripts.OnUpdate(frame, 1) end
+		end
+	end
+	for _, frame in ipairs(frames) do
+		for _, group in ipairs(frame.animation_groups or {}) do
+			if group.scripts and group.scripts.OnFinished then group.scripts.OnFinished(group) end
+		end
+	end
+end
+
 -- A frame is shown when it and every ancestor is not hidden.
 local function visible(region)
 	while region do
@@ -180,6 +201,63 @@ function layout.describe(frames, root)
 	end
 	walk(root, 0)
 	return table.concat(lines, "\n")
+end
+
+local function quote(text)
+	return '"' .. tostring(text):gsub('[%c"\\]', function(char)
+		if char == '"' then return '\\"' end
+		if char == "\\" then return "\\\\" end
+		if char == "\n" then return "\\n" end
+		return string.format("\\u%04x", char:byte())
+	end) .. '"'
+end
+
+local function number_list(values)
+	if type(values) ~= "table" then return "null" end
+	local out = {}
+	for index = 1, #values do out[index] = tostring(tonumber(values[index]) or 0) end
+	return "[" .. table.concat(out, ",") .. "]"
+end
+
+-- The shown frames and regions under `root` as JSON, positions relative to its
+-- corner, in the order they are drawn. `now` is the game time, which a ring needs
+-- to turn its cooldown into a fraction. scripts/island_layout_html.py turns this
+-- into a picture.
+function layout.export(frames, root, now)
+	local measure = layout.new()
+	local origin = measure.rectangle(root)
+	local items = {}
+	local function box(rect)
+		return string.format('"x":%g,"y":%g,"w":%g,"h":%g', rect.left - origin.left, rect.top - origin.top, rect.width, rect.height)
+	end
+	-- A frame faded to nothing, and everything inside it, is left out.
+	local function walk(frame, depth, inherited)
+		if frame.shown == false then return end
+		local alpha = inherited * (frame.alpha or 1)
+		if alpha < 0.01 then return end
+		items[#items + 1] = string.format('{"kind":"frame","name":%s,%s,"alpha":%g,"clips":%s,"cooldown":%s,"swipe":%s}',
+			quote(frame.name or ""), box(measure.rectangle(frame)), alpha, tostring(frame.clips == true),
+			(frame.cooldown and now) and string.format("%g", (now - frame.cooldown.start) / frame.cooldown.duration) or "null",
+			number_list(frame.swipe_color))
+		for _, region in ipairs(frame.regions or {}) do
+			if region.shown ~= false then
+				local rect = measure.rectangle(region)
+				local region_alpha = alpha * (region.alpha or 1)
+				if region.GetStringWidth then
+					items[#items + 1] = string.format('{"kind":"text","text":%s,%s,"font":%s,"color":%s,"justify":%s,"alpha":%g}', quote(region.text or ""), box(rect),
+						quote(region.font or ""), number_list(region.color), quote(region.justify or "LEFT"), region_alpha)
+				else
+					items[#items + 1] = string.format('{"kind":"texture","path":%s,"atlas":%s,%s,"color":%s,"rotation":%g,"alpha":%g}',
+						quote(region.path or ""), quote(region.atlas or ""), box(rect), number_list(region.color), region.rotation or 0, region_alpha)
+				end
+			end
+		end
+		for _, child in ipairs(frames) do
+			if child.parent == frame then walk(child, depth + 1, alpha) end
+		end
+	end
+	walk(root, 0, 1)
+	return "[" .. table.concat(items, ",\n") .. "]"
 end
 
 return layout

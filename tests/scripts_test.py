@@ -287,5 +287,26 @@ class HashCompatibilityTest(unittest.TestCase):
                 ])
 
 
+class IslandLayoutHtmlTest(unittest.TestCase):
+    def test_a_layout_dump_becomes_a_page_with_text_and_a_ring(self):
+        sys.path.insert(0, str(ADDON / "scripts"))
+        import island_layout_html
+
+        items = [
+            {"kind": "frame", "name": "EverlookSmartIsland", "x": 0, "y": 0, "w": 100, "h": 36, "alpha": 1, "cooldown": None, "swipe": None},
+            {"kind": "frame", "name": "EverlookIslandResting", "x": 0, "y": 0, "w": 100, "h": 36, "alpha": 1, "cooldown": None, "swipe": None},
+            {"kind": "texture", "path": "Interface\\AddOns\\Everlook_Island\\assets\\island_corner.tga", "atlas": "", "x": 0, "y": 0, "w": 14, "h": 14, "color": None, "rotation": 0, "alpha": 1},
+            {"kind": "text", "text": "|cffad76ef45%|r <b>", "x": 10, "y": 10, "w": 40, "h": 14, "font": "GameFontHighlightLarge", "color": [1, 1, 1, 1], "justify": "RIGHT", "alpha": 1},
+            {"kind": "frame", "name": "", "x": 0, "y": 0, "w": 100, "h": 36, "alpha": 1, "cooldown": None, "swipe": None},
+            {"kind": "texture", "path": "Interface\\AddOns\\Everlook_Island\\assets\\island_ring.tga", "atlas": "", "x": 60, "y": 10, "w": 14, "h": 14, "color": None, "rotation": 0, "alpha": 1},
+        ]
+        page = island_layout_html.render(items, 2)
+        self.assertIn('<span style="color:#ad76ef">45%</span>', page)
+        self.assertIn("&lt;b&gt;", page)
+        self.assertIn("font-size:16px", page)
+        self.assertIn("data:image/png;base64,", page)
+        self.assertNotIn("island_corner", page)
+
+
 if __name__ == "__main__":
     unittest.main()
