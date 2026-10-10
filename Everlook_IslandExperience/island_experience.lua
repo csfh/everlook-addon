@@ -331,6 +331,12 @@ local function kill_amount(text)
 	end
 end
 
+-- The experience a kill message names, or nil when it is not one. The island's reactions use
+-- it to tell a kill from other experience, since this client cannot read the combat log.
+function experience.kill_xp(text)
+	return kill_amount(text)
+end
+
 local function window(buckets, now, span)
 	local from = now - span
 	local totals = {

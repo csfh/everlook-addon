@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cffad76efIslandReactions|r
+## Notes: Flashes the island when you level up, kill something that gives experience, or loot something.
+## Author: Christoffer Hallas
+## Dependencies: Everlook, Everlook_Island
+## OptionalDeps: Everlook_IslandExperience
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+island_react.lua
