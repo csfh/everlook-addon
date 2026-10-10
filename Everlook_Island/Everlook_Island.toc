@@ -6,9 +6,10 @@
 ## Group: Everlook
 ## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
 
+island_capsule.lua
+island_row.lua
 island_quests.lua
 island_actions.lua
-island_capsule.lua
 island_vitals.lua
 island_history.lua
 island_surface.lua

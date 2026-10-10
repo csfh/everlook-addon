@@ -86,7 +86,7 @@ local resting_slots = {}
 -- The open summary spaces everything from these steps. A gap inside a group is
 -- `within`, a gap between siblings `near`, and a gap between groups `section`,
 -- which is at least twice the one inside. `edge` is the inset the rows below share.
-shell.space = { within = 4, near = 8, section = 16, edge = 12, ring = 28, icon = 14, mark = 16, capsule_ring = 24, head = 32, pane_min = 48, pane_max = 320 }
+shell.space = { within = 4, near = 8, section = 16, edge = 12, ring = 28, icon = 14, mark = 16, capsule_ring = 14, head = 32, pane_min = 48, pane_max = 320 }
 local function refresh_quests(force)
 	quest_context.refresh(force)
 end
@@ -171,6 +171,15 @@ shell.place_ring = function(ring, relative, x, y)
 	for _, part in ipairs({ ring.track, ring.fill }) do
 		call(part, "ClearAllPoints")
 		call(part, "SetPoint", "TOPLEFT", relative, "TOPLEFT", x, -y)
+	end
+end
+
+-- Sets the ring on the line of another region, `gap` before that region's `point`
+-- (its left edge unless said otherwise).
+shell.chain_ring = function(ring, following, gap, point)
+	for _, part in ipairs({ ring.track, ring.fill }) do
+		call(part, "ClearAllPoints")
+		call(part, "SetPoint", "RIGHT", following, point or "LEFT", -gap, 0)
 	end
 end
 
@@ -2505,7 +2514,7 @@ local function ensure_frame()
 	quest_context.ensure_ui({ root = shell.face, content = quest_content, label = make_label, visual = make_visual,
 		head = shell.quest_head, link = shell.make_link, space = shell.space, heading = shell.heading,
 		tones = { primary = COLORS.primary, muted = COLORS.muted, success = COLORS.success, quest = shell.quest_color },
-		rings = { make = shell.make_ring, place = shell.place_ring, set = shell.set_ring, hide = shell.hide_ring }, hover = hover_target, controls = preview_controls, pin = island.pin_quest,
+		rings = { make = shell.make_ring, place = shell.place_ring, chain = shell.chain_ring, set = shell.set_ring, hide = shell.hide_ring }, hover = hover_target, controls = preview_controls, pin = island.pin_quest,
 		repaint = function() paint() end })
 	preview_group = call(expanded, "CreateAnimationGroup")
 	if preview_group then

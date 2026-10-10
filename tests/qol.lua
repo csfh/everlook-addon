@@ -148,7 +148,7 @@ return function(root, check)
 			frames[#frames + 1] = frame
 			return frame
 		end
-		for _, file in ipairs({ "links", "module", "quest_interface", "flight_time", "friend_conveniences", "useful_tooltips", "faster_loot", "quest_automation", "auto_repair", "sell_junk", "open_containers", "fonts", "site_links", "hide_clutter", "auto_responses", "chat_tweaks", "map_pins", "coordinates", "quest_levels", "cinematic_skip", "camera", "swing_timers", "unit_names", "npc_titles", "quest_tracker", "mail", "gossip_continue", "tooltip_cursor", "chat_format", "radial_wheel", "radial_menu", "island_quests", "island_actions", "island_capsule", "island_vitals", "island_history", "island_surface", "island_scroll", "island_notice", "island_inbox", "island_toasts", "smart_island", "island_feed_kit", "island_share", "island_quest_notices", "island_loot", "island_hearth", "island_reputation", "island_professions", "island_mail", "island_invites", "island_buffs", "island_recap", "island_experience", "island_warnings", "action_shortcuts" }) do
+		for _, file in ipairs({ "links", "module", "quest_interface", "flight_time", "friend_conveniences", "useful_tooltips", "faster_loot", "quest_automation", "auto_repair", "sell_junk", "open_containers", "fonts", "site_links", "hide_clutter", "auto_responses", "chat_tweaks", "map_pins", "coordinates", "quest_levels", "cinematic_skip", "camera", "swing_timers", "unit_names", "npc_titles", "quest_tracker", "mail", "gossip_continue", "tooltip_cursor", "chat_format", "radial_wheel", "radial_menu", "island_capsule", "island_row", "island_quests", "island_actions", "island_vitals", "island_history", "island_surface", "island_scroll", "island_notice", "island_inbox", "island_toasts", "smart_island", "island_feed_kit", "island_share", "island_quest_notices", "island_loot", "island_hearth", "island_reputation", "island_professions", "island_mail", "island_invites", "island_buffs", "island_recap", "island_experience", "island_warnings", "action_shortcuts" }) do
 			if not left_out[file] then
 				local chunk = assert(loadfile(source(file)))
 				setfenv(chunk, env)
@@ -2850,12 +2850,12 @@ return function(root, check)
 		addon.module.set("smart_island", "quest_context", true)
 		local function ring()
 			for _, frame in ipairs(frames) do
-				if frame.cooldown and frame.width == 24 and frame.shown == true then return frame end
+				if frame.cooldown and frame.width == 14 and frame.shown == true then return frame end
 			end
 		end
 		local seen = ring()
 		check("rings keep addons that count cooldowns from printing a number on them", seen and seen.noCooldownCount == true)
-		check("the closed quest capsule has a ring round its arrow, filled to the quest's progress",
+		check("the closed quest capsule has a ring beside its title, filled to the quest's progress",
 			seen and math.abs((env.GetTime() - seen.cooldown.start) / seen.cooldown.duration - 1 / 6) < 1e-9 and seen.swipe_color[1] == 1)
 		state.selected = 23
 		state.watched = { 23 }
@@ -2865,6 +2865,60 @@ return function(root, check)
 		local done = ring()
 		check("a quest ready to hand in fills its ring and turns it green",
 			done and (env.GetTime() - done.cooldown.start) / done.cooldown.duration > 0.99 and done.swipe_color[1] < 0.6 and done.swipe_color[2] > 0.8)
+	end
+	do
+		local addon = quest_world()
+		local island_row = addon.island_row
+		local function region()
+			local r = { points = {}, shown = false }
+			function r:ClearAllPoints() self.points = {} end
+			function r:SetPoint(...) self.points[#self.points + 1] = { ... } end
+			function r:SetText(text) self.text = text end
+			function r:GetStringWidth() return #(self.text or "") * 5 end
+			function r:Show() self.shown = true end
+			function r:Hide() self.shown = false end
+			function r:SetSize() end
+			function r:SetTextColor(...) self.color = { ... } end
+			function r:SetMaxLines() end
+			function r:CreateTexture() return region() end
+			function r:SetAtlas() end
+			function r:SetTexture() end
+			function r:SetVertexColor() end
+			function r:SetSnapToPixelGrid() end
+			function r:SetTexelSnappingBias() end
+			function r:SetRotation(angle) self.rotation = angle end
+			return r
+		end
+		local parent = region()
+		local rings = { made = 0 }
+		function rings.make() local ring = { track = region(), fill = region() }; rings.ring = ring; return ring end
+		function rings.set(ring, fraction, tone) rings.fraction, rings.tone = fraction, tone; ring.track:Show() end
+		function rings.hide(ring) ring.track:Hide() end
+		function rings.chain(ring, following, gap, point) ring.track.points = { { "RIGHT", following, point or "LEFT", -gap, 0 } } end
+		local made = island_row.new(parent, { label = function() return region() end, rings = rings, ring_size = 14 })
+		made:set({ icon = "quest", title = "Gathering Idols", ring = { fraction = 0.5, tone = { 1, 1, 1 } },
+			labels = { "~32 yd", { text = "20", tone = { 1, 0.9, 0.2 } } }, badge = "73%" }, 0)
+		local badge, second, first = made.badge, made.labels[2], made.labels[1]
+		check("the badge hangs from the right edge and each label from the part after it",
+			badge.points[1][2] == parent and badge.points[1][4] == -12 and second.points[1][2] == badge and first.points[1][2] == second
+			and second.points[1][4] == -12)
+		check("the ring hangs from the first label and the title is held between the lead and the ring",
+			rings.ring.track.points[1][2] == first and made.title.points[1][3] == "LEFT" and made.title.points[1][4] == 34
+			and made.title.points[2][2] == rings.ring.track and made.title.points[2][4] == -12)
+		check("a label takes its own tone", second.color and second.color[2] == 0.9)
+		made:set({ labels = { "a", "b" } }, 0)
+		check("a label set without a tone leaves the last tone behind", made.labels[2].color[1] == 174 / 255)
+		made:set({ icon = "quest", title = "Gathering Idols", badge = "73%" }, 14)
+		check("a part the spec leaves out is hidden and the parts that stay close the gap",
+			first.shown == false and second.shown == false and rings.ring.track.shown == false
+			and badge.points[1][4] == -26 and made.title.points[2][2] == badge)
+		made:aim(1.5)
+		check("an aimed arrow turns and shows in place of the icon", made.arrow.rotation == 1.5 and made.arrow.shown and made.icon.shown == false)
+		made:aim(nil)
+		check("without an angle the arrow hides and the icon returns", made.arrow.shown == false and made.icon.shown == true)
+		made:set({ title = "Alone" }, 0)
+		check("a row with no lead starts its title at the edge and runs it to the other edge",
+			made.title.points[1][4] == 12 and made.title.points[2][2] == parent and made.title.points[2][3] == "RIGHT")
 	end
 	do
 		local function near(actual, expected)
@@ -2968,7 +3022,7 @@ return function(root, check)
 		for _, region in ipairs(capsule.regions) do
 			if region.atlas == "questlog-questtypeicon-quest" then icon = region end
 		end
-		check("a map pin aims when the client has no waypoint", closed_arrow.shown and near(closed_arrow.rotation, 0) and icon.shown == false and closed_arrow.point[1] == "TOPLEFT")
+		check("a map pin aims when the client has no waypoint", closed_arrow.shown and near(closed_arrow.rotation, 0) and icon.shown == false and closed_arrow.point[1] == "LEFT")
 		state.pins = { [37] = {}, [13] = { { questID = 21, x = 0.25, y = 0.5 } } }
 		state.parents = { [37] = 13 }
 		state.maps[13] = { continent = 0, origin_x = 0, origin_y = 0, width = 100, height = 100 }

@@ -1,4 +1,5 @@
 local Everlook = Everlook
+local island_row = Everlook.island_row
 
 -- Private quest context for Smart island. This observes the native log; it
 -- never changes tracking, accepts quests or drives navigation.
@@ -468,23 +469,14 @@ local function call(object, method, ...)
 	if type(fn) == "function" then return fn(object, ...) end
 end
 
-local function show_arrow(texture, angle)
-	if angle then
-		call(texture, "SetRotation", angle)
-		call(texture, "Show")
-	else
-		call(texture, "Hide")
-	end
-end
-
 function quests.aim()
 	if not ui then return end
 	stats.aim = stats.aim + 1
 	local current = options.enabled and context()
 	local angle = current and quests.direction(current.id)
-	show_arrow(ui.arrow, angle)
-	show_arrow(ui.heading_arrow, angle)
-	call(ui.icon, angle and "Hide" or "Show")
+	ui.angle = angle
+	ui.row:aim(angle)
+	island_row.show_arrow(ui.heading_arrow, angle)
 end
 
 -- Ten updates a second turn the arrow smoothly enough and halve the map calls.
@@ -642,39 +634,12 @@ function quests.ensure_ui(adapter)
 	ui.capsule = CreateFrame("Frame", "EverlookIslandQuestCapsule", adapter.root)
 	call(ui.capsule, "EnableMouse", false)
 	call(ui.capsule, "SetPoint", "TOPLEFT", adapter.root, "TOPLEFT", 0, 0)
-	ui.icon = call(ui.capsule, "CreateTexture", nil, "OVERLAY")
-	call(ui.icon, "SetAtlas", "questlog-questtypeicon-quest")
-	call(ui.icon, "SetSize", 16, 16)
-	call(ui.icon, "SetPoint", "TOPLEFT", ui.capsule, "TOPLEFT", 8, -8)
-	ui.title = adapter.label(ui.capsule, "LEFT")
-	call(ui.title, "SetPoint", "TOPLEFT", ui.capsule, "TOPLEFT", 34, -9)
-	call(ui.title, "SetMaxLines", 1)
-	ui.badge = adapter.label(ui.capsule, "RIGHT", true)
-	call(ui.badge, "SetPoint", "TOPRIGHT", ui.capsule, "TOPRIGHT", -14, -9)
-	call(ui.badge, "SetTextColor", 0.68, 0.46, 0.94, 1)
-	call(ui.badge, "Hide")
-	ui.distance = adapter.label(ui.capsule, "RIGHT", true)
-	call(ui.distance, "SetPoint", "TOPRIGHT", ui.capsule, "TOPRIGHT", -18, -9)
-	local function make_arrow(parent)
-		local texture = call(parent, "CreateTexture", nil, "OVERLAY")
-		call(texture, "SetTexture", "Interface\\AddOns\\Everlook_Island\\assets\\island_arrow.tga")
-		call(texture, "SetVertexColor", 1, 0.86, 0.35)
-		call(texture, "SetSize", 16, 16)
-		call(texture, "SetSnapToPixelGrid", false)
-		call(texture, "SetTexelSnappingBias", 0)
-		call(texture, "Hide")
-		return texture
-	end
-	ui.arrow = make_arrow(ui.capsule)
-	call(ui.arrow, "SetPoint", "TOPLEFT", ui.capsule, "TOPLEFT", 8, -8)
-	-- The ring around the arrow fills as the quest does, and goes green when it can be handed in.
-	ui.ring = adapter.rings.make(ui.capsule, adapter.space.capsule_ring)
-	adapter.rings.place(ui.ring, ui.capsule, 4, 4)
+	ui.row = island_row.new(ui.capsule, { label = adapter.label, rings = adapter.rings, ring_size = adapter.space.capsule_ring })
 	ui.panel = CreateFrame("Frame", "EverlookIslandQuestInspection", adapter.content)
 	call(ui.panel, "EnableMouse", false)
 	call(ui.panel, "SetPoint", "TOPLEFT", adapter.content, "TOPLEFT", 0, 0)
 	ui.visual = adapter.visual(ui.panel, true)
-	ui.heading_arrow = make_arrow(ui.visual)
+	ui.heading_arrow = island_row.make_arrow(ui.visual)
 	call(ui.heading_arrow, "SetPoint", "TOPRIGHT", ui.visual, "TOPRIGHT", -8, -12)
 	ui.heading = adapter.label(ui.visual, "LEFT")
 	ui.explanation = adapter.label(ui.visual, "LEFT", true)
@@ -725,33 +690,25 @@ function quests.capsule(view, visible, wide, available, badge, reserve)
 	local current = view and view.current
 	call(ui.capsule, visible and current and "Show" or "Hide")
 	if not current then quests.aim(); return end
-	local distance_text = current.distance and quests.distance_text(current) or ""
-	call(ui.distance, "SetText", distance_text)
-	local distance_width = call(ui.distance, "GetStringWidth") or 60
-	-- Level and experience stay on the capsule as a badge at the right end.
-	call(ui.badge, "SetText", badge or "")
-	-- reserve is the room the unread count takes at the capsule's right end.
+	local tones = ui.adapter.tones
+	local fraction = wide and quests.progress(current)
+	-- A closed pill without the title is just the arrow and the distance.
+	ui.row:set({
+		icon = "quest",
+		arrow = ui.angle,
+		title = wide and current.title or nil,
+		ring = fraction and { fraction = fraction, tone = current.ready and tones.success or tones.quest } or nil,
+		labels = current.distance and { quests.distance_text(current) } or {},
+		badge = badge,
+	}, reserve)
+	local badge_width = ui.row:part_width("badge") > 0 and ui.row:part_width("badge") + island_row.space.gap or 0
 	reserve = reserve or 0
-	call(ui.badge, "ClearAllPoints")
-	call(ui.badge, "SetPoint", "TOPRIGHT", ui.capsule, "TOPRIGHT", -14 - reserve, -9)
-	local badge_width = badge and badge ~= "" and ((call(ui.badge, "GetStringWidth") or 40) + 10) or 0
-	call(ui.badge, badge_width > 0 and "Show" or "Hide")
-	call(ui.distance, "ClearAllPoints")
-	call(ui.distance, "SetPoint", "TOPRIGHT", ui.capsule, "TOPRIGHT", -18 - badge_width - reserve, -9)
-	local width = math.min(available, wide and 300 + badge_width + reserve or math.max(64, distance_width + 50 + badge_width + reserve))
-	call(ui.capsule, "SetSize", width, wide and 36 or 28)
-	call(ui.title, "SetText", current.title)
-	call(ui.title, "SetWidth", math.max(12, width - distance_width - badge_width - reserve - 60))
-	call(ui.title, wide and "Show" or "Hide")
-	local rings, tones = ui.adapter.rings, ui.adapter.tones
-	local fraction = quests.progress(current)
-	if wide and fraction then
-		rings.set(ui.ring, fraction, current.ready and tones.success or tones.quest)
-	else
-		rings.hide(ui.ring)
-	end
+	local distance_width = ui.row:part_width(1)
+	local width = math.min(available, wide and 300 + badge_width + reserve or math.max(64, distance_width + 45 + badge_width + reserve))
+	local height = wide and 36 or 28
+	call(ui.capsule, "SetSize", width, height)
 	quests.aim()
-	return width, wide and 36 or 28
+	return width, height
 end
 
 -- The game's own objective text usually carries its count ("0/1 Rifle"). Add
