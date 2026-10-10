@@ -58,8 +58,9 @@ return function(root, check)
 			function frame:GetWidth() return self.width end
 			function frame:GetHeight() return self.height end
 			function frame:SetHitRectInsets(...) self.hit_insets = { ... } end
-			function frame:SetPoint(...) self.point = { ... } end
-			function frame:ClearAllPoints() self.point = nil end
+			-- point keeps the last anchor, points all of them since the last clear.
+			function frame:SetPoint(...) self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end
+			function frame:ClearAllPoints() self.point, self.points = nil, {} end
 			function frame:SetFrameStrata() end
 			function frame:SetFrameLevel() end
 			function frame:SetClampedToScreen() end
@@ -73,12 +74,14 @@ return function(root, check)
 			function frame:Show() self.shown = true end
 			function frame:CreateTexture()
 				local texture = {
+					parent = self,
 					SetAllPoints = function() end, SetColorTexture = function(self, ...) self.color = { ... } end,
 					SetTexture = function(self, path) self.path = path end, SetTexCoord = function() end,
 					SetAtlas = function(self, atlas) self.atlas = atlas end,
 					SetVertexColor = function(self, ...) self.color = { ... } end,
 					SetGradient = function(self, orientation, low, high) self.gradient = { orientation = orientation, low = low, high = high } end,
-					SetPoint = function(self, ...) self.point = { ... } end, ClearAllPoints = function() end,
+					SetPoint = function(self, ...) self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end,
+					ClearAllPoints = function(self) self.point, self.points = nil, {} end,
 					SetSize = function(self, width, height) self.width, self.height = width, height end,
 					SetRotation = function(self, radians) self.rotation = radians end,
 					Show = function(self) self.shown = true end, Hide = function(self) self.shown = false end,
@@ -114,7 +117,8 @@ return function(root, check)
 			function frame:CreateFontString(_, _, font)
 				local label = {
 					font = font, parent = self,
-					SetPoint = function(self, ...) self.point = { ... } end, ClearAllPoints = function() end,
+					SetPoint = function(self, ...) self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end,
+					ClearAllPoints = function(self) self.point, self.points = nil, {} end,
 					SetJustifyH = function() end, SetWordWrap = function(self, enabled) self.wrap = enabled end,
 					SetText = function(self, text) self.text = text end,
 					SetWidth = function(self, width) self.width = width end, SetHeight = function(self, height) self.height = height end,
@@ -5867,6 +5871,62 @@ return function(root, check)
 		later_feed_tests()
 	end
 	island_action_tests()
+	do
+		-- Resolves the recorded anchors to rectangles, so these checks read where parts land.
+		local layout = dofile(root .. "/tests/layout.lua")
+		local addon, _, _, _, _, _, frames = quest_world()
+		addon.module.set("smart_island", "quest_context", true)
+		local function find(name)
+			for _, frame in ipairs(frames) do if frame.name == name then return frame end end
+		end
+		-- The resting frame's surface draws its rounded border a few units beyond the frame on purpose.
+		local function surface_border(frame) return frame.name == "EverlookIslandResting" end
+		local problems = layout.lint(frames, { skip = surface_border })
+		check("no part of the island sits outside the frame that holds it, and no two lines of text overlap", #problems == 0)
+		if #problems > 0 then print(table.concat(problems, "\n")) end
+
+		local measure = layout.new()
+		local capsule = measure.rectangle(find("EverlookIslandQuestCapsule"))
+		local parts = {}
+		for _, region in ipairs(find("EverlookIslandQuestCapsule").regions) do
+			if region.shown ~= false then parts[#parts + 1] = { region = region, rect = measure.rectangle(region) } end
+		end
+		local function part(match)
+			for _, item in ipairs(parts) do
+				local key = item.region.text or item.region.atlas or item.region.path or ""
+				if key:find(match, 1, true) then return item.rect end
+			end
+		end
+		local icon, title, ring, distance, badge = part("questtypeicon"), part("Suitable"), part("island_ring"), part("yd"), part("12")
+		check("the capsule's lead, title, ring, distance and badge are all laid out", icon and title and ring and distance and badge)
+		local function centre(rect) return rect.top + rect.height / 2 end
+		check("every part on the capsule shares one centre line",
+			math.abs(centre(icon) - centre(title)) < 0.5 and math.abs(centre(title) - centre(distance)) < 0.5
+			and math.abs(centre(ring) - centre(badge)) < 0.5 and math.abs(centre(icon) - (capsule.top + capsule.height / 2)) < 0.5)
+		check("the lead is inset 9 from the left edge and the badge 12 from the right edge",
+			icon.left - capsule.left == 9 and capsule.right - badge.right == 12)
+		check("the ring sits 6 before the distance, the distance 12 before the badge and the title 12 before the ring",
+			distance.left - ring.right == 6 and badge.left - distance.right == 12 and ring.left - title.right == 12)
+		check("the title starts at the text column, 34 from the left edge", title.left - capsule.left == 34)
+	end
+	do
+		local layout = dofile(root .. "/tests/layout.lua")
+		local addon, _, _, _, _, _, frames = quest_world()
+		addon.module.set("smart_island", "quest_context", true)
+		-- Reduced motion snaps the open panel to its final size, which the fake frames cannot animate.
+		addon.module.set("smart_island", "reduced_motion", true)
+		local root_frame
+		for _, frame in ipairs(frames) do if frame.name == "EverlookSmartIsland" then root_frame = frame end end
+		root_frame.scripts.OnClick(root_frame, "LeftButton")
+		-- Run with ISLAND_LAYOUT=1 to print every region's rectangle, relative to the island's corner.
+		if os.getenv("ISLAND_LAYOUT") then print(layout.describe(frames, root_frame)) end
+		local problems = layout.lint(frames, { skip = function(frame) return frame.name == "EverlookIslandResting" end })
+		check("nothing in the open island sits outside the frame that holds it, and no two lines of text overlap", #problems == 0)
+		if #problems > 0 then print(table.concat(problems, "\n")) end
+		local measure = layout.new()
+		local island = measure.rectangle(root_frame)
+		check("the open island is centred on the screen and sized to its two panes", island.left == (1920 - 720) / 2 and island.width == 720)
+	end
 	assert(loadfile(root .. "/tests/island_seam.lua"))()(root, check, island_world, quest_world, secret_stat)
 	assert(loadfile(root .. "/tests/island_share.lua"))()(root, check, load_qol)
 
