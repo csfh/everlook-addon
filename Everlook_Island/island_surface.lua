@@ -25,12 +25,12 @@ local function tint_piece(texture, corner, color)
 	end
 end
 
-local function rounded_layer(parent, color, inset, sublevel)
+local function rounded_layer(parent, color, inset, sublevel, draw_layer)
 	local layer = { parent = parent, pieces = {}, corners = {}, inset = inset, color = color }
 	if color == FILL then surface_layers[#surface_layers + 1] = layer end
 	for row = 1, 3 do
 		for column = 1, 3 do
-			local texture = call(parent, "CreateTexture", nil, "BACKGROUND", nil, sublevel)
+			local texture = call(parent, "CreateTexture", nil, draw_layer or "BACKGROUND", nil, sublevel)
 			if row ~= 2 and column ~= 2 then
 				call(texture, "SetTexture", ART .. "island_corner.tga")
 				call(texture, "SetTexCoord", column == 1 and 0 or 1, column == 1 and 1 or 0,
@@ -112,25 +112,83 @@ function surface.make(parent)
 	}
 end
 
+-- Sizes one rounded layer to `width` by `height`, `drop` lower than the frame's top.
+-- A layer that something else shows and hides (the glow) is sized and left as it is.
+local function size_layer(layer, width, height, radius, drop, leave_visibility)
+	local inset = layer.inset
+	local w, h = width - inset * 2, height - inset * 2
+	local r = math.min(radius - inset, w / 2, h / 2)
+	local widths, heights = { r, math.max(0, w - r * 2), r }, { r, math.max(0, h - r * 2), r }
+	local y = 0
+	for row = 1, 3 do
+		local x = 0
+		for column = 1, 3 do
+			local texture = layer.pieces[(row - 1) * 3 + column]
+			call(texture, "ClearAllPoints")
+			call(texture, "SetPoint", "TOPLEFT", layer.parent, "TOPLEFT", inset + x, -inset - y - drop)
+			call(texture, "SetSize", widths[column], heights[row])
+			if not leave_visibility then call(texture, widths[column] > 0 and heights[row] > 0 and "Show" or "Hide") end
+			x = x + widths[column]
+		end
+		y = y + heights[row]
+	end
+end
+
 function surface.size(layers, width, height, radius)
 	if layers.native then return end
-	for index, layer in ipairs(layers) do
-		local inset = layer.inset
-		local w, h = width - inset * 2, height - inset * 2
-		local r = math.min(radius - inset, w / 2, h / 2)
-		local widths, heights = { r, math.max(0, w - r * 2), r }, { r, math.max(0, h - r * 2), r }
-		local y = 0
-		for row = 1, 3 do
-			local x = 0
-			for column = 1, 3 do
-				local texture = layer.pieces[(row - 1) * 3 + column]
-				call(texture, "ClearAllPoints")
-				call(texture, "SetPoint", "TOPLEFT", layer.parent, "TOPLEFT", inset + x, -inset - y - (index == 1 and 3 or 0))
-				call(texture, "SetSize", widths[column], heights[row])
-				call(texture, widths[column] > 0 and heights[row] > 0 and "Show" or "Hide")
-				x = x + widths[column]
+	for index, layer in ipairs(layers) do size_layer(layer, width, height, radius, index == 1 and 3 or 0) end
+end
+
+-- A reaction's colour on a surface: a tint over the body that follows its rounded shape, and
+-- a line along each straight edge. Both sit above the fill and below the text, start
+-- invisible, and take no art but the corner piece the surface already uses.
+local EDGE_THICKNESS = 2
+
+function surface.make_glow(parent)
+	local glow = { parent = parent, tint = rounded_layer(parent, { 1, 1, 1, 0 }, 1, 2, "ARTWORK"), edges = {} }
+	for index = 1, 4 do
+		glow.edges[index] = call(parent, "CreateTexture", nil, "ARTWORK", nil, 3)
+		call(glow.edges[index], "SetColorTexture", 1, 1, 1, 0)
+		call(glow.edges[index], "Hide")
+	end
+	surface.set_glow(glow, nil, 0, 0)
+	return glow
+end
+
+function surface.size_glow(glow, width, height, radius)
+	if not glow then return end
+	size_layer(glow.tint, width, height, radius, 0, true)
+	local top, bottom, left, right = unpack(glow.edges)
+	local run_x, run_y = math.max(0, width - radius * 2), math.max(0, height - radius * 2)
+	local parent = glow.parent
+	for _, edge in ipairs(glow.edges) do call(edge, "ClearAllPoints") end
+	call(top, "SetPoint", "TOPLEFT", parent, "TOPLEFT", radius, 0)
+	call(top, "SetSize", run_x, EDGE_THICKNESS)
+	call(bottom, "SetPoint", "BOTTOMLEFT", parent, "BOTTOMLEFT", radius, 0)
+	call(bottom, "SetSize", run_x, EDGE_THICKNESS)
+	call(left, "SetPoint", "TOPLEFT", parent, "TOPLEFT", 0, -radius)
+	call(left, "SetSize", EDGE_THICKNESS, run_y)
+	call(right, "SetPoint", "TOPRIGHT", parent, "TOPRIGHT", 0, -radius)
+	call(right, "SetSize", EDGE_THICKNESS, run_y)
+end
+
+-- Shows the glow in `color` ({ r, g, b }) at the given opacities, or hides it when both are zero.
+function surface.set_glow(glow, color, tint, edge)
+	if not glow then return end
+	local red, green, blue = 1, 1, 1
+	if color then red, green, blue = color[1], color[2], color[3] end
+	for index, texture in ipairs(glow.tint.pieces) do
+		if tint > 0 then
+			if glow.tint.corners[index] then
+				call(texture, "SetVertexColor", red, green, blue, tint)
+			else
+				call(texture, "SetColorTexture", red, green, blue, tint)
 			end
-			y = y + heights[row]
 		end
+		call(texture, tint > 0 and "Show" or "Hide")
+	end
+	for _, texture in ipairs(glow.edges) do
+		if edge > 0 then call(texture, "SetColorTexture", red, green, blue, edge) end
+		call(texture, edge > 0 and "Show" or "Hide")
 	end
 end

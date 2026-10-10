@@ -86,6 +86,8 @@ def render(items, scale):
     arrow = tga_to_png_data_uri(ASSETS / "island_arrow.tga")
     parts = []
     surface_open = False
+    glow_drawn = False
+    surface_box = {}
     root = items[0]
     margin = 24
     for item in items:
@@ -93,6 +95,7 @@ def render(items, scale):
         if kind == "frame":
             surface_open = item["name"] == "EverlookIslandResting"
             if surface_open:
+                surface_box = {"w": item["w"], "h": item["h"], "radius": 14}
                 parts.append(f'<div class="surface" style="{box(item)}"></div>')
             elif item.get("cooldown") is not None:
                 fraction = max(0, min(1, item["cooldown"]))
@@ -110,6 +113,19 @@ def render(items, scale):
                 parts.append(f'<div class="frame" title="{html.escape(item["name"])}" style="{box(item)}"></div>')
             continue
         if surface_open and kind == "texture":
+            # The surface's own pieces are drawn as one rounded box. A reaction's tint and edge lines
+            # sit in the artwork layer above it, and are drawn here.
+            if item.get("layer") != "ARTWORK":
+                continue
+            color = item["color"] or [1, 1, 1, 0]
+            if len(color) > 3 and color[3] > 0:
+                if "island_corner" in item["path"]:
+                    if not glow_drawn:
+                        glow_drawn = True
+                        parts.append(f'<div style="left:1px;top:1px;right:auto;width:{surface_box["w"] - 2}px;height:{surface_box["h"] - 2}px;'
+                                     f'border-radius:{surface_box.get("radius", 14) - 1}px;background:{rgba(color)}"></div>')
+                elif item["w"] <= 4 or item["h"] <= 4:
+                    parts.append(f'<div class="fill" style="{box(item)};background:{rgba(color)}"></div>')
             continue
         if kind == "text":
             if not item["text"]:

@@ -38,7 +38,7 @@ return function(root, check, island_world, quest_world)
 		local addon, env = world()
 		local api = env.Everlook.island
 		check("the section call and a version are part of the public island, and its internals still are not",
-			type(api.section) == "function" and api.api == 1 and api.view == nil)
+			type(api.section) == "function" and type(api.react) == "function" and api.api == 2 and api.view == nil)
 
 		local handle = api.section(spec())
 		check("a section returns a number handle", type(handle) == "number")

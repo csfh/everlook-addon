@@ -5,6 +5,8 @@ local id = "smart_island"
 local grid = Everlook.island_grid
 local island_section = Everlook.island_section
 local island_blocks = Everlook.island_blocks
+local island_reaction = Everlook.island_reaction
+local island_capsule = Everlook.island_capsule
 
 BINDING_HEADER_EVERLOOK = BINDING_HEADER_EVERLOOK or "Everlook"
 BINDING_NAME_EVERLOOK_SMART_ISLAND = "Open smart island"
@@ -1394,6 +1396,7 @@ local function apply_visual(width, height)
 	call(resting, "SetAlpha", 1)
 	call(resting, "Show")
 	island_surface.size(surface, width, height, shell.radius.capsule)
+	island_surface.size_glow(shell.glow, width, height, shell.radius.capsule)
 	call(expanded, "SetSize", width, height)
 end
 
@@ -1943,6 +1946,8 @@ function island.notify(payload)
 	if not entry then
 		next_notice_id = next_notice_id + 1
 		entry = { id = next_notice_id, created_at = clock_now(), unread = true, count = 1 }
+		-- A new warning or error flashes the island, so it is seen even while you are looking elsewhere.
+		if severity == "warning" or severity == "error" then island.react(severity) end
 	elseif joined then
 		entry.count = (entry.count or 1) + 1
 	end
@@ -2072,6 +2077,50 @@ function island.section(spec)
 	return handle
 end
 
+-- The reaction playing on the island's body, drawn from the arithmetic in island_reaction.lua.
+local reaction_state = island_reaction.new()
+
+local function show_reaction()
+	local sample = island_reaction.sample(reaction_state, clock_now())
+	if not sample then
+		island_surface.set_glow(shell.glow, nil, 0, 0)
+		call(shell.reaction_frame, "SetScript", "OnUpdate", nil)
+		return
+	end
+	island_surface.set_glow(shell.glow, island_capsule.tone_color(sample.tone), sample.tint, sample.edge)
+end
+
+local function stop_reaction()
+	reaction_state = island_reaction.new()
+	island_surface.set_glow(shell.glow, nil, 0, 0)
+	call(shell.reaction_frame, "SetScript", "OnUpdate", nil)
+end
+
+local REACTION_KEYS = { kind = true, strength = true, source = true }
+
+-- Flashes the island's body. `reaction` is a kind, or { kind, strength, source }. Returns true,
+-- or nil and a reason: disabled, do_not_disturb, invalid_reaction, or limited.
+function island.react(reaction)
+	if not module.enabled(id) or not module.get(id, "reactions") then return nil, "disabled" end
+	if module.get(id, "do_not_disturb") then return nil, "do_not_disturb" end
+	local kind, strength = reaction, nil
+	if type(reaction) == "table" then
+		if not usable(reaction) or getmetatable(reaction) ~= nil then return nil, "invalid_reaction" end
+		for key in pairs(reaction) do
+			if not REACTION_KEYS[key] then return nil, "invalid_reaction" end
+		end
+		kind, strength = reaction.kind, reaction.strength
+		if reaction.source ~= nil and (type(reaction.source) ~= "string" or #reaction.source > 64) then return nil, "invalid_reaction" end
+	elseif not usable(reaction) then
+		return nil, "invalid_reaction"
+	end
+	local started, reason = island_reaction.start(reaction_state, kind, strength, clock_now(), module.get(id, "reduced_motion") == true)
+	if not started then return nil, reason end
+	call(shell.reaction_frame, "SetScript", "OnUpdate", show_reaction)
+	show_reaction()
+	return true
+end
+
 local SECTION_CHANGES = { title = true, order = true, blocks = true, expires = true }
 
 local function update_section(record, changes)
@@ -2155,8 +2204,20 @@ local function notification_event(_, event, ...)
 			elseif issecretvalue and issecretvalue(payload) then
 				report_event_error(event, "invalid_notification")
 			elseif payload ~= nil then
-				local handle, reason = island.notify(payload)
-				if not handle and reason ~= "disabled" then report_event_error(event, reason) end
+				-- A callback may also ask for a reaction, with or without a notice to go with it.
+				if type(payload) == "table" and getmetatable(payload) == nil and payload.reaction ~= nil then
+					local ok_reaction, why = island.react(payload.reaction)
+					if not ok_reaction and why == "invalid_reaction" then report_event_error(event, why) end
+					local rest = {}
+					for key, value in pairs(payload) do
+						if key ~= "reaction" then rest[key] = value end
+					end
+					payload = next(rest) ~= nil and rest or nil
+				end
+				if payload ~= nil then
+					local handle, reason = island.notify(payload)
+					if not handle and reason ~= "disabled" then report_event_error(event, reason) end
+				end
 			end
 		end
 	end
@@ -2204,8 +2265,9 @@ Everlook.island = {
 	register_event = island.register_event,
 	unregister_event = island.unregister_event,
 	section = island.section,
+	react = island.react,
 	-- Raised only when something is added, so an addon can test for what it needs.
-	api = 1,
+	api = 2,
 }
 
 local function hide()
@@ -2216,6 +2278,7 @@ local function hide()
 	end
 	painted = {}
 	sections.clear()
+	stop_reaction()
 	local kept = {}
 	for _, entry in ipairs(notices) do
 		if entry.frozen then kept[#kept + 1] = entry else mark_removed(entry) end
@@ -2454,6 +2517,8 @@ local function ensure_frame()
 	call(resting, "SetSize", CLOSED_W, CLOSED_H)
 	call(resting, "SetAlpha", 1)
 	surface = island_surface.make(resting)
+	shell.glow = island_surface.make_glow(resting)
+	shell.reaction_frame = CreateFrame("Frame", nil, frame)
 	shell.face = CreateFrame("Frame", "EverlookIslandFace", frame)
 	call(shell.face, "EnableMouse", false)
 	call(shell.face, "SetFrameLevel", 52)
@@ -2887,6 +2952,7 @@ registered = module.register({
 		toast_count = { name = "Toasts on screen", default = 3, min = 1, max = 4, step = 1, description = "How many toasts can show at once below the island. Others wait in a short queue, with warnings first.", presets = { Quiet = 2, Standard = 3, Informative = 4 } },
 		inbox_size = { name = "Inbox size", default = 10, min = 10, max = 30, step = 5, description = "How many notices the open island keeps. When it is full, the oldest routine notice goes first, and warnings and notices that need a decision are kept longest." },
 		toasts = { name = "Show notification toasts", default = true, description = "Shows notifications below the Island, as many at once as Toasts on screen allows. Turning this off clears that stack and the waiting line and keeps the history, a card frozen in combat cannot leave until combat ends, and opening the Island shows the history instead.", presets = { Quiet = true, Standard = true, Informative = true } },
+		reactions = { name = "Show reactions", default = true, description = "Flashes the island's body in a soft color when a warning or an error arrives, and when an addon sends a reaction such as a level-up. A flash is a tint and a line along the straight edges, never a sound or a movement, and never plays while Do not disturb is on.", presets = { Quiet = false, Standard = true, Informative = true } },
 		reduced_motion = { name = "Reduce toast motion", default = false, description = "Fades toasts, and the hover open and close, without sliding them, and snaps the resting pill and the open chrome to their new size. Turning this off brings the slides back, a fade already running follows the new setting, and the level-up flash stays as it is." },
 	},
 	sections = {
@@ -2921,7 +2987,7 @@ registered = module.register({
 		},
 		{
 			name = "Notices",
-			keys = { "do_not_disturb", "toasts", "toast_count", "inbox_size", "reduced_motion", "combat_toasts" },
+			keys = { "do_not_disturb", "toasts", "toast_count", "inbox_size", "reactions", "reduced_motion", "combat_toasts" },
 			after = function(layout)
 				layout:AddInitializer(CreateSettingsButtonInitializer("Preview notifications", "Preview", island.preview_notifications,
 					"Show local examples with a warning, coins and a longer message. Enable Smart island first.", true))

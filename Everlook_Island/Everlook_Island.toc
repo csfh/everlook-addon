@@ -11,6 +11,7 @@ island_row.lua
 island_grid.lua
 island_section.lua
 island_blocks.lua
+island_reaction.lua
 island_quests.lua
 island_actions.lua
 island_vitals.lua

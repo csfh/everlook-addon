@@ -183,7 +183,7 @@ if api and type(api.section) == "function" then
 end
 ```
 
-`Everlook.island.api` is a whole number that goes up only when something is added, so an addon can test for what it needs. It is `1` now.
+`Everlook.island.api` is a whole number that goes up only when something is added, so an addon can test for what it needs. `section` is there from version 1 and `react` from version 2.
 
 `section` returns a handle, or `nil` and a reason. A second `section` call with the same `source` and `key` replaces that section and returns the same handle, so it is safe to push your sections again at login. Sections are never saved: they are gone after a reload, and your addon pushes them again. `update(handle, changes)` takes `title`, `order`, `blocks` and `expires`. `blocks` replaces the whole list; leave a field out to keep it. A section cannot change its `source`, `key` or `region`. `dismiss(handle)` removes it and returns `true`. A handle from `section` and a handle from `notify` are both numbers from one counter and work in the same `update` and `dismiss`.
 
@@ -209,6 +209,35 @@ All text is plain: a pipe, which starts a colour code, a link or a texture, is r
 **Limits.** At most 12 sections in the island, 30 blocks in a section, and 8 KB of text for one source. A section that pushes the island or the source past a limit gets `nil, "limit"`. A section can set `expires` (1 to 3600 seconds) to be removed when it is not updated in that time; without it, a section stays until you dismiss it.
 
 **Reasons.** `disabled` (Smart Island is off), `invalid_section`, `invalid_source`, `invalid_key`, `invalid_region`, `invalid_title`, `invalid_order`, `invalid_expires`, `invalid_blocks`, `invalid_block`, `invalid_row`, `invalid_action`, `invalid_action_id`, `invalid_action_label`, `invalid_action_callback`, `invalid_tooltip`, `invalid_update`, `unknown_handle`, `limit`. Turning Smart Island off removes every section.
+
+## Flash the island
+
+A reaction is a brief color on the island's body: a soft tint over it, a line along its straight edges, or both. It says that something happened and carries no content, so it does not replace a notice. It never makes a sound, moves the island or changes its size, and it plays whether the island is closed or open.
+
+```lua
+local api = Everlook and Everlook.island
+if api and type(api.react) == "function" then
+    api.react("kill")
+    api.react({ kind = "loot", strength = 0.5, source = "MyAddon" })
+end
+```
+
+An addon names a kind, and Everlook decides the color, the length and the brightness; it cannot pass a color or a time. `strength` (0 to 1) replaces the kind's own brightness. `react` returns `true`, or `nil` and a reason.
+
+| Kind | Color | Shape |
+| --- | --- | --- |
+| `kill` | accent | tint and edge, 0.32 s |
+| `loot` | green | tint, 0.24 s |
+| `level` | gold | tint and edge, 0.6 s |
+| `warning` | amber | edge with a light tint, two beats, 0.48 s |
+| `error` | red | edge with a light tint, one beat, 0.32 s |
+| `info` | grey | tint, 0.2 s |
+
+A new warning or error notice flashes by itself. The tint is never brighter than 18 percent opacity. A reaction that starts within a quarter of a second of another joins it, keeping the louder one, and at most four start in any second; the fifth gets `nil, "limited"`. With **Reduce toast motion** on, a reaction is one short fade from a lower brightness and has no ramp or second beat.
+
+Reasons: `disabled` (Smart Island is off, or **Show reactions** is), `do_not_disturb`, `invalid_reaction` (an unknown kind, an unknown field, or a source that is not text) and `limited`.
+
+The island does not decide that a kill or a level-up happened. **Everlook_IslandReactions** does, with settings under Notices: a level up flashes by default, a kill that gives experience and your own loot do not until you turn them on. This client cannot read the combat log, so a kill is an experience message for one, and a kill that gives none (a grey one) gives no flash. Your own addon can ask for a reaction from an event callback as well; see below.
 
 ## Feed a WoW event
 
@@ -236,7 +265,7 @@ end
 
 `register_event(event, callback)` returns a numeric subscription handle, or `nil, reason`: `invalid_event`, `invalid_callback`, or `unavailable`. The native client must accept the event. Event names must be nonblank, nonsecret strings of at most 64 bytes. The callback must be a nonsecret function.
 
-The callback receives `(event, ...)` with the original native arguments, including nil arguments. Return a notification payload to publish or `nil` to skip. Callbacks run only while Smart Island is enabled. They survive a disable/re-enable; the producer removes them when its own integration is switched off. Reloading drops all subscriptions.
+The callback receives `(event, ...)` with the original native arguments, including nil arguments. Return a notification payload to publish or `nil` to skip. A payload may also carry `reaction = "kill"` (or any kind above): the island flashes, and the rest of the payload is published as usual. A payload with only `reaction` flashes and adds no notice. Callbacks run only while Smart Island is enabled. They survive a disable/re-enable; the producer removes them when its own integration is switched off. Reloading drops all subscriptions.
 
 Multiple producers may subscribe to one event independently. `unregister_event(handle)` returns `true` for an existing subscription and `false` otherwise. Removing the last subscription unregisters the native event. A subscription removed during dispatch does not run later in that dispatch; a newly added one starts on the next event. Disabling the island during dispatch skips the remaining callbacks.
 

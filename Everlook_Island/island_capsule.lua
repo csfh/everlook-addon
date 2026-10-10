@@ -32,6 +32,7 @@ local TONES = {
 	success = "ff80e6a6",
 	warning = "ffff9e40",
 	error = "ffff8080",
+	gold = "ffffd24a",
 }
 local CAPSULE_KEYS = { text = true, icon = true, trailing = true, progress = true }
 local MARK_KEYS = { atlas = true, item_id = true, spell_id = true }

@@ -248,8 +248,8 @@ function layout.export(frames, root, now)
 					items[#items + 1] = string.format('{"kind":"text","text":%s,%s,"font":%s,"color":%s,"justify":%s,"alpha":%g}', quote(region.text or ""), box(rect),
 						quote(region.font or ""), number_list(region.color), quote(region.justify or "LEFT"), region_alpha)
 				else
-					items[#items + 1] = string.format('{"kind":"texture","path":%s,"atlas":%s,%s,"color":%s,"rotation":%g,"alpha":%g}',
-						quote(region.path or ""), quote(region.atlas or ""), box(rect), number_list(region.color), region.rotation or 0, region_alpha)
+					items[#items + 1] = string.format('{"kind":"texture","path":%s,"atlas":%s,%s,"color":%s,"rotation":%g,"alpha":%g,"layer":%s}',
+						quote(region.path or ""), quote(region.atlas or ""), box(rect), number_list(region.color), region.rotation or 0, region_alpha, quote(region.layer or ""))
 				end
 			end
 		end
