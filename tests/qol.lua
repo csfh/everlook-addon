@@ -2711,9 +2711,10 @@ return function(root, check)
 		local release_button
 		for _, frame in ipairs(frames) do if frame.name == "EverlookIslandReleaseQuest" then release_button = frame end end
 		local title, count = label(current.title), label("Collect things  1/6")
-		-- 12 edge, a 14 high title, 4 to the explanation, 14 high, 8 to the first objective.
-		check("the card's lines follow the spacing scale: edge, within a group, between siblings",
-			title and title.point[5] == -12 and count.point[5] == -(12 + 14 + 4 + 14 + 8) and count.point[4] == 12 + 16 + 8)
+		-- 8 below the pane's heading, a 14 high title, 4 to the explanation, 14 high, 8 to the first objective.
+		-- Its text sits in the 22 text column the capsule uses: a 16 mark at the 12 edge, then 6.
+		check("the card's lines follow the spacing scale: pane inset, within a group, between siblings",
+			title and title.point[5] == -8 and count.point[5] == -(8 + 14 + 4 + 14 + 8) and count.point[4] == 12 + 16 + 6)
 		check("the pin action sits in the quests heading row, not in the card, and only the one that applies shows",
 			pin.shown ~= false and pin.point[1] == "TOPRIGHT" and pin.parent.shown ~= false and release_button.shown == false)
 		pin.scripts.OnClick(pin)
@@ -5942,6 +5943,19 @@ return function(root, check)
 		local measure = layout.new()
 		local island = measure.rectangle(root_frame)
 		check("the open island is centred on the screen and sized to its two panes", island.left == (1920 - 720) / 2 and island.width == 720)
+		local function text_rect(text, minimum_top)
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if region.text == text and region.shown ~= false and measure.rectangle(region).top >= (minimum_top or 0) then return measure.rectangle(region) end
+				end
+			end
+		end
+		local quests_heading, objective, empty = text_rect("QUESTS"), text_rect("Collect things  1/6"), text_rect("No notifications yet")
+		local band_bottom = quests_heading.top + quests_heading.height / 2 + 16
+		local card_title = text_rect("Suitable farther", band_bottom)
+		check("a pane's content starts 8 below its heading band, in the quests and the notifications alike",
+			card_title.top - band_bottom == 8 and empty.top - band_bottom == 8)
+		check("an objective's text starts in the 22 text column, as the capsule's title does", objective.left - island.left == 12 + 22)
 	end
 	assert(loadfile(root .. "/tests/island_seam.lua"))()(root, check, island_world, quest_world, secret_stat)
 	assert(loadfile(root .. "/tests/island_share.lua"))()(root, check, load_qol)

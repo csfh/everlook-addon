@@ -753,14 +753,14 @@ function quests.inspection(view, visible, width)
 	end
 	for _, node in ipairs(ui.plan) do call(node.frame, "Hide"); node.record = nil end
 	for _, control in ipairs({ ui.pin, ui.release, ui.plan_heading, ui.plan_reason }) do call(control, "Hide") end
-	local top, current = edge, view.current
+	local top, current = space.near, view.current
 	if current then
 		-- The title leaves room for the arrow beside it.
 		top = line(ui.heading, current.title, width - 22, top) + space.within
 		top = line(ui.explanation, view.reason .. ", " .. reason(current), width, top) + space.near
 		-- Four objectives fit in the card. Any more fold into one line.
 		local shown = math.min(#current.objectives, #ui.objectives, OBJECTIVES_SHOWN)
-		local lead = space.mark + space.near
+		local lead = space.mark + space.lead
 		for index = 1, shown do
 			local objective = current.objectives[index]
 			-- A finished objective steps back and takes a check, one that counts shows how far it is, and the text says the same.

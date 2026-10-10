@@ -86,7 +86,17 @@ local resting_slots = {}
 -- The open summary spaces everything from these steps. A gap inside a group is
 -- `within`, a gap between siblings `near`, and a gap between groups `section`,
 -- which is at least twice the one inside. `edge` is the inset the rows below share.
-shell.space = { within = 4, near = 8, section = 16, edge = 12, ring = 28, icon = 14, mark = 16, capsule_ring = 14, head = 32, pane_min = 48, pane_max = 320 }
+-- `lead` is the gap between a 16 mark and its text, so every text column sits 22 from the
+-- content edge, as the capsule's does. `block` is the space between a header and what it
+-- heads, `control` a button's height, `link` a text control's, and `step` a wheel notch.
+shell.space = { within = 4, near = 8, section = 16, edge = 12, ring = 28, icon = 14, mark = 16, capsule_ring = 14, head = 32, pane_min = 48, pane_max = 320,
+	lead = 6, block = 24, control = 28, link = 24, step = 40 }
+-- The surface's corner radius: the capsule, a card or panel, and a control.
+shell.radius = { capsule = 14, panel = 12, control = 8 }
+-- A notice card, as a toast or an inbox row. The text column is the inset, the icon and the
+-- gap `near` between them.
+shell.card = { inset = 12, icon = 20, text = 40, icon_top = 12, label_top = 10, accent_x = 6, accent_top = 9, bar = 3,
+	wash_x = 4, wash_y = 2, min_height = 44, after_detail = 4, after_meta = 10, after_routine = 6, after_bar = 8 }
 local function refresh_quests(force)
 	quest_context.refresh(force)
 end
@@ -305,8 +315,8 @@ local function make_content(parent, belongs_to_preview, row)
 		detail = make_label(visual, "LEFT", row and "caption" or true), meta = make_label(visual, "LEFT", row and "caption" or true), row = row }
 	if row then
 		local wash = call(visual, "CreateTexture", nil, "BACKGROUND")
-		call(wash, "SetPoint", "TOPLEFT", visual, "TOPLEFT", 4, -2)
-		call(wash, "SetPoint", "BOTTOMRIGHT", visual, "BOTTOMRIGHT", -4, 2)
+		call(wash, "SetPoint", "TOPLEFT", visual, "TOPLEFT", shell.card.wash_x, -shell.card.wash_y)
+		call(wash, "SetPoint", "BOTTOMRIGHT", visual, "BOTTOMRIGHT", -shell.card.wash_x, shell.card.wash_y)
 		call(wash, "SetColorTexture", 1, 1, 1, 0.06)
 		call(wash, "Hide")
 		node.on_hover = function(inside) call(wash, inside and "Show" or "Hide") end
@@ -316,9 +326,9 @@ local function make_content(parent, belongs_to_preview, row)
 	node.accent = call(visual, "CreateTexture", nil, "ARTWORK")
 	call(node.accent, "Hide")
 	node.icon = call(visual, "CreateTexture", nil, "OVERLAY")
-	call(node.icon, "SetSize", 20, 20)
-	call(node.icon, "SetPoint", "TOPLEFT", visual, "TOPLEFT", 12, -12)
-	call(node.label, "SetPoint", "TOPLEFT", visual, "TOPLEFT", 40, -10)
+	call(node.icon, "SetSize", shell.card.icon, shell.card.icon)
+	call(node.icon, "SetPoint", "TOPLEFT", visual, "TOPLEFT", shell.card.inset, -shell.card.icon_top)
+	call(node.label, "SetPoint", "TOPLEFT", visual, "TOPLEFT", shell.card.text, -shell.card.label_top)
 	node.progress = CreateFrame("StatusBar", nil, visual)
 	call(node.progress, "EnableMouse", false)
 	call(node.progress, "SetStatusBarTexture", ART .. "island_white.tga")
@@ -347,8 +357,9 @@ function island.age_text(seconds)
 end
 
 local function content_size(node, entry, width, compact, activity)
+	local card = shell.card
 	paint_icon(node.icon, entry.icon, entry)
-	local text_width = width - 52
+	local text_width = width - card.text - card.inset
 	call(node.label, "SetWidth", text_width)
 	call(node.label, "SetMaxLines", 0)
 	local primary = entry.runs and compact_api.compile(entry.runs, vitals.rich) or entry.text
@@ -381,9 +392,9 @@ local function content_size(node, entry, width, compact, activity)
 	if entry.money ~= nil then
 		detail = detail .. (detail ~= "" and "\n" or "") .. (entry.money > 0 and "+" or "") .. vitals.rich(entry.money)
 	end
-	local y = 14 + primary_height
+	local y = card.label_top + shell.space.within + primary_height
 	call(node.detail, "ClearAllPoints")
-	call(node.detail, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 40, -y)
+	call(node.detail, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", card.text, -y)
 	call(node.detail, "SetWidth", text_width)
 	call(node.detail, "SetMaxLines", 0)
 	call(node.detail, "SetText", detail)
@@ -394,7 +405,7 @@ local function content_size(node, entry, width, compact, activity)
 			call(node.detail, "SetMaxLines", 2)
 			h, clipped = call(node.detail, "GetStringHeight") or 32, true
 		end
-		y = y + h + 4
+		y = y + h + card.after_detail
 	end
 	if clipped then metadata = metadata ~= "" and ("More in inbox, " .. metadata) or "More in inbox" end
 	-- A routine toast from Everlook needs no byline. The inbox row still has one.
@@ -402,34 +413,34 @@ local function content_size(node, entry, width, compact, activity)
 		and entry.severity ~= "warning" and entry.severity ~= "error"
 	call(node.meta, routine and "Hide" or "Show")
 	if routine then
-		y = y + 6
+		y = y + card.after_routine
 	else
 		call(node.meta, "ClearAllPoints")
-		call(node.meta, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 40, -y)
+		call(node.meta, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", card.text, -y)
 		call(node.meta, "SetWidth", text_width)
 		call(node.meta, "SetText", metadata)
 		call(node.meta, "SetTextColor", unpack(COLORS[entry.severity] or (node.row and COLORS.muted or COLORS.secondary)))
 		local metadata_height = call(node.meta, "GetStringHeight") or 12
-		y = y + metadata_height + 10
+		y = y + metadata_height + card.after_meta
 	end
 	call(node.progress, entry.progress ~= nil and "Show" or "Hide")
 	if entry.progress ~= nil then
 		call(node.progress, "ClearAllPoints")
-		call(node.progress, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 40, -y)
-		call(node.progress, "SetSize", text_width, 3)
+		call(node.progress, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", card.text, -y)
+		call(node.progress, "SetSize", text_width, card.bar)
 		call(node.progress, "SetValue", entry.progress)
-		y = y + 8
+		y = y + card.after_bar
 	end
 	local action_row = actions.paint(node, entry, compact) or 0
 	if action_row > 0 then y = y + action_row end
-	node.width, node.height = width, math.max(44, y)
+	node.width, node.height = width, math.max(card.min_height, y)
 	call(node.frame, "SetSize", node.width, node.height)
 	local tone = COLORS[entry.severity]
 	if tone and not activity and entry.severity ~= "info" then
 		call(node.accent, "SetColorTexture", tone[1], tone[2], tone[3], 1)
 		call(node.accent, "ClearAllPoints")
-		call(node.accent, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 6, -9)
-		call(node.accent, "SetSize", 3, math.max(4, node.height - 18))
+		call(node.accent, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", card.accent_x, -card.accent_top)
+		call(node.accent, "SetSize", card.bar, math.max(4, node.height - 2 * card.accent_top))
 		call(node.accent, "Show")
 	else
 		call(node.accent, "Hide")
@@ -992,7 +1003,7 @@ local function size_toast(entry)
 	local _, font_size = call(node.label, "GetFont")
 	node.width = math.max(64, math.min(font_size and font_size > 14 and 360 or 320, screen_width - 32))
 	content_size(node, entry, node.width, true)
-	island_surface.size(node.surface, node.width, node.height, 12)
+	island_surface.size(node.surface, node.width, node.height, shell.radius.panel)
 end
 
 local remove_toast, toast_timer
@@ -1238,7 +1249,7 @@ local function layout_expanded(list, status, inspection_height, two)
 	if status then
 		call(status_node.frame, "ClearAllPoints")
 		call(status_node.frame, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", 0, -summary_height)
-		status_height = content_size(status_node, status, width, true, true) + 4
+		status_height = content_size(status_node, status, width, true, true) + space.within
 		status_node.tooltip = root_hover.tooltip
 	end
 	local header_height = summary_height + status_height
@@ -1269,7 +1280,7 @@ local function layout_expanded(list, status, inspection_height, two)
 	end
 	-- Both lists share one height, so the divider between them runs clean.
 	local quest_height = two and inspection_height or 0
-	local room = math.max(space.pane_min, screen_size("GetHeight") - viewport_top - space.edge - 24)
+	local room = math.max(space.pane_min, screen_size("GetHeight") - viewport_top - space.edge - space.block)
 	scroll_height = math.min(math.max(content_height, quest_height, space.pane_min), space.pane_max, room)
 	if follow_end then
 		scroll_offset = content_height - scroll_height
@@ -1319,7 +1330,7 @@ local function layout_expanded(list, status, inspection_height, two)
 	call(shell.quest_head, "SetSize", left_w, space.head)
 	for _, action in ipairs(quest_context.actions()) do
 		call(action, "ClearAllPoints")
-		call(action, "SetPoint", "TOPRIGHT", shell.quest_head, "TOPRIGHT", -space.edge, -(space.head - 24) / 2)
+		call(action, "SetPoint", "TOPRIGHT", shell.quest_head, "TOPRIGHT", -space.edge, -(space.head - space.link) / 2)
 	end
 	call(clear_button, #notices > 0 and "Show" or "Hide")
 	call(undo_button, undo_state and "Show" or "Hide")
@@ -1327,7 +1338,7 @@ local function layout_expanded(list, status, inspection_height, two)
 	if #notices > 0 then
 		call(undo_button, "SetPoint", "RIGHT", clear_button, "LEFT", -space.near, 0)
 	else
-		call(undo_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -space.edge, -(space.head - 24) / 2)
+		call(undo_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -space.edge, -(space.head - space.link) / 2)
 	end
 	local unread_below = shell.unread_below
 	call(new_button, show_new and "Show" or "Hide")
@@ -1337,7 +1348,7 @@ local function layout_expanded(list, status, inspection_height, two)
 	shell.scroll_api.layout(shell.scrollbar, left_w, viewport_top, scroll_height, content_height, scroll_offset, right_w)
 	shell.scroll_api.layout(shell.quest_scrollbar, 0, viewport_top, scroll_height, quest_height, shell.quest_offset, left_w)
 	call(expanded, "SetSize", width, height)
-	island_surface.size(expanded_surface, width, height, 12)
+	island_surface.size(expanded_surface, width, height, shell.radius.panel)
 	return width, height
 end
 
@@ -1346,7 +1357,7 @@ local function apply_visual(width, height)
 	call(resting, "SetSize", width, height)
 	call(resting, "SetAlpha", 1)
 	call(resting, "Show")
-	island_surface.size(surface, width, height, 14)
+	island_surface.size(surface, width, height, shell.radius.capsule)
 	call(expanded, "SetSize", width, height)
 end
 
@@ -2289,11 +2300,11 @@ end
 
 local function make_control(parent, name, title, width, callback)
 	local button = CreateFrame("Button", name, parent)
-	call(button, "SetSize", width, 28)
+	call(button, "SetSize", width, shell.space.control)
 	call(button, "RegisterForClicks", "LeftButtonUp")
 	local visual = make_visual(button, true)
 	local background = island_surface.make(visual)
-	island_surface.size(background, width, 28, 8)
+	island_surface.size(background, width, shell.space.control, shell.radius.control)
 	local label = make_label(visual, "CENTER", true)
 	call(label, "SetPoint", "CENTER")
 	call(label, "SetText", title)
@@ -2308,7 +2319,7 @@ end
 -- it does not outweigh the list beside it. Hover lights the words and a wash behind them.
 shell.make_link = function(parent, name, title, callback)
 	local button = CreateFrame("Button", name, parent)
-	call(button, "SetSize", 48, 24)
+	call(button, "SetSize", 48, shell.space.link)
 	call(button, "RegisterForClicks", "LeftButtonUp")
 	local visual = make_visual(button, true)
 	local wash = call(visual, "CreateTexture", nil, "BACKGROUND")
@@ -2342,7 +2353,7 @@ shell.set_control_text = function(button, text)
 	call(button.label, "SetText", text)
 	local width = math.max(48, math.ceil(call(button.label, "GetStringWidth") or 0) + button.pad)
 	call(button, "SetWidth", width)
-	if button.background then island_surface.size(button.background, width, 28, 8) end
+	if button.background then island_surface.size(button.background, width, shell.space.control, shell.radius.control) end
 end
 
 local function ensure_frame()
@@ -2473,7 +2484,7 @@ local function ensure_frame()
 	call(quest_content, "SetPoint", "TOPLEFT", quest_scroll, "TOPLEFT", 0, 0)
 	call(quest_scroll, "SetScrollChild", quest_content)
 	call(quest_scroll, "SetScript", "OnMouseWheel", function(_, delta)
-		if usable(delta) and type(delta) == "number" then island.scroll_quests(shell.quest_offset - delta * 40) end
+		if usable(delta) and type(delta) == "number" then island.scroll_quests(shell.quest_offset - delta * shell.space.step) end
 	end)
 	hover_target(quest_scroll, {})
 	inbox = CreateFrame("ScrollFrame", nil, expanded)
@@ -2484,12 +2495,12 @@ local function ensure_frame()
 	call(inbox_content, "SetPoint", "TOPLEFT", inbox, "TOPLEFT", 0, 0)
 	call(inbox, "SetScrollChild", inbox_content)
 	call(inbox, "SetScript", "OnMouseWheel", function(_, delta)
-		if usable(delta) and type(delta) == "number" then island.scroll_to(scroll_offset - delta * 40) end
+		if usable(delta) and type(delta) == "number" then island.scroll_to(scroll_offset - delta * shell.space.step) end
 	end)
 	hover_target(inbox, {})
 	local empty_visual = make_visual(inbox_content, true)
 	empty_text = make_label(empty_visual, "LEFT", "text")
-	call(empty_text, "SetPoint", "TOPLEFT", empty_visual, "TOPLEFT", 12, -12)
+	call(empty_text, "SetPoint", "TOPLEFT", empty_visual, "TOPLEFT", shell.space.edge, -shell.space.edge)
 	shell.empty_hint = make_label(empty_visual, "LEFT", "caption")
 	for index = 1, LIST_MAX do
 		local target = CreateFrame("Button", nil, inbox_content)
@@ -2500,7 +2511,7 @@ local function ensure_frame()
 	end
 	footer = CreateFrame("Frame", nil, expanded)
 	clear_button = shell.make_link(footer, "EverlookIslandClearHistory", "Clear history", island.clear_history)
-	call(clear_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -shell.space.edge, -((shell.space.head - 24) / 2))
+	call(clear_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -shell.space.edge, -((shell.space.head - shell.space.link) / 2))
 	undo_button = shell.make_link(footer, "EverlookIslandUndo", "Undo", island.undo_clear)
 	-- The pill floats over the foot of the list, so it sits above the edge fades.
 	new_button = make_control(expanded, "EverlookIslandNewNotices", "New notices", 96, function() island.scroll_to(shell.unread_first or content_height) end)
