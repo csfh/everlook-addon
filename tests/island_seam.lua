@@ -606,14 +606,14 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local status = label("STATUS")
 		check("the Status heading is a section gap below the level line",
 			-status.point[5] == 12 + 14 + 16)
-		-- With no quest the island is 440 wide and stacked: 416 inside the edges,
-		-- one gap of 8, so two columns of 204. Money has the first row, and gear
+		-- With no quest the island is 432 wide and stacked: 408 inside the edges,
+		-- one gutter of 24, so two columns of 192. Money has the first row, and gear
 		-- and bags share the second.
 		check("the island is narrow with no quest, and its cells share one width and the summary's left edge",
-			addon.smart_island.view().width == 440 and money.width == 204 and gear.width == 204 and bags.width == 204
+			addon.smart_island.view().width == 432 and money.width == 192 and gear.width == 192 and bags.width == 192
 			and money.point[4] == 12 and gear.point[4] == 12)
 		check("gear and bags share the row below money, gear on the left",
-			gear.point[5] == bags.point[5] and gear.point[5] == money.point[5] - 32 - 8 and bags.point[4] == 12 + 204 + 8)
+			gear.point[5] == bags.point[5] and gear.point[5] == money.point[5] - 32 - 8 and bags.point[4] == 12 + 192 + 24)
 		check("the cells begin one step below the Status heading", -money.point[5] == -status.point[5] + 14 + 8)
 		local name, figure = label("Gear"), label("50%")
 		check("a value sits under its name on the cell's left edge",

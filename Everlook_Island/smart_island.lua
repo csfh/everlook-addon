@@ -2,6 +2,7 @@ local addon_name = ...
 local Everlook = Everlook
 local module = Everlook.module
 local id = "smart_island"
+local grid = Everlook.island_grid
 
 BINDING_HEADER_EVERLOOK = BINDING_HEADER_EVERLOOK or "Everlook"
 BINDING_NAME_EVERLOOK_SMART_ISLAND = "Open smart island"
@@ -16,7 +17,7 @@ local TOAST_GAP = 6
 local MOTION = { enter = 0.2, exit = 0.15, open = 0.15, close = 0.125, handoff = 0.125, complete = 0.15 }
 local ENTER_TIME, EXIT_TIME = MOTION.enter, MOTION.exit
 -- Two columns when there is a quest to show beside the notifications, one when there is not.
-local OPEN_W, NARROW_W = 720, 440
+local OPEN_W, NARROW_W = grid.widths.two, grid.widths.one
 local COLORS = {
 	primary = { 245 / 255, 247 / 255, 250 / 255, 1 },
 	secondary = { 174 / 255, 182 / 255, 195 / 255, 1 },
@@ -200,6 +201,12 @@ shell.set_ring = function(ring, fraction, color)
 	call(ring.fill, "SetSwipeColor", color[1], color[2], color[3], 1)
 	call(ring.fill, "Pause")
 	call(ring.fill, "SetCooldown", (GetTime and GetTime() or 0) - 100 * fraction, 100)
+end
+
+-- The ring with nothing in it: the dim track only.
+shell.track_ring = function(ring)
+	call(ring.track, "Show")
+	call(ring.fill, "Hide")
 end
 
 shell.hide_ring = function(ring)
@@ -824,9 +831,9 @@ local function layout_summary(width, left_w)
 			group[#group + 1] = index
 		end
 	end
-	local grid = {}
+	local cell_rows = {}
 	for _, group in ipairs(rows_of) do
-		if #group > 0 then grid[#grid + 1] = group end
+		if #group > 0 then cell_rows[#cell_rows + 1] = group end
 	end
 	-- Under the table when stacked, level with it when beside.
 	local y = (stacked and has_table) and experience_bottom + space.section or block_top
@@ -839,17 +846,17 @@ local function layout_summary(width, left_w)
 	end
 	-- Equal columns of cells. A cell is a mark in a box the size of a ring, then a
 	-- small name over its value, so the text of every cell starts on one edge.
-	local column_width = math.floor((status_width - (per_row - 1) * space.near) / per_row)
+	local column_width = math.floor((status_width - (per_row - 1) * grid.gutter) / per_row)
 	local label_height = call(metric_nodes[1].label, "GetLineHeight") or 12
 	local value_height = call(metric_nodes[1].value, "GetLineHeight") or 14
 	local text_height = math.max(label_height + space.within + value_height, space.ring)
 	local lead = space.ring + space.near
 	local row_tops, grid_height = {}, 0
 	local placed = {}
-	for row, group in ipairs(grid) do
+	for row, group in ipairs(cell_rows) do
 		for column, index in ipairs(group) do placed[index] = { row = row, column = column - 1 } end
 		row_tops[row] = grid_height
-		grid_height = grid_height + text_height + (row < #grid and space.near or 0)
+		grid_height = grid_height + text_height + (row < #cell_rows and space.near or 0)
 	end
 	local box_top = math.floor((text_height - space.ring) / 2)
 	local text_top = math.floor((text_height - (label_height + space.within + value_height)) / 2)
@@ -862,11 +869,12 @@ local function layout_summary(width, left_w)
 			call(node.icon, metric.icon and "Show" or "Hide")
 			call(node.icon, "ClearAllPoints")
 			call(node.icon, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", (space.ring - space.icon) / 2, -(box_top + (space.ring - space.icon) / 2))
+			-- A figure with no fraction still gets the empty ring, so every mark stands in the same box on the edge.
+			shell.place_ring(node.ring, node.label_parent, 0, box_top)
 			if metric.fraction then
-				shell.place_ring(node.ring, node.label_parent, 0, box_top)
 				shell.set_ring(node.ring, metric.fraction, metric.state and COLORS[metric.state] or COLORS.muted)
 			else
-				shell.hide_ring(node.ring)
+				shell.track_ring(node.ring)
 			end
 			call(node.label, "SetText", metric.name)
 			call(node.label, "ClearAllPoints")
@@ -877,7 +885,7 @@ local function layout_summary(width, left_w)
 			call(node.value, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", lead, -(text_top + label_height + space.within))
 			call(node.value, "SetWidth", math.max(1, column_width - lead))
 			call(node.frame, "ClearAllPoints")
-			call(node.frame, "SetPoint", "TOPLEFT", summary, "TOPLEFT", status_left + column * (column_width + space.near), -(y + row_tops[row]))
+			call(node.frame, "SetPoint", "TOPLEFT", summary, "TOPLEFT", status_left + column * (column_width + grid.gutter), -(y + row_tops[row]))
 			call(node.frame, "SetSize", column_width, text_height)
 			call(node.frame, "Show")
 		elseif node then
@@ -1235,15 +1243,19 @@ end
 -- The open island is two columns, quests on the left and notifications on the
 -- right. The summary above them uses the same split, so what sits above a
 -- pane lines up with it.
-shell.panes = function(width, two)
-	if not two then return 0, width end
-	local left = math.floor(width * 0.46 + 0.5)
-	return left, width - left
+shell.panes = grid.panes
+
+-- The width the open island takes, and whether two panes fit in it. Two panes sit on the
+-- grid at their own width; when the screen is too narrow for them, the island is one pane.
+shell.panel = function(two)
+	local width, fitted = grid.fit(two, screen_size("GetWidth") - 32)
+	return math.max(CLOSED_W, width), fitted
 end
 
 local function layout_expanded(list, status, inspection_height, two)
 	local space = shell.space
-	local width = math.max(CLOSED_W, math.min(two and OPEN_W or NARROW_W, screen_size("GetWidth") - 32))
+	local width
+	width, two = shell.panel(two)
 	local left_w, right_w = shell.panes(width, two)
 	layout_summary(width, left_w)
 	if status then
@@ -1616,8 +1628,7 @@ paint = function(reason)
 	if compact and compact.progress == nil and type(status.progress) == "number" then
 		compact = { text = compact.text, icon = compact.icon, trailing = compact.trailing, progress = status.progress }
 	end
-	local two = visual_open and quest_context.has_content()
-	local page_width = math.max(CLOSED_W, math.min(two and OPEN_W or NARROW_W, screen_size("GetWidth") - 32))
+	local page_width, two = shell.panel(visual_open and quest_context.has_content())
 	local available = math.max(64, screen_size("GetWidth") - 32)
 	local morphing = preview.phase == "opening" or preview.phase == "closing"
 	local face = quest_context.present({

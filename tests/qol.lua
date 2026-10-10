@@ -152,7 +152,7 @@ return function(root, check)
 			frames[#frames + 1] = frame
 			return frame
 		end
-		for _, file in ipairs({ "links", "module", "quest_interface", "flight_time", "friend_conveniences", "useful_tooltips", "faster_loot", "quest_automation", "auto_repair", "sell_junk", "open_containers", "fonts", "site_links", "hide_clutter", "auto_responses", "chat_tweaks", "map_pins", "coordinates", "quest_levels", "cinematic_skip", "camera", "swing_timers", "unit_names", "npc_titles", "quest_tracker", "mail", "gossip_continue", "tooltip_cursor", "chat_format", "radial_wheel", "radial_menu", "island_capsule", "island_row", "island_quests", "island_actions", "island_vitals", "island_history", "island_surface", "island_scroll", "island_notice", "island_inbox", "island_toasts", "smart_island", "island_feed_kit", "island_share", "island_quest_notices", "island_loot", "island_hearth", "island_reputation", "island_professions", "island_mail", "island_invites", "island_buffs", "island_recap", "island_experience", "island_warnings", "action_shortcuts" }) do
+		for _, file in ipairs({ "links", "module", "quest_interface", "flight_time", "friend_conveniences", "useful_tooltips", "faster_loot", "quest_automation", "auto_repair", "sell_junk", "open_containers", "fonts", "site_links", "hide_clutter", "auto_responses", "chat_tweaks", "map_pins", "coordinates", "quest_levels", "cinematic_skip", "camera", "swing_timers", "unit_names", "npc_titles", "quest_tracker", "mail", "gossip_continue", "tooltip_cursor", "chat_format", "radial_wheel", "radial_menu", "island_capsule", "island_row", "island_grid", "island_quests", "island_actions", "island_vitals", "island_history", "island_surface", "island_scroll", "island_notice", "island_inbox", "island_toasts", "smart_island", "island_feed_kit", "island_share", "island_quest_notices", "island_loot", "island_hearth", "island_reputation", "island_professions", "island_mail", "island_invites", "island_buffs", "island_recap", "island_experience", "island_warnings", "action_shortcuts" }) do
 			if not left_out[file] then
 				local chunk = assert(loadfile(source(file)))
 				setfenv(chunk, env)
@@ -2768,7 +2768,7 @@ return function(root, check)
 		check("the pin action shows while a quest is followed", pin_link.shown ~= false)
 		addon.module.set("smart_island", "quest_context", false)
 		check("turning quest tracking off takes the pin action away and narrows the island",
-			pin_link.shown == false and addon.smart_island.view().width == 440)
+			pin_link.shown == false and addon.smart_island.view().width == 432)
 	end
 	do
 		local addon, env, _, state = quest_world()
@@ -2820,12 +2820,12 @@ return function(root, check)
 				if object.point[4] == 0 then quest_pane = object else notice_pane = object end
 			end
 		end
-		-- 720 wide, split at 46%: the left column is 331 and the right begins there.
+		-- 720 wide on the 12-column grid: pane A is five columns, so the divider is at 12 + 276 + 12 = 300.
 		check("the island is two columns wide when there is a quest to show", addon.smart_island.view().width == 720)
 		check("the Experience table and the quests share the left column's edge", names and quests_heading
 			and names.point[4] == 12 and quests_heading.point[4] == 12)
 		check("Status and the notifications share the right column's edge", status and notices_heading
-			and status.point[4] == 331 + 12 and notices_heading.point[4] == 331 + 12)
+			and status.point[4] == 300 + 12 and notices_heading.point[4] == 300 + 12)
 		check("the table and Status begin on one line", status and hour and hour.point[5] == status.point[5])
 		check("the two panes share a top and a height, and the left ends where the right begins",
 			quest_pane and notice_pane and quest_pane.point[5] == notice_pane.point[5] and quest_pane.height == notice_pane.height
@@ -2838,7 +2838,7 @@ return function(root, check)
 		check("with a quest the island is wide", addon.smart_island.view().width == 720)
 		state.quests, state.watched, state.selected = {}, {}, nil
 		event("QUEST_LOG_UPDATE")
-		check("with no quest to follow or suggest it narrows to the notifications alone", addon.smart_island.view().width == 440)
+		check("with no quest to follow or suggest it narrows to the notifications alone", addon.smart_island.view().width == 432)
 		local pane
 		for _, object in ipairs(frames) do
 			-- The quests list is made before the notifications list.
@@ -4005,7 +4005,7 @@ return function(root, check)
 		end
 		check("the island is its own mouse frame", pill ~= nil)
 		pill.scripts.OnEnter(pill)
-		check("hover opens a preview of the data bar", addon.smart_island.view().mode == "open" and addon.smart_island.view().hovering and addon.smart_island.view().width == 440)
+		check("hover opens a preview of the data bar", addon.smart_island.view().mode == "open" and addon.smart_island.view().hovering and addon.smart_island.view().width == 432)
 		pill.scripts.OnLeave(pill)
 		fire_after(afters, 0.1)
 		check("leaving a hover closes the island", addon.smart_island.view().mode == "closed" and not addon.smart_island.view().hovering)
@@ -4135,7 +4135,7 @@ return function(root, check)
 				end
 			end
 			check("the position cell shares money's row, to its right",
-				position and money_cell and position.point[5] == money_cell.point[5] and position.point[4] == money_cell.point[4] + money_cell.width + 8)
+				position and money_cell and position.point[5] == money_cell.point[5] and position.point[4] == money_cell.point[4] + money_cell.width + 24)
 		end
 		addon.module.set("coordinates", "enabled", false)
 		event("PLAYER_ENTERING_WORLD")
@@ -5956,6 +5956,23 @@ return function(root, check)
 		check("a pane's content starts 8 below its heading band, in the quests and the notifications alike",
 			card_title.top - band_bottom == 8 and empty.top - band_bottom == 8)
 		check("an objective's text starts in the 22 text column, as the capsule's title does", objective.left - island.left == 12 + 22)
+		local island_grid = addon.island_grid
+		check("the grid's columns are whole pixels at both panel widths: 36 wide at 720 and 12 wide at 432",
+			island_grid.column(720) == 36 and island_grid.column(432) == 12)
+		check("pane A is five columns, 276 wide, and pane B seven, 396, with the divider in the 24 gutter between them",
+			island_grid.span(720, 5) == 276 and island_grid.span(720, 7) == 396 and island_grid.panes(720, true) == 300)
+		check("two panes fit from 720 up and one pane from 432 up, and a narrower screen keeps what is left",
+			select(2, island_grid.fit(true, 720)) == true and island_grid.fit(true, 719) == 432 and island_grid.fit(true, 300) == 300)
+		local function cell_rect(text)
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if region.text == text and region.shown ~= false then return measure.rectangle(region.parent.parent) end
+				end
+			end
+		end
+		local money, gear, bags = cell_rect("Money"), cell_rect("Gear"), cell_rect("Bags")
+		check("four metric cells across are 156 wide, three columns each, on the 24 gutter",
+			money.width == 156 and gear.left - money.left == 156 + 24 and bags.left - gear.left == 156 + 24 and money.left - island.left == 12)
 	end
 	assert(loadfile(root .. "/tests/island_seam.lua"))()(root, check, island_world, quest_world, secret_stat)
 	assert(loadfile(root .. "/tests/island_share.lua"))()(root, check, load_qol)
