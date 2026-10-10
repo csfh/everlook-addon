@@ -69,19 +69,27 @@ return function(root, check, island_world, quest_world)
 				tooltip = { title = "Row", lines = { "More" } } } } }))
 		check("every block kind is accepted, with a mark, a ring, a tooltip and line breaks", type(accepted) == "number")
 
+		rejected("a meter past one", spec({ blocks = { { kind = "meter", label = "Raid", value = "9", fraction = 1.5 } } }), "invalid_block")
+		rejected("a meter with a colour code in its value", spec({ blocks = { { kind = "meter", label = "Raid", value = "|cffff0000x|r", fraction = 0.5 } } }), "invalid_block")
+		rejected("no cells", spec({ blocks = { { kind = "cells", cells = {} } } }), "invalid_block")
+		rejected("seven cells", spec({ blocks = { { kind = "cells", cells = (function() local list = {} for index = 1, 7 do list[index] = { label = "a", value = "b" } end return list end)() } } }), "invalid_block")
+		rejected("a cell with an unknown key", spec({ blocks = { { kind = "cells", cells = { { label = "a", value = "b", colour = "red" } } } } }), "invalid_block")
+		check("a meter and cells with marks and rings are accepted", api.section(spec({ key = "figures", blocks = {
+			{ kind = "meter", label = "Raid", value = "3/8", fraction = 0.375, tone = "warning" },
+			{ kind = "cells", cells = { { icon = "money", label = "Gold", value = "12g" }, { icon = "repair", label = "Gear", value = "40%", ring = { fraction = 0.4, tone = "error" } } } } } })) ~= nil)
 		local builtin = api.section(spec({ source = "everlook_quests", key = "first", order = 10 }))
 		check("one of our own sources may take a slot below 100", type(builtin) == "number")
 
 		-- Updating and dismissing use the same two functions as a notice.
 		check("update replaces a section's blocks and keeps its handle",
 			api.update(handle, { blocks = { { kind = "text", text = "Phase two" } } }) == handle)
-		check("update keeps what it was not given", addon.island_section ~= nil and addon.smart_island.view().sections == 3)
+		check("update keeps what it was not given", addon.island_section ~= nil and addon.smart_island.view().sections == 4)
 		local _, no_region = api.update(handle, { region = "pane_a" })
 		local _, no_source = api.update(handle, { source = "Else" })
 		local _, bad_field = api.update(handle, { blocks = { { kind = "chart" } } })
 		check("update refuses to move a section or rename its source, and checks the blocks",
 			no_region == "invalid_update" and no_source == "invalid_update" and bad_field == "invalid_block")
-		check("dismiss removes a section once", api.dismiss(handle) == true and api.dismiss(handle) == false and addon.smart_island.view().sections == 2)
+		check("dismiss removes a section once", api.dismiss(handle) == true and api.dismiss(handle) == false and addon.smart_island.view().sections == 3)
 		local _, unknown = api.update(handle, { title = "Gone" })
 		check("a dismissed section's handle is unknown to update", unknown == "unknown_handle")
 
@@ -229,11 +237,30 @@ return function(root, check, island_world, quest_world)
 			{ kind = "row", row = { icon = "quest", title = "Magmadar", ring = { fraction = 0.4, tone = "warning" }, labels = { "40%" } },
 				action = { id = "pull", label = "Mark", on_click = function() end } },
 			{ kind = "gap", size = "near" },
-			{ kind = "text", text = "Phase two starts at 40 percent." } } }))
+			{ kind = "text", text = "Phase two starts at 40 percent." },
+			{ kind = "meter", label = "Raid cleared", value = "3/8", fraction = 0.375, tone = "warning" },
+			{ kind = "cells", cells = { { icon = "money", label = "Gold", value = "12g 4s" }, { icon = "repair", label = "Armor", value = "40%", ring = { fraction = 0.4, tone = "error" } },
+				{ icon = "bags", label = "Slots", value = "8 free" } } } } }))
 		api.section(spec({ key = "bosses", title = "Bosses", blocks = {
 			{ kind = "row", row = { title = "Ragnaros", labels = { "3/8" }, badge = "60%" } },
 			{ kind = "row", row = { title = "Sulfuron Harbinger, Lord of the Molten Core", labels = { "Dead" } } } } }))
 		open(addon, frames)
+		local measure_a = layout.new()
+		local function cell_at(text)
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if region.text == text and region.shown ~= false then return measure_a.rectangle(region.parent), measure_a.rectangle(region) end
+				end
+			end
+		end
+		local gold_cell, gold_label = cell_at("Gold")
+		local gear_cell = cell_at("Armor")
+		local bags_cell = cell_at("Slots")
+		check("two cells share a row 24 apart and a third starts the next row 8 below, in the pane's 12 inset",
+			gold_cell and gear_cell and bags_cell and gear_cell.left - gold_cell.right == 24 and gear_cell.top == gold_cell.top
+			and bags_cell.top - gold_cell.bottom == 8 and bags_cell.left == gold_cell.left)
+		check("a cell's text starts 36 in, past its gauge", gold_label.left - gold_cell.left == 36)
+		check("a meter shows its label and its value", find_text(frames, "Raid cleared") ~= nil and find_text(frames, "3/8") ~= nil)
 		local dir = os.getenv("ISLAND_LAYOUT_DIR")
 		if dir then
 			local top

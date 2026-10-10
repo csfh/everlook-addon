@@ -17,7 +17,12 @@ local BLOCK_KEYS = {
 	text = { kind = true, text = true },
 	heading = { kind = true, text = true },
 	gap = { kind = true, size = true },
+	meter = { kind = true, label = true, value = true, fraction = true, tone = true },
+	cells = { kind = true, cells = true },
 }
+local CELL_KEYS = { icon = true, label = true, value = true, ring = true }
+local RING_KEYS = { fraction = true, tone = true }
+local MAX_CELLS = 6
 local ACTION_KEYS = { id = true, label = true, on_click = true }
 local TOOLTIP_KEYS = { title = true, lines = true }
 local GAPS = { within = true, near = true, section = true }
@@ -105,6 +110,46 @@ local function read_block(block)
 	if kind == "heading" then
 		if not plain_text(block.text, 48) then return nil, "invalid_block" end
 		return { kind = "heading", text = block.text }, #block.text
+	end
+	if kind == "meter" then
+		if not plain_text(block.label, 32) or not plain_text(block.value, 24) then return nil, "invalid_block" end
+		local fraction = block.fraction
+		if type(fraction) ~= "number" or fraction ~= fraction or fraction < 0 or fraction > 1 then return nil, "invalid_block" end
+		local tone = capsule.tone_color(block.tone or "accent")
+		if not tone then return nil, "invalid_block" end
+		return { kind = "meter", label = block.label, value = block.value, fraction = fraction, tone = tone }, #block.label + #block.value
+	end
+	if kind == "cells" then
+		local list = block.cells
+		if not plain_table(list) or #list < 1 or #list > MAX_CELLS then return nil, "invalid_block" end
+		for key in pairs(list) do
+			if type(key) ~= "number" or key < 1 or key > #list or key % 1 ~= 0 then return nil, "invalid_block" end
+		end
+		local cells, bytes = {}, 0
+		for index = 1, #list do
+			local cell = list[index]
+			if not plain_table(cell) or not known_keys(cell, CELL_KEYS) then return nil, "invalid_block" end
+			if not plain_text(cell.label, 24) or not plain_text(cell.value, 24) then return nil, "invalid_block" end
+			local copy = { label = cell.label, value = cell.value }
+			bytes = bytes + #cell.label + #cell.value
+			if cell.icon ~= nil then
+				local icon, reason = capsule.read_mark(cell.icon)
+				if reason then return nil, reason end
+				if not icon then return nil, "invalid_block" end
+				copy.icon = icon
+			end
+			if cell.ring ~= nil then
+				local ring = cell.ring
+				if not plain_table(ring) or not known_keys(ring, RING_KEYS) then return nil, "invalid_block" end
+				local fraction = ring.fraction
+				if type(fraction) ~= "number" or fraction ~= fraction or fraction < 0 or fraction > 1 then return nil, "invalid_block" end
+				local tone = capsule.tone_color(ring.tone or "accent")
+				if not tone then return nil, "invalid_block" end
+				copy.ring = { fraction = fraction, tone = tone }
+			end
+			cells[index] = copy
+		end
+		return { kind = "cells", cells = cells }, bytes
 	end
 	local row, reason = capsule.read_row(block.row)
 	if not row then return nil, reason end

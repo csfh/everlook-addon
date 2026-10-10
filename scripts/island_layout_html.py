@@ -101,6 +101,11 @@ def render(items, scale):
                     f'<div class="ring" style="{box(item)};-webkit-mask-image:url({ring});mask-image:url({ring});'
                     f'background:conic-gradient({color} {fraction * 360}deg,transparent 0)"></div>'
                 )
+            bar = item.get("bar")
+            if bar:
+                span = (bar["max"] - bar["min"]) or 1
+                share = max(0, min(1, (bar["value"] - bar["min"]) / span))
+                parts.append(f'<div class="fill" style="{box(item)};width:{item["w"] * share}px;background:{rgba(bar["color"])}"></div>')
             if item["name"]:
                 parts.append(f'<div class="frame" title="{html.escape(item["name"])}" style="{box(item)}"></div>')
             continue

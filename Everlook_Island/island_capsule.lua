@@ -132,6 +132,9 @@ local function read_capsule(value, presentation)
 	return { text = value.text, icon = icon, trailing = trailing, progress = value.progress }
 end
 
+-- A mark read from a producer: a name, an atlas, an item or a spell. Returns it copied, or nil and a reason.
+capsule.read_mark = copy_mark
+
 -- A tone is a name from TONES. Callers that paint get it as a colour table.
 function capsule.tone_color(name)
 	local hex = TONES[name]

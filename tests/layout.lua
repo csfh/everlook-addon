@@ -235,10 +235,11 @@ function layout.export(frames, root, now)
 		if frame.shown == false then return end
 		local alpha = inherited * (frame.alpha or 1)
 		if alpha < 0.01 then return end
-		items[#items + 1] = string.format('{"kind":"frame","name":%s,%s,"alpha":%g,"clips":%s,"cooldown":%s,"swipe":%s}',
+		items[#items + 1] = string.format('{"kind":"frame","name":%s,%s,"alpha":%g,"clips":%s,"cooldown":%s,"swipe":%s,"bar":%s}',
 			quote(frame.name or ""), box(measure.rectangle(frame)), alpha, tostring(frame.clips == true),
 			(frame.cooldown and now) and string.format("%g", (now - frame.cooldown.start) / frame.cooldown.duration) or "null",
-			number_list(frame.swipe_color))
+			number_list(frame.swipe_color),
+			frame.value and string.format('{"value":%g,"min":%g,"max":%g,"color":%s}', frame.value, frame.min or 0, frame.max or 1, number_list(frame.bar_color)) or "null")
 		for _, region in ipairs(frame.regions or {}) do
 			if region.shown ~= false then
 				local rect = measure.rectangle(region)

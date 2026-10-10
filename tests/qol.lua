@@ -68,14 +68,14 @@ return function(root, check)
 			function frame:SetAllPoints(target) self.all_points = target or true end
 			function frame:SetMinMaxValues(min_value, max_value) self.min, self.max = min_value, max_value end
 			function frame:SetValue(value) self.value = value end
-			function frame:SetStatusBarColor() end
+			function frame:SetStatusBarColor(...) self.bar_color = { ... } end
 			function frame:SetStatusBarTexture(texture) self.status_texture = texture end
 			function frame:Hide() self.shown = false end
 			function frame:Show() self.shown = true end
 			function frame:CreateTexture()
 				local texture = {
 					parent = self,
-					SetAllPoints = function() end, SetColorTexture = function(self, ...) self.color = { ... } end,
+					SetAllPoints = function(texture, target) texture.all_points = target or true end, SetColorTexture = function(self, ...) self.color = { ... } end,
 					SetTexture = function(self, path) self.path = path end, SetTexCoord = function() end,
 					SetAtlas = function(self, atlas) self.atlas = atlas end,
 					SetVertexColor = function(self, ...) self.color = { ... } end,
