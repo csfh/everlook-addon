@@ -14,16 +14,29 @@ local function plain(value)
 	return value ~= nil and not (issecretvalue and issecretvalue(value))
 end
 
--- "<Gryphon Master>" from the tooltip, or nil when the NPC has no title.
-local function title_of(unit)
-	if not (C_TooltipInfo and C_TooltipInfo.GetUnit) then return nil end
-	local data = C_TooltipInfo.GetUnit(unit)
-	if not plain(data) or type(data) ~= "table" then return nil end
-	local row = type(data.lines) == "table" and data.lines[2]
+local function text_of(row)
 	if not plain(row) or type(row) ~= "table" then return nil end
 	local text = row.leftText
 	if not plain(text) or type(text) ~= "string" then return nil end
-	return text:match("^<.+>$") and text or nil
+	return text
+end
+
+-- Whether a line is the level line, which says "Level 16" in the client's language.
+local function is_level(text)
+	local word = plain(LEVEL) and type(LEVEL) == "string" and LEVEL or "Level"
+	return text ~= nil and text:sub(1, #word) == word
+end
+
+-- The title from the unit's tooltip: the line under the name, when it is in angle brackets or the level line
+-- comes right after it. A creature with no title has the level line there instead. Nil when there is none.
+local function title_of(unit)
+	if not (C_TooltipInfo and C_TooltipInfo.GetUnit) then return nil end
+	local data = C_TooltipInfo.GetUnit(unit)
+	if not plain(data) or type(data) ~= "table" or type(data.lines) ~= "table" then return nil end
+	local text = text_of(data.lines[2])
+	if not text or text == "" or is_level(text) then return nil end
+	if text:match("^<.+>$") or is_level(text_of(data.lines[3])) then return text end
+	return nil
 end
 
 -- Any creature, friend or not: a neutral vendor or a guard has a title as much as a friendly one, and a plate with

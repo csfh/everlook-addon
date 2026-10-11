@@ -796,12 +796,15 @@ return function(root, check)
 		local plates, lines = {}, {}
 		for _, unit in ipairs({ "nameplate1", "nameplate2", "nameplate3", "nameplate4", "nameplate5" }) do plates[unit], lines[unit] = made_plate(unit) end
 		plates.nameplate5.UnitFrame.IsShowOnlyName = function() return true end
+		plates.nameplate6, lines.nameplate6 = made_plate("nameplate6")
 		local tooltips = {
 			nameplate1 = { lines = { { leftText = "Thorgrum Borrelson" }, { leftText = "<Gryphon Master>" } } },
 			nameplate2 = { lines = { { leftText = "A Player" }, { leftText = "<Some Guild>" } } },
 			nameplate3 = { lines = { { leftText = "A Guard" }, { leftText = "<Defender>" } } },
 			nameplate4 = { lines = { { leftText = "Plain Villager" }, { leftText = "Level 3 Human (NPC)" } } },
 			nameplate5 = { lines = { { leftText = "Innkeeper Palaena" }, { leftText = "<Drink Vendor>" } } },
+			nameplate6 = { lines = { { leftText = "Taldan" }, { leftText = "Drink Vendor" }, { leftText = "Level 16" }, { leftText = "Darnassus" }, { leftText = "PvP" } } },
+			nameplate7 = { lines = { { leftText = "Plain Villager" }, { leftText = "Level 16" }, { leftText = "Darnassus" } } },
 		}
 		title_env.C_NamePlate = { GetNamePlateForUnit = function(unit) return plates[unit] end, GetNamePlates = function() return {} end }
 		title_env.C_TooltipInfo = { GetUnit = function(unit) return tooltips[unit] end }
@@ -829,6 +832,11 @@ return function(root, check)
 		check("a hostile NPC's title is shown too", lines.nameplate3[1] and lines.nameplate3[1].shown and lines.nameplate3[1].text == "<Defender>")
 		title_event("NAME_PLATE_UNIT_ADDED", "nameplate5")
 		local only_name = lines.nameplate5[1]
+		title_event("NAME_PLATE_UNIT_ADDED", "nameplate6")
+		check("a title the client writes without angle brackets is found by the level line after it", lines.nameplate6[1] and lines.nameplate6[1].shown and lines.nameplate6[1].text == "Drink Vendor")
+		plates.nameplate7, lines.nameplate7 = made_plate("nameplate7")
+		title_event("NAME_PLATE_UNIT_ADDED", "nameplate7")
+		check("a creature whose second line is its level has no title", #lines.nameplate7 == 0)
 		check("a plate with only a name gets its NPC's title, centred under it", only_name and only_name.shown and only_name.text == "<Drink Vendor>" and only_name.points[1][1] == "TOP")
 		title_event("NAME_PLATE_UNIT_REMOVED", "nameplate1")
 		check("the line goes when the nameplate does", line.shown == false)
