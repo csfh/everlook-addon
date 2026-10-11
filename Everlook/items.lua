@@ -717,16 +717,16 @@ end
 
 -- An item the addon has not read yet costs a tooltip and a pass over its
 -- lines. A loot window, a vendor or a bag scan can hand over dozens at once,
--- so they wait in line and are read a millisecond at a time. Without a timer
--- the item is read on the spot.
-local WORK_MS = 1
+-- so they wait in line and are read in the time the scheduler gives them.
+-- Without a timer or a scheduler the item is read on the spot. What is still
+-- waiting at logout is read first, before the collection is saved.
 local waiting = {}
 local waiting_first = 1
 local waiting_last = 0
 local waiting_sources = {}
-local draining = false
+local drain_task
 
-local function drain()
+local function drain(limit_ms)
 	local started = debugprofilestop and debugprofilestop() or nil
 	while waiting_first <= waiting_last do
 		local job = waiting[waiting_first]
@@ -739,21 +739,22 @@ local function drain()
 				waiting_sources[job[1]] = nil
 			end
 		end
+		-- The job is out of the line before it is read, so one that fails does not
+		-- stop the others.
 		Everlook.items.record(job[1], job[2], job[3], job[4], true)
-		if not started or debugprofilestop() - started >= WORK_MS then
+		if not started or debugprofilestop() - started >= limit_ms then
 			break
 		end
 	end
 	if waiting_first > waiting_last then
 		waiting_first, waiting_last = 1, 0
-		draining = false
-		return
+		return false
 	end
-	C_Timer.After(0, drain)
+	return true
 end
 
 local function wait_for_turn(id, source, name, startsQuestId)
-	if not (C_Timer and C_Timer.After) then
+	if not (C_Timer and C_Timer.After and Everlook.sched) then
 		return false
 	end
 	local by_source = waiting_sources[id]
@@ -771,10 +772,8 @@ local function wait_for_turn(id, source, name, startsQuestId)
 	by_source[source] = job
 	waiting_last = waiting_last + 1
 	waiting[waiting_last] = job
-	if not draining then
-		draining = true
-		C_Timer.After(0, drain)
-	end
+	drain_task = drain_task or Everlook.sched.task("items", { step = drain, logout = "flush" })
+	drain_task.wake()
 	return true
 end
 

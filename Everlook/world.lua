@@ -2098,9 +2098,17 @@ function Everlook.world.migrated()
 	rows = {}
 end
 
+-- The part of the logout time that queued work may use, in milliseconds.
+local QUEUE_FLUSH_MS = 100
+
 function Everlook.world.flush(include_counts)
 	if not EverlookDB then
 		return
+	end
+	-- Work still waiting for a frame, such as items to be read, is done before
+	-- anything is saved, so it is not lost. It gets a part of the logout time.
+	if Everlook.sched then
+		Everlook.sched.flush(QUEUE_FLUSH_MS)
 	end
 	-- raw is the collection. world and its signature are the signed upload.
 	if not paged and (EverlookDB.raw ~= nil or Everlook.world.row_count() > 0) then

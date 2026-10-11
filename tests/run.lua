@@ -77,6 +77,7 @@ local function load_addon()
 	})
 	local files = {
 		"world.lua",
+		"sched.lua",
 		"location.lua",
 		"sightings.lua",
 		"npcs.lua",
@@ -2402,8 +2403,7 @@ end)()
 
 -- A loot window or a vendor hands over many unread items. They are read a few a frame.
 ;(function()
-	local timers = {}
-	_G.C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+	_G.C_Timer = { After = function() end }
 	local ticks = 0
 	_G.debugprofilestop = function() ticks = ticks + 0.6 return ticks end
 	_G.C_Item = { GetItemInfo = function(id) return "Item " .. id end }
@@ -2413,16 +2413,47 @@ end)()
 		addon.items.record(id, "loot")
 	end
 	addon.items.record(1, "loot")
-	check("unread items wait for their turn", addon.world.row("items", 1) == nil and #timers == 1)
+	check("unread items wait for their turn", addon.world.row("items", 1) == nil)
 	local before = addon.world.row_count()
-	timers[1]()
-	check("a frame reads only what fits the budget", addon.world.row_count() - before >= 1 and addon.world.row_count() - before < 5 and #timers == 2)
-	while #timers > 0 do
-		table.remove(timers, 1)()
+	addon.sched.tick()
+	check("a frame reads only what fits the budget", addon.world.row_count() - before >= 1 and addon.world.row_count() - before < 5)
+	for _ = 1, 10 do
+		addon.sched.tick()
 	end
 	check("every queued item is read once", addon.world.row_count() == 5 and addon.world.row("items", 5).name == "Item 5")
 	addon.items.record(6, "loot")
-	check("a later item starts the queue again", #timers == 1)
+	check("a later item starts the queue again", addon.world.row("items", 6) == nil)
+	addon.sched.tick()
+	check("and is read in the next frame", addon.world.row("items", 6) ~= nil)
+	for id = 7, 9 do
+		addon.items.record(id, "loot")
+	end
+	EverlookDB = {}
+	addon.world.flush()
+	check("what still waits is read before the collection is saved", addon.world.row("items", 9) ~= nil)
+	EverlookDB = nil
+	-- A read that fails is lost, and the others still go on.
+	local reads = 0
+	local real_record = addon.items.record
+	local failures = {}
+	_G.geterrorhandler = function() return function(err) failures[#failures + 1] = err end end
+	addon.items.record = function(id, source, name, quest, now)
+		if now and id == 10 then
+			error("unreadable")
+		end
+		if now then
+			reads = reads + 1
+		end
+		return real_record(id, source, name, quest, now)
+	end
+	for id = 10, 12 do
+		real_record(id, "loot")
+	end
+	for _ = 1, 10 do
+		addon.sched.tick()
+	end
+	check("an item that fails to read does not stop the queue", reads == 2 and addon.world.row("items", 12) ~= nil and #failures == 1)
+	_G.geterrorhandler = nil
 	_G.C_Timer, _G.debugprofilestop, _G.C_Item = nil, nil, nil
 end)()
 
