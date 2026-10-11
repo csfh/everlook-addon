@@ -10,7 +10,7 @@ local island_capsule = Everlook.island_capsule
 local island_summary = Everlook.island_summary
 local island_row = Everlook.island_row
 
-BINDING_HEADER_EVERLOOK = BINDING_HEADER_EVERLOOK or "Everlook"
+BINDING_HEADER_EVERLOOK_ISLAND = "Everlook Island"
 BINDING_NAME_EVERLOOK_SMART_ISLAND = "Open smart island"
 BINDING_NAME_EVERLOOK_SMART_ISLAND_DISMISS = "Dismiss top island notice"
 

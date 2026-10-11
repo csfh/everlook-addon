@@ -7,7 +7,7 @@ local id = "radial_menu"
 local BUTTON = "EverlookRadialButton"
 local ACTION = "CLICK " .. BUTTON .. ":LeftButton"
 
-BINDING_HEADER_EVERLOOK = "Everlook"
+BINDING_HEADER_EVERLOOK_RADIAL_MENU = "Everlook Radial Menu"
 _G["BINDING_NAME_" .. ACTION] = "Open radial menu"
 
 -- The wheel is open between key down and key up.

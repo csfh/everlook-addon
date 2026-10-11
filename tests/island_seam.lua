@@ -352,6 +352,20 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local remaining = {}
 		for _, notice in ipairs(addon.smart_island.view().notices) do remaining[#remaining + 1] = notice.text end
 		check("the dismiss key removes the newest toast first", table.concat(remaining, ",") == "Older")
+		-- The game warns when a header is declared twice, in one file or across addons.
+		local seen, once = {}, true
+		for _, file in ipairs({ "Everlook_Island/Bindings.xml", "Everlook_IslandShare/Bindings.xml", "Everlook_RadialMenu/Bindings.xml" }) do
+			for header in read_source(file):gmatch('header="([%w_]+)"') do
+				if seen[header] then once = false end
+				seen[header] = true
+			end
+		end
+		check("every binding header is declared once, and each has a name to show", once and next(seen) ~= nil
+			and (function()
+				local names = read_source("Everlook_Island/smart_island.lua") .. read_source("Everlook_IslandShare/island_share.lua") .. read_source("Everlook_RadialMenu/radial_menu.lua")
+				for header in pairs(seen) do if not names:find("BINDING_HEADER_" .. header .. " =", 1, true) then return false end end
+				return true
+			end)())
 		check("the binding file names the dismiss action", read_source("Everlook_Island/Bindings.xml"):find("EVERLOOK_SMART_ISLAND_DISMISS", 1, true) ~= nil)
 	end
 	do

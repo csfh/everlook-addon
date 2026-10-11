@@ -14,6 +14,7 @@ local NAME_LIMIT = 80
 local WIRE_KIND = { unit = true, item = true, object = true, quest = true, spell = true }
 local ISLAND_KIND = { unit = "info", item = "loot", object = "info", quest = "quest", spell = "info" }
 
+BINDING_HEADER_EVERLOOK_ISLAND_SHARE = "Everlook Island Share"
 BINDING_NAME_EVERLOOK_SHARE = "Share what you are pointing at"
 
 local last_kind, last_name, last_at
