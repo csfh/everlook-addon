@@ -856,15 +856,15 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local quiet
 		for _, frame in ipairs(frames) do if frame.action_id == "go" and frame.quiet then quiet = frame end end
 		local function fill_red() return quiet.quiet.fill.pieces[5].color[1] end
-		check("an action button is quiet: an outline over a fill a shade off the panel, with muted words",
-			quiet and math.abs(quiet.label.color[1] - 174 / 255) < 0.01 and math.abs(fill_red() - 22 / 255) < 0.01
-			and quiet.quiet.edge.pieces[5].color[4] == 0.2)
+		check("an action button is blue: an outline over a deep blue fill, with pale blue words",
+			quiet and math.abs(quiet.label.color[1] - 205 / 255) < 0.01 and math.abs(fill_red() - 30 / 255) < 0.01
+			and quiet.quiet.edge.pieces[5].color[4] == 0.55 and quiet.quiet.fill.pieces[5].color[3] > quiet.quiet.fill.pieces[5].color[1] * 2)
 		quiet.scripts.OnEnter(quiet)
-		check("it lights under the pointer and its words turn white", math.abs(quiet.label.color[1] - 245 / 255) < 0.01 and math.abs(fill_red() - 38 / 255) < 0.01)
+		check("it lights under the pointer and its words turn white", quiet.label.color[1] == 1 and math.abs(fill_red() - 44 / 255) < 0.01)
 		quiet.scripts.OnMouseDown(quiet)
-		check("and darkens while pressed", math.abs(fill_red() - 14 / 255) < 0.01)
+		check("and darkens while pressed", math.abs(fill_red() - 22 / 255) < 0.01)
 		quiet.scripts.OnLeave(quiet)
-		check("and rests again when the pointer leaves", math.abs(quiet.label.color[1] - 174 / 255) < 0.01 and math.abs(fill_red() - 22 / 255) < 0.01)
+		check("and rests again when the pointer leaves", math.abs(quiet.label.color[1] - 205 / 255) < 0.01 and math.abs(fill_red() - 30 / 255) < 0.01)
 		state.time = state.time + 3
 		card.scripts.OnEnter(card)
 		for _, after in ipairs(afters) do if not after.done then after.done = true; after.callback() end end

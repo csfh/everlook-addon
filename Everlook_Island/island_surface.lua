@@ -139,18 +139,33 @@ function surface.size(layers, width, height, radius)
 	for index, layer in ipairs(layers) do size_layer(layer, width, height, radius, index == 1 and 3 or 0) end
 end
 
--- A quiet button's surface: a thin outline around a fill a shade off the panel's, so it reads as
--- a control without shouting. It rests, lights a little under the pointer and darkens when pressed.
+-- A button's surface: a thin outline round a fill, in one of two styles. "quiet" is a shade off the
+-- panel's, for the island's own controls. "accent" is blue, for the actions a notice offers, so they
+-- read as the thing to press. Either rests, lights a little under the pointer and darkens when pressed.
 local BUTTON_RADIUS = 6
 local BUTTON_STATES = {
-	rest = { edge = { 1, 1, 1, 0.2 }, fill = { 22 / 255, 25 / 255, 32 / 255, 1 } },
-	hover = { edge = { 1, 1, 1, 0.45 }, fill = { 38 / 255, 43 / 255, 55 / 255, 1 } },
-	press = { edge = { 1, 1, 1, 0.45 }, fill = { 14 / 255, 16 / 255, 21 / 255, 1 } },
+	quiet = {
+		rest = { edge = { 1, 1, 1, 0.2 }, fill = { 22 / 255, 25 / 255, 32 / 255, 1 } },
+		hover = { edge = { 1, 1, 1, 0.45 }, fill = { 38 / 255, 43 / 255, 55 / 255, 1 } },
+		press = { edge = { 1, 1, 1, 0.45 }, fill = { 14 / 255, 16 / 255, 21 / 255, 1 } },
+	},
+	accent = {
+		rest = { edge = { 0.47, 0.67, 1, 0.55 }, fill = { 30 / 255, 52 / 255, 92 / 255, 1 } },
+		hover = { edge = { 0.6, 0.78, 1, 0.9 }, fill = { 44 / 255, 76 / 255, 130 / 255, 1 } },
+		press = { edge = { 0.6, 0.78, 1, 0.9 }, fill = { 22 / 255, 38 / 255, 70 / 255, 1 } },
+	},
+}
+-- The words on a button, at rest and when lit.
+surface.button_words = {
+	quiet = { rest = { 174 / 255, 182 / 255, 195 / 255, 1 }, lit = { 245 / 255, 247 / 255, 250 / 255, 1 } },
+	accent = { rest = { 205 / 255, 222 / 255, 250 / 255, 1 }, lit = { 1, 1, 1, 1 } },
 }
 
-function surface.make_button(parent)
-	local rest = BUTTON_STATES.rest
+function surface.make_button(parent, style)
+	style = BUTTON_STATES[style] and style or "quiet"
+	local rest = BUTTON_STATES[style].rest
 	return {
+		style = style,
 		edge = rounded_layer(parent, { unpack(rest.edge) }, 0, -3),
 		fill = rounded_layer(parent, { unpack(rest.fill) }, 1, -2),
 	}
@@ -163,11 +178,11 @@ end
 
 -- state is "rest", "hover" or "press".
 function surface.tint_button(button, state)
-	local colors = BUTTON_STATES[state] or BUTTON_STATES.rest
-	for name, layer in pairs(button) do
-		local color = colors[name]
+	local colors = BUTTON_STATES[button.style][state] or BUTTON_STATES[button.style].rest
+	for _, name in ipairs({ "edge", "fill" }) do
+		local layer = button[name]
 		for index, texture in ipairs(layer.pieces) do
-			tint_piece(texture, layer.corners[index], color)
+			tint_piece(texture, layer.corners[index], colors[name])
 		end
 	end
 end

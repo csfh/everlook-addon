@@ -188,23 +188,21 @@ function actions.invoke(entry, snapshot, generation)
 	return ok
 end
 
--- An action button is a quiet outlined button in the island's own style: a thin border and a fill a
--- shade off the panel's, lighter under the pointer, with its words turning white. Nothing in it is
--- the game's red button art, which is louder than anything else on the island. Either way
--- button.label takes SetText.
-local LABEL_REST = { 174 / 255, 182 / 255, 195 / 255, 1 }
-local LABEL_HOVER = { 245 / 255, 247 / 255, 250 / 255, 1 }
-
+-- An action button is blue: a thin outline round a deep blue fill, lighter under the pointer with its
+-- words turning white, and darker while pressed. It is the thing to press on a notice, so it is the
+-- one color on the card. Nothing in it is the game's red button art, which is louder than anything
+-- else on the island. Either way button.label takes SetText.
 local function tint(button, state)
 	if button.quiet then Everlook.island_surface.tint_button(button.quiet, state) end
-	local words = state == "rest" and LABEL_REST or LABEL_HOVER
-	call(button.label, "SetTextColor", words[1], words[2], words[3], words[4])
+	local words = Everlook.island_surface.button_words.accent
+	local color = state == "rest" and words.rest or words.lit
+	call(button.label, "SetTextColor", color[1], color[2], color[3], color[4])
 end
 
 local function skin(button)
 	local surface = Everlook.island_surface
 	if surface and surface.make_button then
-		button.quiet = surface.make_button(button)
+		button.quiet = surface.make_button(button, "accent")
 		surface.size_button(button.quiet, 120, 22)
 	end
 	local label = call(button, "CreateFontString", nil, "OVERLAY", "GameFontHighlightSmall")
