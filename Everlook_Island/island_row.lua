@@ -51,6 +51,13 @@ function row.show_arrow(texture, angle)
 	end
 end
 
+-- A label set exactly as wide as its text, in whole pixels. The parts chained from it then land on
+-- whole pixels too, and a ring or a texture beside it stays sharp instead of straddling two.
+local function whole_width(label)
+	call(label, "SetWordWrap", false)
+	call(label, "SetWidth", math.ceil(call(label, "GetStringWidth") or 0))
+end
+
 local Row = {}
 Row.__index = Row
 
@@ -141,6 +148,7 @@ function Row:set(spec, reserve)
 			local text, tone = text_of(labels[index])
 			label = label_at(self, index)
 			call(label, "SetText", text or "")
+			whole_width(label)
 			-- Labels are reused, so a label without a tone goes back to the plain one.
 			tone = tone or LABEL_TONE
 			call(label, "SetTextColor", tone[1], tone[2], tone[3], tone[4] or 1)
@@ -152,6 +160,7 @@ function Row:set(spec, reserve)
 
 	self.has_badge = type(spec.badge) == "string" and spec.badge ~= ""
 	call(self.badge, "SetText", self.has_badge and spec.badge or "")
+	whole_width(self.badge)
 	call(self.badge, self.has_badge and "Show" or "Hide")
 
 	local ring = spec.ring

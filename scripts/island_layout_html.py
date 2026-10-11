@@ -83,6 +83,7 @@ def box(item, extra=""):
 
 def render(items, scale):
     ring = tga_to_png_data_uri(ASSETS / "island_ring.tga")
+    ring_small = tga_to_png_data_uri(ASSETS / "island_ring_small.tga")
     arrow = tga_to_png_data_uri(ASSETS / "island_arrow.tga")
     parts = []
     surface_open = False
@@ -100,8 +101,9 @@ def render(items, scale):
             elif item.get("cooldown") is not None:
                 fraction = max(0, min(1, item["cooldown"]))
                 color = rgba(item.get("swipe") or [1, 1, 1, 1])
+                art = ring_small if item["w"] <= 20 else ring
                 parts.append(
-                    f'<div class="ring" style="{box(item)};-webkit-mask-image:url({ring});mask-image:url({ring});'
+                    f'<div class="ring" style="{box(item)};-webkit-mask-image:url({art});mask-image:url({art});'
                     f'background:conic-gradient({color} {fraction * 360}deg,transparent 0)"></div>'
                 )
             bar = item.get("bar")
@@ -136,7 +138,8 @@ def render(items, scale):
         else:
             path = item["path"]
             if "island_ring" in path:
-                parts.append(f'<div class="ring" style="{box(item)};-webkit-mask-image:url({ring});mask-image:url({ring});background:rgba(255,255,255,.14);opacity:{item.get('alpha', 1)}"></div>')
+                art = ring_small if item["w"] <= 20 else ring
+                parts.append(f'<div class="ring" style="{box(item)};-webkit-mask-image:url({art});mask-image:url({art});background:rgba(255,255,255,.14);opacity:{item.get('alpha', 1)}"></div>')
             elif "island_arrow" in path:
                 rotation = item["rotation"]
                 parts.append(

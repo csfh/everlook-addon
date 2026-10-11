@@ -32,6 +32,13 @@ def ring(x, y):
     return 1.0 if 23 <= distance <= 31 else 0.0
 
 
+def ring_small(x, y):
+    # The same ring for the sizes under 20: 32 wide, so it is drawn at about twice its size and
+    # its stroke is two pixels at 14. Outer radius 15.5, 4.5 thick.
+    distance = math.hypot(x - 16, y - 16)
+    return 1.0 if 11 <= distance <= 15.5 else 0.0
+
+
 def main():
     assets = Path(__file__).resolve().parents[1] / "Everlook_Island" / "assets"
     tga(assets / "island_corner.tga", 32,
@@ -39,6 +46,7 @@ def main():
     tga(assets / "island_white.tga", 2, lambda x, y: 1)
     tga(assets / "island_arrow.tga", 32, arrow)
     tga(assets / "island_ring.tga", 64, ring)
+    tga(assets / "island_ring_small.tga", 32, ring_small)
 
 
 if __name__ == "__main__":

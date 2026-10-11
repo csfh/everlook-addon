@@ -170,7 +170,10 @@ end
 shell.make_ring = function(parent, size)
 	local ring = { size = size }
 	ring.track = call(parent, "CreateTexture", nil, "BACKGROUND")
-	call(ring.track, "SetTexture", ART .. "island_ring.tga")
+	-- A small ring has its own art, drawn near the size it shows at: the large one, shrunk to 14,
+	-- blurs, and an even stroke of two pixels needs its own proportions.
+	local art = ART .. (size <= 20 and "island_ring_small.tga" or "island_ring.tga")
+	call(ring.track, "SetTexture", art)
 	call(ring.track, "SetVertexColor", 1, 1, 1, 0.14)
 	call(ring.track, "SetSize", size, size)
 	ring.fill = CreateFrame("Cooldown", nil, parent)
@@ -178,7 +181,7 @@ shell.make_ring = function(parent, size)
 	call(ring.fill, "EnableMouse", false)
 	-- Addons that print a countdown on every cooldown leave this one alone.
 	ring.fill.noCooldownCount = true
-	call(ring.fill, "SetSwipeTexture", ART .. "island_ring.tga")
+	call(ring.fill, "SetSwipeTexture", art)
 	call(ring.fill, "SetReverse", true)
 	call(ring.fill, "SetDrawEdge", false)
 	call(ring.fill, "SetDrawBling", false)
@@ -1490,9 +1493,16 @@ paint = function(reason)
 	local page_width, two = shell.panel(visual_open and (quest_context.has_content() or #sections.list("pane_a") > 0))
 	local available = math.max(64, screen_size("GetWidth") - 32)
 	local morphing = preview.phase == "opening" or preview.phase == "closing"
+	-- The unread count sits on the capsule's right inset, and the capsule keeps clear of the room it takes.
+	local unread = unread_count()
+	local reserve = 0
+	if unread > 0 then
+		call(unread_text, "SetText", tostring(unread))
+		reserve = math.ceil(call(unread_text, "GetStringWidth") or 8) + shell.space.near
+	end
 	local face = quest_context.present({
 		status = status, closed = now == "closed" or morphing, visual_open = visual_open,
-		available = available, content_width = (shell.panes(page_width, two)), badge = shell.badge_text(), reserve = unread_count() > 0 and 14 or 0,
+		available = available, content_width = (shell.panes(page_width, two)), badge = shell.badge_text(), reserve = reserve,
 	})
 	local quest = face.quest
 	local layout = compact and compact_api.layout(compact, measure_capsule, available) or nil
@@ -1542,6 +1552,8 @@ paint = function(reason)
 	for _, control in ipairs(preview_controls) do call(control, "EnableMouse", now == "open") end
 	show_label(empty_text, visual_open and #list == 0, "No notifications yet")
 	show_label(shell.empty_hint, visual_open and #list == 0, EMPTY_HINT)
+	call(unread_text, "ClearAllPoints")
+	call(unread_text, "SetPoint", "RIGHT", shell.face, "RIGHT", quest and -shell.space.edge or -5, 0)
 	show_label(unread_text, (now == "closed" or morphing) and not layout and unread_count() > 0, tostring(unread_count()))
 	local unread_warning = false
 	for _, entry in ipairs(notices) do

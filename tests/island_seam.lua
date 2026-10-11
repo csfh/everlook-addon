@@ -827,6 +827,21 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local quiet_offset = badge_point()[4]
 		addon.island.notify({ source = "Test", key = "unread", text = "Something new" })
 		check("an unread count moves the capsule badge left to clear it", badge_point()[4] < quiet_offset)
+		local measure = dofile(root .. "/tests/layout.lua").new()
+		local function region_for(text)
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if region.text == text and region.shown ~= false then return region end
+				end
+			end
+		end
+		local capsule, count = measure.rectangle(region_for("|cfff5f7fa12|r  |cffad76ef45%|r").parent), measure.rectangle(region_for("1"))
+		local badge = measure.rectangle(region_for("|cfff5f7fa12|r  |cffad76ef45%|r"))
+		check("the unread count sits on the same 12 inset as everything else, and the badge keeps 8 clear of it",
+			capsule.right - count.right == 12 and count.left - badge.right == 8)
+		local ring = measure.rectangle(region_for("~800 yd"))
+		check("a label's box is a whole number of pixels wide, so what hangs from it lands on whole pixels",
+			ring.left == math.floor(ring.left) and ring.width == math.floor(ring.width) and badge.width == math.floor(badge.width))
 	end
 	do
 		local addon, env, _, state, afters, _, frames = island_world()
