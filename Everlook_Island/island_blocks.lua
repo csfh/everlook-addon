@@ -138,6 +138,8 @@ local function row_slot(self, index)
 	end)
 	call(slot.link, "SetPoint", "RIGHT", frame, "RIGHT", -host.space.edge, 0)
 	host.hover(frame, slot.node)
+	-- Like a cell, a row does what a click beside it does. Without this the row takes the click and drops it.
+	if host.click then call(frame, "SetScript", "OnClick", host.click) end
 	self.rows[index] = slot
 	return slot
 end

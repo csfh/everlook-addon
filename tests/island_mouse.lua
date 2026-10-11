@@ -67,6 +67,19 @@ return function(root, check, island_world, quest_world)
 		return addon, env, frames
 	end
 
+	do
+		-- A frame that takes the mouse and does nothing with it is a dead spot on the island.
+		local _, _, frames = open_world({ reduced = true, click = true })
+		local idle = {}
+		for _, frame in ipairs(frames) do
+			if frame.kind == "Button" and frame.mouse == true and shown(frame) and not frame.scripts.OnClick and not frame.scripts.OnMouseDown and not frame.scripts.OnMouseUp then
+				local rect = layout.new().rectangle(frame)
+				if rect.width > 0 and rect.height > 0 then idle[#idle + 1] = (frame.name or "button") .. " " .. rect.width .. "x" .. rect.height end
+			end
+		end
+		check("every button that takes the mouse on the open island does something with a click" .. (#idle > 0 and (": " .. table.concat(idle, ", ")) or ""), #idle == 0)
+	end
+
 	for _, how in ipairs({ { name = "by key", reduced = true }, { name = "by key, with motion", reduced = false },
 		{ name = "by clicking", reduced = true, click = true }, { name = "by clicking, with motion", reduced = false, click = true },
 		{ name = "by hovering", reduced = true, pointer = true }, { name = "by hovering, with motion", reduced = false, pointer = true } }) do

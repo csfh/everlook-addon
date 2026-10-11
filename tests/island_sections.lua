@@ -208,16 +208,19 @@ return function(root, check, island_world, quest_world)
 			end
 			return true
 		end
+		-- A row takes a click too, so a row whose title is the same word comes first. The action is the last match.
 		local function button_with(text)
+			local found
 			for _, frame in ipairs(frames) do
 				if frame.scripts and frame.scripts.OnClick and showing(frame) then
 					for _, child in ipairs(frames) do
 						if child.parent == frame then
-							for _, region in ipairs(child.regions or {}) do if region.text == text then return frame end end
+							for _, region in ipairs(child.regions or {}) do if region.text == text then found = frame end end
 						end
 					end
 				end
 			end
+			return found
 		end
 		local button = button_with("Pin")
 		check("the row's action is a button", button ~= nil)
