@@ -856,9 +856,10 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local quiet
 		for _, frame in ipairs(frames) do if frame.action_id == "go" and frame.quiet then quiet = frame end end
 		local function fill_red() return quiet.quiet.fill.pieces[5].color[1] end
-		check("an action button is blue: an outline over a deep blue fill, with pale blue words",
+		check("an action button is blue: a thin gold outline over a deep blue fill, with pale blue words",
 			quiet and math.abs(quiet.label.color[1] - 205 / 255) < 0.01 and math.abs(fill_red() - 30 / 255) < 0.01
-			and quiet.quiet.edge.pieces[5].color[4] == 0.55 and quiet.quiet.fill.pieces[5].color[3] > quiet.quiet.fill.pieces[5].color[1] * 2)
+			and quiet.quiet.edge.pieces[5].color[4] == 0.9 and quiet.quiet.edge.pieces[5].color[1] > quiet.quiet.edge.pieces[5].color[3]
+			and quiet.quiet.fill.pieces[5].color[3] > quiet.quiet.fill.pieces[5].color[1] * 2)
 		quiet.scripts.OnEnter(quiet)
 		check("it lights under the pointer and its words turn white", quiet.label.color[1] == 1 and math.abs(fill_red() - 44 / 255) < 0.01)
 		quiet.scripts.OnMouseDown(quiet)
@@ -1160,5 +1161,32 @@ return function(root, check, island_world, quest_world, secret_stat)
 		check("the first of two actions is the blue one to press, and the other is the quiet grey",
 			yes and later and yes.quiet.style == "accent" and later.quiet.style == "quiet"
 			and math.abs(yes.quiet.fill.pieces[5].color[1] - 30 / 255) < 0.01 and math.abs(later.quiet.fill.pieces[5].color[1] - 22 / 255) < 0.01)
+	end
+	-- Where the game can draw its gold tooltip border, the first button has it, scaled to fit.
+	do
+		local addon, env, _, _, _, _, frames = island_world()
+		addon.module.set("smart_island", "enabled", true)
+		env.NineSliceUtil = {
+			GetLayout = function() return {} end,
+			ApplyLayoutByName = function(frame)
+				frame.TopLeftCorner = { GetHeight = function() return 33 end }
+				frame.Center = { Hide = function(self) self.hidden = true end }
+			end,
+		}
+		addon.island.notify({ source = "Test", key = "gold", text = "Two choices", duration = 4, interaction = "buttons",
+			actions = { { id = "yes", label = "Yes", type = "callback", on_click = function() end },
+				{ id = "later", label = "Not now", type = "callback", on_click = function() end } } })
+		local yes, later
+		for _, frame in ipairs(frames) do
+			if frame.action_id == "yes" and frame.quiet then yes = frame end
+			if frame.action_id == "later" and frame.quiet then later = frame end
+		end
+		local border_of = function(button) return button.quiet.border end
+		check("the first button has the game's border over its fill, scaled to fit the button, and its middle left out",
+			yes and border_of(yes) and border_of(yes).shown ~= false and border_of(yes).Center.hidden == true
+			and math.abs(border_of(yes).scale - 22 / (33 * 2 + 2)) < 1e-9)
+		check("the quiet one has none, and its own thin line is kept", later and border_of(later).shown == false)
+		check("the thin gold line steps aside under the game's border",
+			yes.quiet.edge.pieces[5].color[4] == 0 and later.quiet.edge.pieces[5].color[4] == 0.2)
 	end
 end

@@ -149,10 +149,12 @@ local BUTTON_STATES = {
 		hover = { edge = { 1, 1, 1, 0.45 }, fill = { 38 / 255, 43 / 255, 55 / 255, 1 } },
 		press = { edge = { 1, 1, 1, 0.45 }, fill = { 14 / 255, 16 / 255, 21 / 255, 1 } },
 	},
+	-- The accent button has a gold border, the game's own where it can be drawn and a thin gold line where
+	-- not, so the outline here is that line.
 	accent = {
-		rest = { edge = { 0.47, 0.67, 1, 0.55 }, fill = { 30 / 255, 52 / 255, 92 / 255, 1 } },
-		hover = { edge = { 0.6, 0.78, 1, 0.9 }, fill = { 44 / 255, 76 / 255, 130 / 255, 1 } },
-		press = { edge = { 0.6, 0.78, 1, 0.9 }, fill = { 22 / 255, 38 / 255, 70 / 255, 1 } },
+		rest = { edge = { 0.78, 0.64, 0.33, 0.9 }, fill = { 30 / 255, 52 / 255, 92 / 255, 1 } },
+		hover = { edge = { 0.95, 0.8, 0.45, 1 }, fill = { 44 / 255, 76 / 255, 130 / 255, 1 } },
+		press = { edge = { 0.95, 0.8, 0.45, 1 }, fill = { 22 / 255, 38 / 255, 70 / 255, 1 } },
 	},
 }
 -- The words on a button, at rest and when lit.
@@ -161,14 +163,44 @@ surface.button_words = {
 	accent = { rest = { 205 / 255, 222 / 255, 250 / 255, 1 }, lit = { 1, 1, 1, 1 } },
 }
 
-function surface.make_button(parent, style)
+-- The game's gold tooltip border round a button, drawn on a frame of its own over the button's
+-- fill. The border art has a size of its own, so the frame is scaled down until a corner and its
+-- opposite fit in the button with room to spare. Returns nil where the game cannot draw it.
+local function native_border(parent, height)
+	if not native_available() or not CreateFrame then return nil end
+	local frame = CreateFrame("Frame", nil, parent)
+	call(frame, "SetAllPoints", parent)
+	call(frame, "SetFrameLevel", (call(parent, "GetFrameLevel") or 1) + 1)
+	call(frame, "EnableMouse", false)
+	NineSliceUtil.ApplyLayoutByName(frame, NATIVE_LAYOUT)
+	-- The border's own fill is not wanted: the button has its blue.
+	call(frame.Center, "Hide")
+	local corner = call(frame.TopLeftCorner, "GetHeight")
+	if type(corner) == "number" and corner > 0 then call(frame, "SetScale", math.min(1, height / (corner * 2 + 2))) end
+	return frame
+end
+
+-- style is "quiet" or "accent". An accent button gets the game's gold border where it can; the
+-- layers a button always has are an outline, thin and gold for an accent button when the game's
+-- border draws, and the fill under it.
+function surface.make_button(parent, style, height)
 	style = BUTTON_STATES[style] and style or "quiet"
 	local rest = BUTTON_STATES[style].rest
-	return {
+	local button = {
 		style = style,
 		edge = rounded_layer(parent, { unpack(rest.edge) }, 0, -3),
 		fill = rounded_layer(parent, { unpack(rest.fill) }, 1, -2),
 	}
+	button.border = native_border(parent, height or 22)
+	call(button.border, style == "accent" and "Show" or "Hide")
+	return button
+end
+
+-- Changes a button between "quiet" and "accent": its colors, and whether it has the gold border.
+function surface.set_button_style(button, style)
+	button.style = BUTTON_STATES[style] and style or "quiet"
+	call(button.border, button.style == "accent" and "Show" or "Hide")
+	surface.tint_button(button, "rest")
 end
 
 function surface.size_button(button, width, height)
@@ -181,8 +213,11 @@ function surface.tint_button(button, state)
 	local colors = BUTTON_STATES[button.style][state] or BUTTON_STATES[button.style].rest
 	for _, name in ipairs({ "edge", "fill" }) do
 		local layer = button[name]
+		local color = colors[name]
+		-- Under the game's gold border the thin line is not wanted.
+		if name == "edge" and button.border and button.style == "accent" then color = { color[1], color[2], color[3], 0 } end
 		for index, texture in ipairs(layer.pieces) do
-			tint_piece(texture, layer.corners[index], colors[name])
+			tint_piece(texture, layer.corners[index], color)
 		end
 	end
 end

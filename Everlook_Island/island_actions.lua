@@ -202,14 +202,14 @@ end
 
 -- The first action of a notice is primary. A pooled button is restyled each time it is given an action.
 local function set_primary(button, primary)
-	if button.quiet then button.quiet.style = primary and "accent" or "quiet" end
+	if button.quiet then Everlook.island_surface.set_button_style(button.quiet, primary and "accent" or "quiet") end
 	tint(button, "rest")
 end
 
 local function skin(button, primary)
 	local surface = Everlook.island_surface
 	if surface and surface.make_button then
-		button.quiet = surface.make_button(button, primary and "accent" or "quiet")
+		button.quiet = surface.make_button(button, primary and "accent" or "quiet", 22)
 		surface.size_button(button.quiet, 120, 22)
 	end
 	local label = call(button, "CreateFontString", nil, "OVERLAY", "GameFontHighlightSmall")
