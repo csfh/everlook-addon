@@ -72,6 +72,33 @@ local function left_align(plate, name)
 	name:SetJustifyH("LEFT")
 end
 
+-- Temporary: what the game did with the last few marks, kept in the saved variables to read after a reload, because
+-- a nameplate is restricted and cannot be measured by eye from here. Removed once the layout is settled.
+local function trace(unit, layout, name, bar, icon)
+	local function measure(region)
+		if not region then return "none" end
+		local ok, left, bottom, width, height = pcall(region.GetRect, region)
+		if not ok then return "error: " .. tostring(left) end
+		return tostring(left) .. "," .. tostring(bottom) .. " " .. tostring(width) .. "x" .. tostring(height)
+	end
+	local function kind(region)
+		if not region then return "none" end
+		local ok, value = pcall(region.GetObjectType, region)
+		return ok and tostring(value) or "error"
+	end
+	EverlookDB = EverlookDB or {}
+	local log = EverlookDB.quest_nameplates_trace
+	if type(log) ~= "table" then log = {}; EverlookDB.quest_nameplates_trace = log end
+	local ok, justify = pcall(function() return name and name:GetJustifyH() end)
+	local ok_points, points = pcall(function() return icon:GetNumPoints() end)
+	log[#log + 1] = table.concat({
+		tostring(unit), "layout=" .. tostring(layout), "name=" .. kind(name), "bar=" .. kind(bar),
+		"icon " .. measure(icon), "points=" .. (ok_points and tostring(points) or "error"), "shown=" .. tostring(icon:IsShown()),
+		"name " .. measure(name), "bar " .. measure(bar), "justify=" .. (ok and tostring(justify) or "error"),
+	}, " | ")
+	while #log > 8 do table.remove(log, 1) end
+end
+
 local function show(unit)
 	hide(unit)
 	if not module.enabled(id) or not on_a_quest(unit) then return end
@@ -113,6 +140,7 @@ local function show(unit)
 	icon:Show()
 	by_unit[unit] = plate
 	if module.get(id, "align_name") then left_align(plate, name) end
+	pcall(trace, unit, layout, name, bar, icon)
 end
 
 local function refresh_all()
