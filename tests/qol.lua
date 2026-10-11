@@ -32,18 +32,21 @@ return function(root, check)
 				callback(self, ...)
 			end
 		end
-		env.CreateFrame = function(_, name, parent, template)
+		env.CreateFrame = function(kind, name, parent, template)
 			-- The game refuses an anchor that is a table and not a frame or a region, as "Wrong object type for function".
 			local function check_anchor(_, relative)
 				if type(relative) == "table" and relative.regions == nil and relative.parent == nil and relative.GetObjectType == nil then
 					error("SetPoint(): Wrong object type for function", 3)
 				end
 			end
-			local frame = { events = {}, scripts = {}, shown = true, name = name, parent = parent, template = template, attributes = {}, regions = {} }
+			local frame = { events = {}, scripts = {}, shown = true, name = name, parent = parent, template = template, attributes = {}, regions = {}, kind = kind,
+				-- A button takes the mouse until told not to. A plain frame does not.
+				mouse = kind == "Button" }
 			function frame:SetAttribute(key, value) self.attributes[key] = value end
 			function frame:GetAttribute(key) return self.attributes[key] end
 			function frame:RegisterForClicks(...) self.clicks = { ... } end
 			function frame:EnableMouse(enabled) self.mouse = enabled end
+			function frame:IsMouseEnabled() return self.mouse == true end
 			function frame:SetPassThroughButtons(...) self.pass_through = { ... } end
 			function frame:EnableMouseWheel(enabled) self.mouse_wheel = enabled end
 			function frame:SetScrollChild(child) self.scroll_child = child end
@@ -66,6 +69,7 @@ return function(root, check)
 			function frame:SetHitRectInsets(...) self.hit_insets = { ... } end
 			-- point keeps the last anchor, points all of them since the last clear.
 			function frame:SetPoint(...) check_anchor(...); self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end
+			function frame:GetPoint(index) local point = self.points and self.points[index or 1]; if point then return unpack(point) end end
 			function frame:ClearAllPoints() self.point, self.points = nil, {} end
 			function frame:SetFrameStrata() end
 			function frame:SetFrameLevel() end
@@ -6089,6 +6093,7 @@ return function(root, check)
 	assert(loadfile(root .. "/tests/island_capsule_states.lua"))()(root, check, island_world, quest_world)
 	assert(loadfile(root .. "/tests/island_capsule_api.lua"))()(root, check, island_world)
 	assert(loadfile(root .. "/tests/island_resting.lua"))()(root, check, island_world)
+	assert(loadfile(root .. "/tests/island_realclient.lua"))()(root, check, island_world)
 	assert(loadfile(root .. "/tests/island_react_addon.lua"))()(root, check, island_world)
 	assert(loadfile(root .. "/tests/island_share.lua"))()(root, check, load_qol)
 

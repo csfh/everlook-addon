@@ -483,7 +483,7 @@ local function content_size(node, entry, width, compact, activity)
 		call(node.accent, "Hide")
 	end
 	if action_row > 0 then actions.paint(node, entry, compact) end
-	if not activity and (not compact or node.frame.mouse) then
+	if not activity and (not compact or call(node.frame, "IsMouseEnabled") == true) then
 		-- A card with buttons or a click target keeps its left clicks. Letting them pass through
 		-- the card can let them pass its buttons too, so only a plain notice is click-through.
 		if compact then
@@ -814,7 +814,7 @@ local function show_label(label, visible, text)
 end
 
 local function secure_origin(node, y)
-	local point = frame and frame.point or {}
+	local point = { call(frame, "GetPoint", 1) }
 	local top = -(point[5] or 0)
 	return { x = point[4] or 0, y = -(top + (frame and frame.height or 0) - y), scale = module.get(id, "size") / 100,
 		width = node.width, height = node.height }
@@ -2408,11 +2408,12 @@ local function ensure_frame()
 	end)
 	shell.group = call(resting, "CreateAnimationGroup")
 	if shell.group then
-		shell.anim = call(shell.group, "CreateAnimation", "Alpha")
+		-- Only its progress is read, as a clock for the open and capsule motion, so it moves nothing: an
+		-- alpha animation here would fade the pill's body in and out with every crossfade.
+		shell.anim = call(shell.group, "CreateAnimation", "Translation")
 		call(shell.anim, "SetSmoothing", "OUT")
 		call(shell.anim, "SetDuration", MOTION.open)
-		call(shell.anim, "SetFromAlpha", 0)
-		call(shell.anim, "SetToAlpha", 1)
+		call(shell.anim, "SetOffset", 0, 0)
 	end
 	local activity = CreateFrame("Button", nil, expanded)
 	status_node = make_content(activity, true)
