@@ -132,6 +132,41 @@ return function(root, check, island_world)
 	event("NAME_PLATE_UNIT_ADDED", "nameplate4")
 	check("with no tooltip to read, only the game's own answer is used", made.nameplate4[1].shown == false)
 
+	-- A hostile creature stops being marked when its objective is done, though the quest is still in your log.
+	env.UnitCanAttack = function(_, unit) return unit == "nameplate4" end
+	related.nameplate4 = true
+	local function objective(text, extra)
+		local row = { type = 8, leftText = text }
+		for key, value in pairs(extra or {}) do row[key] = value end
+		return { lines = { { type = 2, leftText = "Defias Bandit" }, { type = 17, leftText = "Collecting Memories" }, row } }
+	end
+	local function marked_hostile()
+		event("NAME_PLATE_UNIT_ADDED", "nameplate4")
+		return made.nameplate4[1].shown == true
+	end
+	env.C_TooltipInfo = { GetUnit = function(unit) return lines[unit] end }
+	lines.nameplate4 = objective("Bandits slain: 3/8")
+	check("a hostile creature with an objective still open is marked", marked_hostile())
+	lines.nameplate4 = objective("Bandits slain: 8/8")
+	check("and not when that objective is done, though the game still ties it to the quest", marked_hostile() == false)
+	lines.nameplate4 = objective("Bandits slain", { completed = true })
+	check("a line the game says is completed is done", marked_hostile() == false)
+	lines.nameplate4 = objective("Wolf pelts: 40%")
+	check("a percentage that is not full is open", marked_hostile())
+	lines.nameplate4 = objective("Wolf pelts: 100%")
+	check("and a full one is done", marked_hostile() == false)
+	lines.nameplate4 = { lines = { { type = 17, leftText = "Collecting Memories" } } }
+	check("a quest title with no objective under it is done", marked_hostile() == false)
+	lines.nameplate4 = objective("Do something")
+	check("an objective line that says nothing about progress is taken as open", marked_hostile())
+	env.C_TooltipInfo = nil
+	check("with no tooltip to read, the game's own answer is used for a hostile creature", marked_hostile())
+	env.C_TooltipInfo = { GetUnit = function(unit) return lines[unit] end }
+	-- Someone you cannot attack is still marked by the game's answer: a quest giver or a hand-in has no objective line.
+	env.UnitCanAttack = function() return false end
+	lines.nameplate4 = { lines = { { type = 2, leftText = "Brother Paxton" } } }
+	check("a friendly unit the game ties to a quest is marked with no objective line at all", marked_hostile())
+
 	addon.module.set("quest_nameplates", "enabled", false)
 	settle()
 	check("turning the quest marks off takes every mark down, and the names stay left", mark.shown == false and made.nameplate3[1].shown == false and frame_of("nameplate1").name.justify == "LEFT")
