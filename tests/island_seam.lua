@@ -565,21 +565,32 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local addon, _, _, state, _, _, frames = island_world()
 		addon.module.set("smart_island", "enabled", true)
 		local function face() for _, f in ipairs(frames) do if f.name == "EverlookIslandFace" then return f end end end
-		local function closed_text()
-			for _, region in ipairs(face().regions or {}) do
-				if type(region.text) == "string" and region.text:find("12", 1, true) and region.shown ~= false then return region.text end
+		-- The text on the pill that shows now: a region of a visible frame under the face.
+		local layout_tests = dofile(root .. "/tests/layout.lua")
+		local function shown(text)
+			layout_tests.settle(frames)
+			for _, frame in ipairs(frames) do
+				local visible, walker = true, frame
+				while walker do
+					if walker.shown == false or (walker.alpha or 1) == 0 then visible = false end
+					walker = walker.parent
+				end
+				for _, region in ipairs(frame.regions or {}) do
+					if visible and region.text == text and region.shown ~= false then return region end
+				end
 			end
 		end
-		check("the closed pill is the level chip by default in these tests", face().width == 64)
+		local function near(color, red, green, blue) return color and math.abs(color[1] - red / 255) < 0.01 and math.abs(color[2] - green / 255) < 0.01 and math.abs(color[3] - blue / 255) < 0.01 end
+		check("the closed pill is the level chip by default in these tests", face().width == 64 and shown("Level 12") == nil and shown("12") ~= nil)
 		addon.module.set("smart_island", "closed_xp", true)
-		check("the experience percent widens the pill", face().width > 64 and closed_text() and closed_text():find("45%", 1, true))
-		check("on the level chip too the percent is purple and the level white", closed_text():find("|cffad76ef45%|r", 1, true) and closed_text():find("|cfff5f7fa12|r", 1, true))
+		check("the experience percent widens the pill", face().width > 64 and shown("45%") ~= nil)
+		check("on the level chip too the percent is purple and the level white", near(shown("45%").color, 173, 118, 239) and near(shown("12").color, 245, 247, 250))
 		addon.module.set("smart_island", "closed_clock", true)
-		check("the clock joins it", closed_text():find("14:05", 1, true) ~= nil)
+		check("the clock joins it", shown("14:05") ~= nil)
 		state.bags = { [0] = 1, [1] = 1 }
 		addon.smart_island.pull()
 		addon.module.set("smart_island", "low_slots", 5)
-		check("low bags warn on the pill without a setting", closed_text():find("Bags 2", 1, true) ~= nil)
+		check("low bags warn on the pill without a setting, in the warning color", shown("Bags 2") ~= nil and shown("Bags 2").color[1] > shown("Bags 2").color[3])
 		addon.module.set("smart_island", "closed_xp", false)
 		addon.module.set("smart_island", "closed_clock", false)
 		state.bags = { [0] = 6, [1] = 8 }

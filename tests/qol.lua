@@ -125,7 +125,7 @@ return function(root, check)
 					SetTextColor = function(self, ...) self.color = { ... } end, SetSpacing = function(self, spacing) self.spacing = spacing end,
 					SetMaxLines = function(self, lines) self.max_lines = lines end, GetLineHeight = function() return 14 end,
 					GetStringWidth = function(self) return #(self.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", "OO") * 7 end,
-					SetNonSpaceWrap = function() end,
+					SetNonSpaceWrap = function() end, SetAlpha = function(self, alpha) self.alpha = alpha end,
 					GetStringHeight = function(self)
 						-- Colour codes draw nothing, so they take no room.
 						local shown_length = #((self.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
@@ -154,7 +154,7 @@ return function(root, check)
 			frames[#frames + 1] = frame
 			return frame
 		end
-		for _, file in ipairs({ "links", "module", "quest_interface", "flight_time", "friend_conveniences", "useful_tooltips", "faster_loot", "quest_automation", "auto_repair", "sell_junk", "open_containers", "fonts", "site_links", "hide_clutter", "auto_responses", "chat_tweaks", "map_pins", "coordinates", "quest_levels", "cinematic_skip", "camera", "swing_timers", "unit_names", "npc_titles", "quest_tracker", "mail", "gossip_continue", "tooltip_cursor", "chat_format", "radial_wheel", "radial_menu", "island_capsule", "island_row", "island_grid", "island_section", "island_blocks", "island_reaction", "island_summary", "island_quests", "island_actions", "island_vitals", "island_history", "island_surface", "island_scroll", "island_notice", "island_inbox", "island_toasts", "smart_island", "island_feed_kit", "island_share", "island_quest_notices", "island_loot", "island_hearth", "island_reputation", "island_professions", "island_mail", "island_invites", "island_buffs", "island_recap", "island_experience", "island_react", "island_warnings", "action_shortcuts" }) do
+		for _, file in ipairs({ "links", "module", "quest_interface", "flight_time", "friend_conveniences", "useful_tooltips", "faster_loot", "quest_automation", "auto_repair", "sell_junk", "open_containers", "fonts", "site_links", "hide_clutter", "auto_responses", "chat_tweaks", "map_pins", "coordinates", "quest_levels", "cinematic_skip", "camera", "swing_timers", "unit_names", "npc_titles", "quest_tracker", "mail", "gossip_continue", "tooltip_cursor", "chat_format", "radial_wheel", "radial_menu", "island_capsule", "island_row", "island_grid", "island_section", "island_blocks", "island_reaction", "island_summary", "island_resting", "island_quests", "island_actions", "island_vitals", "island_history", "island_surface", "island_scroll", "island_notice", "island_inbox", "island_toasts", "smart_island", "island_feed_kit", "island_share", "island_quest_notices", "island_loot", "island_hearth", "island_reputation", "island_professions", "island_mail", "island_invites", "island_buffs", "island_recap", "island_experience", "island_react", "island_warnings", "action_shortcuts" }) do
 			if not left_out[file] then
 				local chunk = assert(loadfile(source(file)))
 				setfenv(chunk, env)
@@ -3631,7 +3631,7 @@ return function(root, check)
 		check("rich cards render a primary title, supporting detail, colored native coins and a severity label", title and detail and detail.text:find("|cffffd166", 1, true) and label)
 		check("readable notification progress uses a native rail", progress and progress.height == 3)
 		env.Everlook.island.notify({ source = "Quest", key = "active", kind = "quest", text = "Smart Drinks", presentation = "status" })
-		check("an active status adds a compact icon without scrolling capsule text", addon.smart_island.view().width == 88)
+		check("an active status without a capsule of its own keeps an icon beside the level in the pill", addon.smart_island.view().width > 64 and addon.smart_island.view().width < 88)
 		env.everlook_smart_island_key("down")
 		local view = addon.smart_island.view()
 		check("expanded activity occupies its own row above the inbox", view.status_height and view.status_height >= 44)
@@ -6082,6 +6082,7 @@ return function(root, check)
 	assert(loadfile(root .. "/tests/island_reactions.lua"))()(root, check, island_world, quest_world)
 	assert(loadfile(root .. "/tests/island_capsule_states.lua"))()(root, check, island_world, quest_world)
 	assert(loadfile(root .. "/tests/island_capsule_api.lua"))()(root, check, island_world)
+	assert(loadfile(root .. "/tests/island_resting.lua"))()(root, check, island_world)
 	assert(loadfile(root .. "/tests/island_react_addon.lua"))()(root, check, island_world)
 	assert(loadfile(root .. "/tests/island_share.lua"))()(root, check, load_qol)
 

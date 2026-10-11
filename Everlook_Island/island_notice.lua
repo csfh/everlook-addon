@@ -74,8 +74,8 @@ function notice.read(payload, default_duration)
 	-- A background status holds the capsule until something with more to say takes it. It needs a capsule to show.
 	local rank = payload.rank
 	if issecretvalue and issecretvalue(rank) then return nil, "invalid_rank" end
-	if rank ~= nil and rank ~= "normal" and rank ~= "background" then return nil, "invalid_rank" end
-	if rank == "background" and (presentation ~= "status" or compact == nil) then return nil, "invalid_rank" end
+	if rank ~= nil and rank ~= "normal" and rank ~= "background" and rank ~= "resting" then return nil, "invalid_rank" end
+	if (rank == "background" or rank == "resting") and (presentation ~= "status" or compact == nil) then return nil, "invalid_rank" end
 	if rank == "normal" then rank = nil end
 	if presentation == "status" and payload.source == nil then return nil, "invalid_status_source" end
 	if presentation == "status" and key == nil then return nil, "invalid_status_key" end

@@ -227,6 +227,11 @@ function Row:set(spec, reserve)
 	self:layout(reserve)
 end
 
+-- Hides the title while a copy of it travels somewhere else, and shows it again.
+function Row:lend_title(lent)
+	call(self.title, "SetAlpha", lent and 0 or 1)
+end
+
 -- Anchors the parts to one another. A part that is hidden is skipped, so no part
 -- needs to know what its neighbours are.
 function Row:layout(reserve)
@@ -250,6 +255,8 @@ function Row:layout(reserve)
 		stop = self.ring.track
 	end
 	call(self.title, "ClearAllPoints")
+	-- A title with nothing beside it sits in the middle of the row.
+	call(self.title, "SetJustifyH", (self.has_lead or stop) and "LEFT" or "CENTER")
 	call(self.title, "SetPoint", "LEFT", parent, "LEFT", self.has_lead and SPACE.title or SPACE.edge, 0)
 	if stop then
 		call(self.title, "SetPoint", "RIGHT", stop, "LEFT", -SPACE.gap, 0)
