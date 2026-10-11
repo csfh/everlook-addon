@@ -77,6 +77,7 @@ local function load_addon()
 	})
 	local files = {
 		"world.lua",
+		"trace.lua",
 		"sched.lua",
 		"location.lua",
 		"sightings.lua",
@@ -2625,6 +2626,7 @@ end)()
 	check("an unsigned bit library hashes the same", unsigned.fast == true and unsigned.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" and unsigned.hmac_sha256(string.rep("\170", 131), "Test Using Larger Than Block-Size Key - Hash Key First") == "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54")
 end)()
 
+assert(loadfile(root .. "/tests/trace.lua"))()(root, check)
 assert(loadfile(root .. "/tests/sched.lua"))()(root, check)
 assert(loadfile(root .. "/tests/segments.lua"))()(root, check)
 assert(loadfile(root .. "/tests/module.lua"))()(root, check)

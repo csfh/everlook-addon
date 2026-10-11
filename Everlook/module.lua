@@ -7,6 +7,12 @@ local registry = Everlook.module
 local by_id, listeners = {}, {}
 local frame = CreateFrame("Frame")
 
+-- Each module's start is timed into the load trace, when there is one.
+local function timed(label, fn, ...)
+	if Everlook.trace then return Everlook.trace.span(label, fn, ...) end
+	return fn(...)
+end
+
 -- The settings pages, in the order the left list shows them. A module names
 -- its page with `page` and its place on that page with `order`.
 local PAGES = {
@@ -202,8 +208,10 @@ function registry.register(module)
 	registry.modules[#registry.modules + 1] = module
 	listen(module, module.events, module.on_event)
 	EventUtil.ContinueOnAddOnLoaded(module.addon, function()
-		fill_defaults(module.id, module.options)
-		apply(module)
+		timed("module:" .. module.id, function()
+			fill_defaults(module.id, module.options)
+			apply(module)
+		end)
 	end)
 	return module
 end
@@ -228,8 +236,10 @@ function registry.extend(host_id, extension)
 	table.sort(host.extensions, by_order)
 	listen(host, extension.events, extension.on_event)
 	EventUtil.ContinueOnAddOnLoaded(extension.addon, function()
-		fill_defaults(host_id, extension.options)
-		if extension.apply then extension.apply(registry.enabled(host_id)) end
+		timed("module:" .. host_id .. "/" .. extension.id, function()
+			fill_defaults(host_id, extension.options)
+			if extension.apply then extension.apply(registry.enabled(host_id)) end
+		end)
 	end)
 	return extension
 end

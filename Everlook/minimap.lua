@@ -123,3 +123,6 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 	CreateButton()
 	EventUtil.ContinueOnPlayerLogin(Place)
 end)
+
+-- The last file of the core: what happens before the addon loads is the engine's.
+if Everlook.trace then Everlook.trace.stamp("core_files") end

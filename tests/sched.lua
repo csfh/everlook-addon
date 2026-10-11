@@ -457,6 +457,13 @@ return function(root, check)
 		check("the page is one plain frame", page.name == "EverlookPerformancePage" and sched.page() == page)
 		local before = #made
 		check("it builds nothing until it is shown", before == 1)
+		Everlook.module = { modules = { { id = "fonts", name = "Fonts" }, { id = "smart_island", name = "Smart island" } } }
+		Everlook.trace = { ledger = {
+			marks = { { "core_files", 10 }, { "addon:Everlook", 22.3 }, { "loading_done", 1234 } },
+			spans = { ["module:fonts"] = { ms = 6.1, runs = 2 }, ["module:smart_island"] = { ms = 4, runs = 1 }, settings = { ms = 5.2, runs = 1 }, fonts_pass = { ms = 5.5, runs = 3 } },
+			counts = { fonts_passes = 3, fonts_frames = 4100, settings_kb = 310 },
+		} }
+		env.EverlookDB = { loadTraceHistory = { { done = 1300, reload = false }, { done = 980, reload = true } } }
 		local worker_state = worker(sched, game, "segments", 100000, 0.25)
 		sched.tick()
 		page.scripts.OnShow(page)
@@ -468,6 +475,10 @@ return function(root, check)
 		end
 		local joined = table.concat(lines, "\n")
 		check("it names the budget and each task in words", joined:find("1.5 ms", 1, true) and joined:find("World data", 1, true) and joined:find("Working", 1, true))
+		check("it reports the last load from the trace",
+			joined:find("12.3 ms", 1, true) and joined:find("Fonts 6.1, Smart island 4", 1, true) and joined:find("5.2 ms, 310 KB", 1, true)
+			and joined:find("3 passes", 1, true) and joined:find("4,100 frames walked", 1, true) and joined:find("1,234 ms after Everlook began", 1, true)
+			and joined:find("1,300, 980 (reload)", 1, true))
 		check("it shows the frame that ran", (function()
 			for _, item in ipairs(made) do
 				local height = rawget(item, "height")

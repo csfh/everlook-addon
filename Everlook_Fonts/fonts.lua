@@ -169,7 +169,7 @@ local function restore()
 	constants = {}
 end
 
-local function apply(enabled)
+local function run(enabled)
 	if applying or (InCombatLockdown and InCombatLockdown()) then return end
 	if enabled and GetLocale and unsupported_locales[GetLocale()] then return end
 	applying = true
@@ -205,9 +205,11 @@ local function apply(enabled)
 	end
 	local names = {}
 	for _, text in ipairs(name_texts()) do names[text] = true end
+	local walked = 0
 	if EnumerateFrames then
 		local frame = EnumerateFrames()
 		while frame do
+			walked = walked + 1
 			if not frame.IsForbidden or not frame:IsForbidden() then
 				for _, region in ipairs({ frame:GetRegions() }) do
 					if region.GetObjectType and region:GetObjectType() == "FontString"
@@ -222,7 +224,16 @@ local function apply(enabled)
 	end
 	-- Party members and raid-style frames hang under frames this walk can miss.
 	for text in pairs(names) do replace(text, people_font, offset) end
+	if Everlook.trace then Everlook.trace.count("fonts_frames", walked) end
 	applying = false
+end
+
+-- How often this runs, and what it costs, goes in the load trace.
+local function apply(enabled)
+	local trace = Everlook.trace
+	if not trace then return run(enabled) end
+	trace.count("fonts_passes")
+	return trace.span("fonts_pass", run, enabled)
 end
 
 module.register({

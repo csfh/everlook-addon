@@ -73,6 +73,94 @@ local function row_at(panel, index)
 	return row
 end
 
+local function ms(value)
+	return value and (number(value) .. " ms") or "not measured"
+end
+
+local function whole(value)
+	return (tostring(math.floor(value + 0.5)):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", ""))
+end
+
+-- The name a module goes by on its settings page.
+local function module_name(id)
+	local host = id:match("^[^/]+")
+	for _, module in ipairs(Everlook.module and Everlook.module.modules or {}) do
+		if module.id == host then
+			return module.name
+		end
+	end
+	return host
+end
+
+-- The last load, from the trace: the labels and the values, a line each.
+local function startup()
+	local trace = Everlook.trace
+	if not trace or not trace.ledger then
+		return "", ""
+	end
+	local ledger = trace.ledger
+	local marks = {}
+	for _, mark in ipairs(ledger.marks) do
+		marks[mark[1]] = mark[2]
+	end
+	local labels, values = {}, {}
+	local function line(label, value)
+		labels[#labels + 1] = label
+		values[#values + 1] = value
+	end
+	local core = marks.core_files
+	local loaded = marks["addon:Everlook"]
+	line("Saved variables read", ms(core and loaded and loaded - core or nil))
+	local total, worst = 0, {}
+	for label, span in pairs(ledger.spans) do
+		if label:sub(1, 7) == "module:" then
+			total = total + span.ms
+			worst[#worst + 1] = { module_name(label:sub(8)), span.ms }
+		end
+	end
+	table.sort(worst, function(a, b)
+		return a[2] > b[2]
+	end)
+	local names = {}
+	for index = 1, math.min(3, #worst) do
+		names[index] = worst[index][1] .. " " .. number(worst[index][2])
+	end
+	line("Modules starting", #worst > 0 and (ms(total) .. (#names > 0 and ("   " .. table.concat(names, ", ")) or "")) or "not measured")
+	local settings = ledger.spans.settings
+	line("Settings page", settings and (ms(settings.ms) .. (ledger.counts.settings_kb and (", " .. whole(ledger.counts.settings_kb) .. " KB") or "")) or "not measured")
+	local passes, frames = ledger.counts.fonts_passes, ledger.counts.fonts_frames
+	if passes then
+		local pass = ledger.spans.fonts_pass
+		line("Fonts", passes .. (passes == 1 and " pass" or " passes") .. (pass and (", " .. ms(pass.ms)) or "") .. (frames and (", " .. whole(frames) .. " frames walked") or ""))
+	end
+	line("Loading screen ended", marks.loading_done and (whole(marks.loading_done) .. " ms after Everlook began") or "not yet")
+	local history = EverlookDB and EverlookDB.loadTraceHistory
+	if type(history) == "table" and #history > 0 then
+		local done = {}
+		for index = math.max(1, #history - 5), #history do
+			local entry = history[index]
+			if entry.done then
+				done[#done + 1] = whole(entry.done) .. (entry.reload and " (reload)" or "")
+			end
+		end
+		line("Recent loads, in ms", table.concat(done, ", "))
+	end
+	local profiler = C_AddOnProfiler
+	if profiler and profiler.GetTopKAddOnsForMetric and profiler.GetApplicationMetric and Enum and Enum.AddOnProfilerMetric then
+		local metric = Enum.AddOnProfilerMetric.RecentAverageTime
+		local ok, results = pcall(profiler.GetTopKAddOnsForMetric, metric, 3)
+		local app = ok and profiler.GetApplicationMetric(metric)
+		if ok and type(results) == "table" and type(app) == "number" and app > 0 then
+			local busy = {}
+			for index, result in ipairs(results) do
+				busy[index] = result.addOnName .. " " .. string.format("%.1f", result.metricValue / app * 100) .. "%"
+			end
+			line("Busiest addons now", table.concat(busy, ", "))
+		end
+	end
+	return table.concat(labels, "\n"), table.concat(values, "\n")
+end
+
 local function draw_strip(snapshot)
 	local frames, budget = snapshot.frames, snapshot.budget
 	-- Twice the budget fits the strip, so a frame that stays inside it is half
@@ -135,6 +223,9 @@ local function refresh()
 			line:Hide()
 		end
 	end
+	local labels, values = startup()
+	texts.startup_labels:SetText(labels)
+	texts.startup_values:SetText(values)
 	texts.total:SetText(total > 0 and string.format("%s ms of work this session", number(math.floor(total + 0.5))) or "")
 end
 
@@ -184,6 +275,19 @@ local function build(panel)
 		label:SetPoint("TOPLEFT", column.x, -176)
 		label:SetText(column.label)
 	end
+
+	local last = text(panel, "GameFontNormal")
+	last:SetPoint("TOPLEFT", 8, -(176 + 6 * ROW_HEIGHT + 24))
+	last:SetText("The last time the game loaded")
+	texts.startup_labels = text(panel, "GameFontDisable", "LEFT", 150)
+	texts.startup_labels:SetPoint("TOPLEFT", last, "BOTTOMLEFT", 0, -6)
+	texts.startup_labels:SetHeight(120)
+	texts.startup_labels:SetJustifyV("TOP")
+	texts.startup_values = text(panel, "GameFontHighlight", "LEFT")
+	texts.startup_values:SetPoint("TOPLEFT", texts.startup_labels, "TOPRIGHT", 8, 0)
+	texts.startup_values:SetPoint("RIGHT", panel, "RIGHT", -16, 0)
+	texts.startup_values:SetHeight(120)
+	texts.startup_values:SetJustifyV("TOP")
 
 	texts.total = text(panel, "GameFontDisable")
 	texts.total:SetPoint("BOTTOMLEFT", 8, 32)

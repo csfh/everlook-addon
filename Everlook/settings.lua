@@ -56,7 +56,7 @@ local subpages = {}
 
 -- Module addons load after Everlook, so the page waits for login, when all of
 -- them have registered and their key bindings are known.
-EventUtil.ContinueOnPlayerLogin(function()
+local function build()
 	if not Settings or not Settings.RegisterProxySetting or not Settings.RegisterVerticalLayoutCategory
 		or not Settings.RegisterVerticalLayoutSubcategory or not Settings.RegisterCanvasLayoutSubcategory then return end
 	local layout
@@ -124,6 +124,15 @@ EventUtil.ContinueOnPlayerLogin(function()
 		subpages[#subpages + 1] = Settings.RegisterCanvasLayoutSubcategory(category, Everlook.sched.page(), "Performance")
 	end
 	Settings.RegisterAddOnCategory(category)
+end
+
+-- Timed into the load trace: bytes too, where the client says.
+EventUtil.ContinueOnPlayerLogin(function()
+	local trace = Everlook.trace
+	if not trace then return build() end
+	local before = collectgarbage and collectgarbage("count")
+	trace.span("settings", build)
+	if before then trace.count("settings_kb", math.floor(collectgarbage("count") - before)) end
 end)
 
 local function showing_everlook()
