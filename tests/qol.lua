@@ -1057,7 +1057,9 @@ return function(root, check)
 		local level_text = following_text(unit_font)
 		local party_member = { Name = following_text(unit_font), PetFrame = { Name = following_text(unit_font) } }
 		local compact_frame = { name = following_text(font_object("Fonts\\FRIZQT__.TTF", 10)) }
-		local regions = { region, protected_region, chat_line, nameplate_name, player_name, level_text }
+		local tooltip_header = font_object("Fonts\\FRIZQT__.TTF", 14)
+		local tooltip_name = following_text(tooltip_header)
+		local regions = { region, protected_region, chat_line, nameplate_name, player_name, level_text, tooltip_name }
 		local font_frame = { GetRegions = function() return unpack(regions) end }
 		env2.EnumerateFrames = function(previous) if not previous then return font_frame end end
 		env2.TestFont = font
@@ -1065,6 +1067,7 @@ return function(root, check)
 		env2.ChatFrame1 = chat_frame
 		env2.CHAT_FRAMES = { "ChatFrame1" }
 		env2.SystemFont_NamePlate = nameplate_font
+		env2.GameTooltipHeaderText = tooltip_header
 		env2.GameFontNormalSmall = unit_font
 		env2.PlayerName = player_name
 		env2.PartyFrame = {
@@ -1085,6 +1088,7 @@ return function(root, check)
 		check("chat windows and the chat font use Manrope at the window's size",
 			select(1, chat_frame:GetFont()) == manrope and select(2, chat_frame:GetFont()) == 16 and chat_font.path == manrope)
 		check("nameplates and names on unit frames use Manrope", nameplate_font.path == manrope and player_name.path == manrope)
+		check("the name at the top of a tooltip uses Manrope and keeps following its font", tooltip_header.path == manrope and tooltip_name.path == nil)
 		check("names drawn in the world use Manrope", env2.UNIT_NAME_FONT == manrope and env2.UNIT_NAME_FONT_ROMAN == manrope)
 		check("NAMEPLATE_FONT names a font object, so it stays", env2.NAMEPLATE_FONT == "GameFontWhite")
 		check("chat lines and nameplate text keep following their fonts", chat_line.path == nil and nameplate_name.path == nil)

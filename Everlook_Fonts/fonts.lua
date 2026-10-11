@@ -19,6 +19,8 @@ local people_font_names = {
 	"ChatFontNormal", "ChatFontSmall", "ChatBubbleFont",
 	"SystemFont_NamePlate", "SystemFont_NamePlate_Outlined", "SystemFont_NamePlateFixed",
 	"SystemFont_LargeNamePlate", "SystemFont_LargeNamePlateFixed", "SystemFont_NamePlateCastBar",
+	-- A tooltip's first line is the name of the unit, item or spell it describes.
+	"GameTooltipHeaderText",
 }
 local originals = setmetatable({}, { __mode = "k" })
 local constants = {}
@@ -225,7 +227,7 @@ end
 
 module.register({
 	addon = addon_name, page = "interface", order = 20,
-	id = id, name = "Fonts", description = "Sets chat, chat bubbles, nameplates, and the names on unit frames, party frames, and raid-style frames in Manrope, and the rest of the interface in Expressway. It waits while you are in combat. Text in another alphabet, such as Korean or Chinese, keeps the game's font for that alphabet, and a Korean or Chinese client keeps all of its fonts. Turning this off puts the previous fonts back once you are out of combat. A font the client forbids stays as it is, quest tracker lines and headers keep their shared font so Objective size still changes them, and names and damage text the engine draws in the world change after you log in again.",
+	id = id, name = "Fonts", description = "Sets chat, chat bubbles, nameplates, the names on unit frames, party frames, and raid-style frames, and the name at the top of a tooltip in Manrope, and the rest of the interface in Expressway. It waits while you are in combat. Text in another alphabet, such as Korean or Chinese, keeps the game's font for that alphabet, and a Korean or Chinese client keeps all of its fonts. Turning this off puts the previous fonts back once you are out of combat. A font the client forbids stays as it is, quest tracker lines and headers keep their shared font so Objective size still changes them, and names and damage text the engine draws in the world change after you log in again.",
 	options = { size_offset = { name = "Font size adjustment", default = 0, min = -4, max = 8, step = 1, unit = " pt", description = "Adds this many points to each font this replaces, on top of that font's own size. Chat windows keep the size set on their tab. The shared line and header fonts are not given their own size, the tracker sizes they follow include this addition, and nothing is set under six points. The change waits until combat ends, and this number does nothing until Fonts is on." } },
 	apply = apply, out_of_combat = true,
 	events = { "ADDON_LOADED", "PLAYER_ENTERING_WORLD" }, on_event = function() apply(true) end,
