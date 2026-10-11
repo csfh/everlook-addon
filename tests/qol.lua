@@ -41,7 +41,9 @@ return function(root, check)
 			end
 			local frame = { events = {}, scripts = {}, shown = true, name = name, parent = parent, template = template, attributes = {}, regions = {}, kind = kind,
 				-- A button takes the mouse until told not to. A plain frame does not.
-				mouse = kind == "Button" }
+				mouse = kind == "Button",
+				-- A frame starts in its parent's strata, one level above it. Creation order breaks a tie, the later on top.
+				strata = parent and parent.strata or "MEDIUM", level = (parent and parent.level or 0) + 1, order = #frames + 1 }
 			function frame:SetAttribute(key, value) self.attributes[key] = value end
 			function frame:GetAttribute(key) return self.attributes[key] end
 			function frame:RegisterForClicks(...) self.clicks = { ... } end
@@ -71,8 +73,10 @@ return function(root, check)
 			function frame:SetPoint(...) check_anchor(...); self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end
 			function frame:GetPoint(index) local point = self.points and self.points[index or 1]; if point then return unpack(point) end end
 			function frame:ClearAllPoints() self.point, self.points = nil, {} end
-			function frame:SetFrameStrata() end
-			function frame:SetFrameLevel() end
+			function frame:SetFrameStrata(strata) self.strata = strata end
+			function frame:SetFrameLevel(level) self.level = level end
+			function frame:GetFrameLevel() return self.level end
+			function frame:GetFrameStrata() return self.strata end
 			function frame:SetClampedToScreen() end
 			function frame:SetClipsChildren(enabled) self.clips = enabled and true or false end
 			function frame:SetAllPoints(target) self.all_points = target or true end
@@ -149,7 +153,10 @@ return function(root, check)
 				self.regions[#self.regions + 1] = label
 				return label
 			end
-			function frame:SetParent(next_parent) self.parent = next_parent end
+			function frame:SetParent(next_parent)
+				self.parent = next_parent
+				if next_parent then self.strata, self.level = next_parent.strata or self.strata, (next_parent.level or 0) + 1 end
+			end
 			local guarded_methods = { "SetAttribute", "SetPoint", "ClearAllPoints", "SetScale", "SetSize", "Hide", "Show", "SetParent", "SetScript" }
 			for method_index = 1, #guarded_methods do
 				local method = guarded_methods[method_index]

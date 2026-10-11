@@ -128,6 +128,51 @@ local function visible(region)
 	return true
 end
 
+local STRATA = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5, FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
+
+-- Every frame that takes the mouse at a point, the one that gets it first: a shown frame with the mouse
+-- enabled, whose rectangle (as its hit insets leave it) holds the point and that no clipping ancestor has
+-- cut off there. Higher strata go first, then higher levels, then later creation. Alpha does not matter:
+-- a faded frame still takes the mouse. A frame with the mouse off is never in the list.
+function layout.hits(frames, x, y)
+	local measure = layout.new()
+	local function holds(frame)
+		local rect = measure.rectangle(frame)
+		local inset = frame.hit_insets or {}
+		-- A positive inset pulls the edge in, a negative one pushes it out, as SetHitRectInsets does.
+		local left, right, top, bottom = rect.left + (inset[1] or 0), rect.right - (inset[2] or 0), rect.top + (inset[3] or 0), rect.bottom - (inset[4] or 0)
+		return rect.width > 0 and rect.height > 0 and x >= left and x < right and y >= top and y < bottom
+	end
+	local found = {}
+	for _, frame in ipairs(frames) do
+		if frame.mouse == true and visible(frame) and holds(frame) then
+			local cut, walker = false, frame.parent
+			while walker do
+				if (walker.clips or walker.scroll_child) and not holds(walker) then cut = true end
+				walker = walker.parent
+			end
+			if not cut then found[#found + 1] = frame end
+		end
+	end
+	table.sort(found, function(a, b)
+		if a.strata ~= b.strata then return (STRATA[a.strata] or 3) > (STRATA[b.strata] or 3) end
+		if a.level ~= b.level then return a.level > b.level end
+		return (a.order or 0) > (b.order or 0)
+	end)
+	return found
+end
+
+-- The frame that gets the mouse at a point, or nil.
+function layout.hit(frames, x, y)
+	return layout.hits(frames, x, y)[1]
+end
+
+-- The middle of a frame, where a person would press it.
+function layout.center(frame)
+	local rect = layout.new().rectangle(frame)
+	return rect.left + rect.width / 2, rect.top + rect.height / 2
+end
+
 local function children(frame)
 	local list = {}
 	for _, region in ipairs(frame.regions or {}) do list[#list + 1] = region end
