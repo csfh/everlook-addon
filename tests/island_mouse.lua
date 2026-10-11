@@ -44,7 +44,7 @@ return function(root, check, island_world, quest_world)
 	end
 
 	local function open_world(how)
-		local addon, env, _, _, _, _, frames = quest_world()
+		local addon, env, _, _, afters, _, frames = quest_world()
 		addon.module.set("smart_island", "quest_context", true)
 		addon.module.set("smart_island", "quest_plan", true)
 		addon.module.set("smart_island", "reduced_motion", how.reduced)
@@ -64,7 +64,7 @@ return function(root, check, island_world, quest_world)
 			env.everlook_smart_island_key("down")
 		end
 		layout.settle(frames)
-		return addon, env, frames
+		return addon, env, frames, afters
 	end
 
 	do
@@ -107,7 +107,7 @@ return function(root, check, island_world, quest_world)
 	end
 
 	do
-		local addon, env, frames = open_world({ reduced = true, click = true })
+		local addon, env, frames, afters = open_world({ reduced = true, click = true })
 		local lines = {}
 		env.print = function(...)
 			local parts = {}
@@ -115,7 +115,13 @@ return function(root, check, island_world, quest_world)
 			lines[#lines + 1] = table.concat(parts, " ")
 		end
 		local ran, err = pcall(env.SlashCmdList.EVERLOOKISLANDMOUSE, "")
-		check("/islandmouse reports the island's state without an error" .. (ran and "" or ": " .. tostring(err)), ran and #lines >= 3 and lines[1]:find("mode open", 1, true) ~= nil)
+		check("/islandmouse starts without an error and asks for the pointer" .. (ran and "" or ": " .. tostring(err)), ran and lines[1] and lines[1]:find("hover the control now", 1, true) ~= nil)
+		-- Three seconds on, it reports what the game says, and keeps the report for the saved variables.
+		for _, after in ipairs(afters) do
+			if after.delay == 3 and not after.done then after.done = true; after.callback() end
+		end
+		local report = env.EverlookDB and env.EverlookDB.island_mouse
+		check("then it writes its report where it can be read after a reload", report ~= nil and report.lines[1]:find("mode open", 1, true) ~= nil and #report.lines >= 3)
 		ran, err = pcall(env.SlashCmdList.EVERLOOKISLANDMOUSE, "click")
 		check("and /islandmouse click presses the link without an error" .. (ran and "" or ": " .. tostring(err)), ran)
 	end

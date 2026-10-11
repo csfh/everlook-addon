@@ -2724,19 +2724,29 @@ end
 SLASH_EVERLOOKISLANDMOUSE1 = "/islandmouse"
 SlashCmdList = SlashCmdList or {}
 SlashCmdList.EVERLOOKISLANDMOUSE = function(argument)
-	-- A missing method gives no value at all, which tostring refuses.
+	-- A missing method gives no value at all, which tostring refuses, and a restricted frame raises an error
+	-- when it is measured, so every read goes through here.
 	local function str(...) return tostring((...)) end
+	local function try(target, method, ...)
+		if type(target) ~= "table" or type(target[method]) ~= "function" then return nil end
+		local results = { pcall(target[method], target, ...) }
+		if not results[1] then return nil end
+		return unpack(results, 2)
+	end
 	local function rect_of(target)
-		local left, bottom, width, height = call(target, "GetRect")
+		local left, bottom, width, height = try(target, "GetRect")
 		if type(left) ~= "number" then return "no rect" end
 		return string.format("%d,%d %dx%d", left, bottom, width, height)
 	end
+	local function name_of(target)
+		return str(try(target, "GetDebugName") or try(target, "GetName") or try(target, "GetObjectType") or "?")
+	end
 	local function describe(target)
 		if not target then return "nothing" end
-		local text = str(call(target, "GetDebugName") or call(target, "GetName") or call(target, "GetObjectType") or "?")
-		return text .. " L" .. str(call(target, "GetFrameLevel")) .. " " .. str(call(target, "GetFrameStrata"))
-			.. " click=" .. str(call(target, "IsMouseClickEnabled")) .. " motion=" .. str(call(target, "IsMouseMotionEnabled"))
-			.. " visible=" .. str(call(target, "IsVisible")) .. " alpha=" .. str(call(target, "GetEffectiveAlpha"))
+		return name_of(target) .. " L" .. str(try(target, "GetFrameLevel")) .. " " .. str(try(target, "GetFrameStrata"))
+			.. " click=" .. str(try(target, "IsMouseClickEnabled")) .. " motion=" .. str(try(target, "IsMouseMotionEnabled"))
+			.. " visible=" .. str(try(target, "IsVisible")) .. " alpha=" .. str(try(target, "GetEffectiveAlpha"))
+			.. " scale=" .. str(try(target, "GetEffectiveScale")) .. " clips=" .. str(try(target, "DoesClipChildren"))
 			.. " rect " .. rect_of(target)
 	end
 	local link = _G.EverlookIslandClearHistory
@@ -2746,28 +2756,42 @@ SlashCmdList.EVERLOOKISLANDMOUSE = function(argument)
 		return
 	end
 	local read = island.view()
-	print("Everlook island: mode " .. tostring(read.mode) .. ", pinned " .. tostring(read.pinned) .. ", " .. tostring(read.shell and read.shell.width) .. " x " .. tostring(read.shell and read.shell.height))
-	print("Everlook island: Clear history is " .. describe(link))
+	local lines = {}
+	local function say(text) lines[#lines + 1] = text end
+	say("mode " .. tostring(read.mode) .. ", pinned " .. tostring(read.pinned) .. ", shell " .. tostring(read.shell and read.shell.width) .. " x " .. tostring(read.shell and read.shell.height))
+	say("Clear history is " .. describe(link))
 	print("Everlook island: hover the control now")
 	local function report()
 		local foci = _G.GetMouseFoci and _G.GetMouseFoci() or { _G.GetMouseFocus and _G.GetMouseFocus() or nil }
-		if #foci == 0 then print("Everlook island: the pointer is over nothing") end
-		for index = 1, math.min(#foci, 4) do print("Everlook island: gets the mouse " .. index .. ": " .. describe(foci[index])) end
-		-- Every mouse-enabled frame of the island whose area holds the pointer, wherever it ranks.
-		local listed = 0
+		if #foci == 0 then say("the pointer is over nothing") end
+		for index = 1, math.min(#foci, 4) do say("GETS THE MOUSE " .. index .. ": " .. describe(foci[index])) end
+		say("hit insets of the island: " .. str(try(_G.EverlookSmartIsland, "GetHitRectInsets")))
+		-- Every mouse-enabled island frame whose area holds the pointer, wherever it ranks. Frames that are not
+		-- ours are never measured: Blizzard's restricted ones refuse it.
+		local held = {}
 		local frame = _G.EnumerateFrames and _G.EnumerateFrames()
-		while frame and listed < 10 do
-			local forbidden = call(frame, "IsForbidden")
-			if not forbidden and call(frame, "IsMouseEnabled") and call(frame, "IsMouseOver") then
-				local name = str(call(frame, "GetDebugName"))
-				if name:find("Everlook", 1, true) then
-					listed = listed + 1
-					print("Everlook island: pointer is inside " .. describe(frame))
-				end
+		while frame do
+			local name = name_of(frame)
+			if name:find("Everlook", 1, true) and not try(frame, "IsForbidden") and try(frame, "IsMouseEnabled") and try(frame, "IsMouseOver") then
+				held[#held + 1] = frame
 			end
 			frame = _G.EnumerateFrames(frame)
 		end
-		print("Everlook island: " .. listed .. " island frames hold the pointer")
+		table.sort(held, function(left, right) return (try(left, "GetFrameLevel") or 0) > (try(right, "GetFrameLevel") or 0) end)
+		say(#held .. " island frames hold the pointer, highest level first")
+		for _, held_frame in ipairs(held) do say("INSIDE " .. describe(held_frame)) end
+		-- The ancestors of the highest one, which is the button the pointer is on.
+		local walker = held[1] and try(held[1], "GetParent")
+		local depth = 0
+		while walker and depth < 8 do
+			say("ABOVE " .. describe(walker) .. " hit insets " .. str(try(walker, "GetHitRectInsets")))
+			walker = try(walker, "GetParent")
+			depth = depth + 1
+		end
+		EverlookDB = EverlookDB or {}
+		EverlookDB.island_mouse = { when = date and date("%Y-%m-%d %H:%M:%S") or "?", lines = lines }
+		print("Everlook island: report of " .. #lines .. " lines saved; type /reload to write it to disk")
+		for index = 1, math.min(#lines, 6) do print("Everlook island: " .. lines[index]) end
 	end
 	if C_Timer and C_Timer.After then C_Timer.After(3, report) else report() end
 end
