@@ -1678,6 +1678,7 @@ return function(root, check)
 	local canvas = {}
 	local canvas_requests, opened = 0, nil
 	addon2.collected = { page = function() canvas_requests = canvas_requests + 1; return canvas end }
+	addon2.sched = { frame = {}, page = function() return addon2.sched.frame end }
 	local scanned = 0
 	addon2.scan = { now = function() scanned = scanned + 1 end }
 	env2.Settings = {
@@ -1742,7 +1743,8 @@ return function(root, check)
 	local subpage_names = {}
 	for index = 1, #subpages do subpage_names[index] = subpages[index].name end
 	check("each subject gets its own subpage on the left", table.concat(subpage_names, ",") == "Quests,Vendors,Loot and mail,Social,Chat,Tooltips,Map,Interface,Smart island,Radial menu")
-	check("collected data is a subpage that hosts the browser frame", #canvas_pages == 1 and canvas_pages[1].name == "Collected data" and canvas_pages[1].frame == canvas and canvas_requests == 1)
+	check("collected data is a subpage that hosts the browser frame", #canvas_pages == 2 and canvas_pages[1].name == "Collected data" and canvas_pages[1].frame == canvas and canvas_requests == 1)
+	check("performance is a subpage after it and hosts the scheduler's frame", canvas_pages[2].name == "Performance" and canvas_pages[2].frame == addon2.sched.frame)
 	local count, expected = 0, 0
 	for _ in pairs(registered) do count = count + 1 end
 	for _, module in ipairs(addon2.module.modules) do

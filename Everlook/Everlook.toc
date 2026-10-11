@@ -31,5 +31,6 @@ sign.lua
 links.lua
 module.lua
 collected.lua
+sched_page.lua
 settings.lua
 minimap.lua

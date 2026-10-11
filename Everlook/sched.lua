@@ -37,6 +37,11 @@ local runnable = {}
 local turn = 0
 local frame
 
+-- The time the last frames spent on tasks, newest last, for the settings page.
+local HISTORY = 60
+local history = {}
+local history_at = 0
+
 local function clock()
 	if type(debugprofilestop) == "function" then
 		return debugprofilestop()
@@ -91,6 +96,7 @@ local function any_active()
 end
 
 local function wake(task)
+	task.resting = false
 	task.active = true
 	task.woken = true
 	task.asleep_until = 0
@@ -119,6 +125,7 @@ local function run_step(task, limit_ms)
 			task.failed = 0
 			local t = now()
 			if t then
+				task.resting = true
 				task.asleep_until = t + ERROR_REST
 			else
 				task.active = false
@@ -127,6 +134,7 @@ local function run_step(task, limit_ms)
 		return
 	end
 	task.failed = 0
+	task.resting = false
 	if more == true then
 		return
 	end
@@ -208,6 +216,10 @@ function M.tick()
 			limit = left / (total - index + 1)
 		end
 		run_step(runnable[index], limit)
+	end
+	if began and total > 0 then
+		history_at = history_at % HISTORY + 1
+		history[history_at] = clock() - began
 	end
 	if frame and not any_active() then
 		frame:Hide()
@@ -324,4 +336,51 @@ function M.defer(key, fn, ...)
 		waiting[key] = job
 	end
 	deferred.wake()
+end
+
+-- What the settings page draws: the budget, the frame rate, each task and how
+-- it is doing, and the time the last frames spent. Read only, and cheap enough
+-- to ask for several times a second.
+function M.snapshot()
+	local t = now() or 0
+	local combat = in_combat()
+	local rows = {}
+	for index = 1, #tasks do
+		local task = tasks[index]
+		local s = task.stats
+		local state = "idle"
+		if task.active then
+			if task.asleep_until > t then
+				state = task.resting and "resting" or "sleeping"
+			elseif combat and task.combat == "pause" then
+				state = "paused"
+			else
+				state = "working"
+			end
+		end
+		rows[#rows + 1] = {
+			name = task.name,
+			state = state,
+			combat = task.combat,
+			logout = task.logout,
+			runs = s.runs,
+			ms = s.ms,
+			worst = s.worst,
+			errors = s.errors,
+			dropped = s.dropped,
+		}
+	end
+	local frames = {}
+	local count = #history
+	for offset = 1, count do
+		frames[offset] = history[(history_at - count + offset - 1) % count + 1]
+	end
+	return {
+		budget = M.budget(),
+		fps = type(GetFramerate) == "function" and GetFramerate() or nil,
+		combat = combat,
+		queued = last - first + 1,
+		tasks = rows,
+		frames = frames,
+	}
 end

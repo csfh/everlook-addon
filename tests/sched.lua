@@ -361,4 +361,124 @@ return function(root, check)
 		check("with no clock each task does one piece a frame", a.done == 1 and b.done == 1)
 		check("and flush still finishes", sched.flush(100) == true and a.left == 0)
 	end
+
+	-- What the settings page reads.
+	do
+		local sched, game = load()
+		local a = worker(sched, game, "a", 100000, 0.25, { combat = "run" })
+		local b = worker(sched, game, "b", 1, 0.1)
+		local napper = sched.task("napper", { step = function() return 10 end })
+		napper.wake()
+		local idle = sched.task("idle", { step = function() return false end })
+		game.time = 100
+		local seen = sched.snapshot()
+		local by_name = {}
+		for _, row in ipairs(seen.tasks) do
+			by_name[row.name] = row
+		end
+		check("a snapshot names the budget and the frame rate", seen.budget == 1.5 and seen.fps == 60 and seen.combat == false)
+		check("a task with work is working, one without is idle", by_name.a.state == "working" and by_name.idle.state == "idle")
+		sched.tick()
+		sched.tick()
+		seen = sched.snapshot()
+		by_name = {}
+		for _, row in ipairs(seen.tasks) do
+			by_name[row.name] = row
+		end
+		check("a task that asked for a pause is sleeping", by_name.napper.state == "sleeping")
+		check("each frame with work is in the history, newest last", #seen.frames == 2 and seen.frames[2] > 0)
+		game.combat = true
+		sched.tick()
+		seen = sched.snapshot()
+		check("a task that waits out combat says so", seen.combat == true and seen.tasks[1].state == "working" and seen.tasks[2].state == "idle")
+		local waiting = worker(sched, game, "waiting", 5, 0.1)
+		check("and a paused one is paused", sched.snapshot().tasks[5].state == "paused")
+		game.combat = false
+		for _ = 1, 70 do
+			sched.tick()
+		end
+		check("the history keeps the last sixty frames", #sched.snapshot().frames == 60)
+	end
+	do
+		local sched, game = load()
+		local handle = sched.task("broken", { step = function() error("boom") end })
+		handle.wake()
+		for _ = 1, 3 do
+			sched.tick()
+		end
+		check("a task that rests after errors says so", sched.snapshot().tasks[1].state == "resting")
+		sched.defer(nil, function() end)
+		check("the snapshot counts the jobs waiting", sched.snapshot().queued == 1)
+	end
+
+	-- The Performance page.
+	do
+		local sched, game = load()
+		local made = {}
+		local function widget(kind)
+			local item = { kind = kind, shown = true, text = "", scripts = {} }
+			return setmetatable(item, { __index = function(_, name)
+				if name == "CreateFontString" or name == "CreateTexture" then
+					return function()
+						local child = widget(name == "CreateFontString" and "font" or "texture")
+						made[#made + 1] = child
+						return child
+					end
+				end
+				return function(self, ...)
+					if name == "SetText" then
+						self.text = ...
+					elseif name == "SetScript" then
+						self.scripts[(...)] = select(2, ...)
+					elseif name == "SetHeight" then
+						self.height = ...
+					elseif name == "Show" then
+						self.shown = true
+					elseif name == "Hide" then
+						self.shown = false
+					end
+				end
+			end })
+		end
+		local env = setmetatable({}, { __index = _G })
+		env._G = env
+		env.GetFramerate = function() return 60 end
+		env.CreateFrame = function(_, name)
+			local item = widget("frame")
+			item.name = name
+			made[#made + 1] = item
+			return item
+		end
+		local Everlook = { sched = sched }
+		local chunk = assert(loadfile(source("sched_page.lua")))
+		setfenv(chunk, env)
+		chunk("Everlook", Everlook)
+		local page = sched.page()
+		check("the page is one plain frame", page.name == "EverlookPerformancePage" and sched.page() == page)
+		local before = #made
+		check("it builds nothing until it is shown", before == 1)
+		local worker_state = worker(sched, game, "segments", 100000, 0.25)
+		sched.tick()
+		page.scripts.OnShow(page)
+		local lines = {}
+		for _, item in ipairs(made) do
+			if item.kind == "font" and item.text ~= "" then
+				lines[#lines + 1] = item.text
+			end
+		end
+		local joined = table.concat(lines, "\n")
+		check("it names the budget and each task in words", joined:find("1.5 ms", 1, true) and joined:find("World data", 1, true) and joined:find("Working", 1, true))
+		check("it shows the frame that ran", (function()
+			for _, item in ipairs(made) do
+				local height = rawget(item, "height")
+				if item.kind == "texture" and item.shown and type(height) == "number" and height > 1 then
+					return true
+				end
+			end
+		end)())
+		check("it refreshes while shown and stops when hidden", page.scripts.OnUpdate ~= nil)
+		page.scripts.OnUpdate(page, 0.3)
+		page.scripts.OnHide(page)
+		check("nothing reads the scheduler once it is hidden", page.scripts.OnUpdate == nil)
+	end
 end
