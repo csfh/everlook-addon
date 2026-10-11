@@ -7,7 +7,7 @@ return function(root, check, island_world)
 		local addon, env, event, state, afters, tickers, frames = island_world()
 		addon.module.set("smart_island", "enabled", true)
 		addon.module.set("smart_island", "reduced_motion", true)
-		return addon, env, state, frames
+		return addon, env, state, frames, afters
 	end
 
 	local function status(overrides)
@@ -111,5 +111,75 @@ return function(root, check, island_world)
 		check("a capsule that asks to hold a width is that wide", addon.smart_island.view().width == 320)
 		api.notify(status({ key = "narrow", capsule = { text = "x" } }))
 		check("one that does not is as wide as its words need", addon.smart_island.view().width < 100)
+	end
+
+	-- A background status holds the capsule and nothing else.
+	do
+		local addon, env, state, frames, afters = world()
+		local api = env.Everlook.island
+		local function background(overrides)
+			local spec = { source = "MyAddon", key = "quest", text = "Excavation", detail = "~885 yd", presentation = "status", rank = "background",
+				capsule = { icon = "quest", text = "Excavation", labels = { "~885 yd" } } }
+			for name, value in pairs(overrides or {}) do
+				if value == false then spec[name] = nil else spec[name] = value end
+			end
+			return spec
+		end
+		local function rejected(label, spec)
+			local handle, why = api.notify(spec)
+			check("a background status is rejected: " .. label .. " (" .. tostring(why) .. ")", handle == nil and why == "invalid_rank")
+		end
+		rejected("with a rank that does not exist", background({ rank = "loud" }))
+		rejected("on a toast", background({ presentation = "toast", capsule = false }))
+		rejected("without a capsule to show", background({ capsule = false }))
+
+		local handle = api.notify(background())
+		local function region(text)
+			for _, frame in ipairs(frames) do
+				local visible, walker = true, frame
+				while walker do
+					if walker.shown == false or (walker.alpha or 1) == 0 then visible = false end
+					walker = walker.parent
+				end
+				for _, found in ipairs(frame.regions or {}) do
+					if visible and found.text == text and found.shown ~= false then return found end
+				end
+			end
+		end
+		layout.settle(frames)
+		local view = addon.smart_island.view()
+		check("a background status shows on the capsule", type(handle) == "number" and region("Excavation") ~= nil and view.background and view.background.count == 1)
+		check("it is no status, no history row, no toast and not unread",
+			view.status == nil and #view.notices == 0 and #view.toasts == 0 and view.unread_count == 0)
+
+		-- The control: a normal status under the same clock does go, so a pass here means the clock ran.
+		local mortal = api.notify({ source = "MyAddon", key = "mortal", text = "Mortal", presentation = "status", capsule = { text = "Mortal" } })
+		state.time = state.time + 600
+		for _, after in ipairs(afters) do
+			if after.delay == 30 and not after.done then after.done = true; after.callback() end
+		end
+		layout.settle(frames)
+		check("a normal status leaves when its thirty seconds pass", type(mortal) == "number" and addon.smart_island.view().status == nil)
+		check("a background status stays through the same clock", addon.smart_island.view().background ~= nil and region("Excavation") ~= nil)
+
+		local status_handle = api.notify({ source = "MyAddon", key = "flight", text = "Flying", presentation = "status", capsule = { text = "Ratchet", icon = "flight" } })
+		layout.settle(frames)
+		check("a real status takes the capsule while it lasts", region("Ratchet") ~= nil and region("Excavation") == nil and addon.smart_island.view().background ~= nil)
+		api.dismiss(status_handle)
+		layout.settle(frames)
+		check("and when it is dismissed the background status is back", region("Excavation") ~= nil and region("Ratchet") == nil)
+
+		for index = 1, 12 do api.notify({ source = "MyAddon", key = "s" .. index, text = "Status " .. index, presentation = "status", capsule = { text = "S" .. index } }) end
+		for index = 1, 12 do api.dismiss(addon.smart_island.view().status and addon.smart_island.view().status.id or 0) end
+		check("a pile of statuses does not push it out", addon.smart_island.view().background ~= nil)
+
+		local again = api.update(handle, { detail = "~700 yd" })
+		check("an update keeps its handle and its rank", again == handle and addon.smart_island.view().background.count == 1 and #addon.smart_island.view().notices == 0)
+		check("dismissing it clears the capsule", api.dismiss(handle) == true and addon.smart_island.view().background == nil)
+
+		api.notify(background())
+		addon.module.set("smart_island", "enabled", false)
+		addon.module.set("smart_island", "enabled", true)
+		check("turning the island off clears it", addon.smart_island.view().background == nil)
 	end
 end

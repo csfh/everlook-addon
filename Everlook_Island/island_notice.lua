@@ -71,6 +71,12 @@ function notice.read(payload, default_duration)
 	if type(presentation) ~= "string" or not PRESENTATIONS[presentation] then return nil, "invalid_presentation" end
 	local compact, runs, compact_reason = capsule.read(payload, presentation)
 	if compact_reason then return nil, compact_reason end
+	-- A background status holds the capsule until something with more to say takes it. It needs a capsule to show.
+	local rank = payload.rank
+	if issecretvalue and issecretvalue(rank) then return nil, "invalid_rank" end
+	if rank ~= nil and rank ~= "normal" and rank ~= "background" then return nil, "invalid_rank" end
+	if rank == "background" and (presentation ~= "status" or compact == nil) then return nil, "invalid_rank" end
+	if rank == "normal" then rank = nil end
 	if presentation == "status" and payload.source == nil then return nil, "invalid_status_source" end
 	if presentation == "status" and key == nil then return nil, "invalid_status_key" end
 	if detail ~= nil and not plain_string(detail, 512) then return nil, "invalid_detail" end
@@ -83,6 +89,6 @@ function notice.read(payload, default_duration)
 	return {
 		text = text, source = source, kind = kind, key = key, duration = duration, persist = persist, stack = stack,
 		severity = severity, detail = detail, icon = icon, money = money, progress = progress, presentation = presentation,
-		compact = compact, runs = runs, spec = spec,
+		compact = compact, runs = runs, spec = spec, rank = rank,
 	}
 end

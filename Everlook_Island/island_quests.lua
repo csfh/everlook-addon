@@ -1,5 +1,4 @@
 local Everlook = Everlook
-local island_row = Everlook.island_row
 
 -- Private quest context for Smart island. This observes the native log; it
 -- never changes tracking, accepts quests or drives navigation.
@@ -383,28 +382,6 @@ function quests.title(id)
 	return record and record.title or nil
 end
 
-function quests.present(request)
-	local view = quests.view()
-	local status = request and request.status
-	local closed = request and request.closed
-	local wide = Everlook.module.get("smart_island", "quest_title")
-	local quest = not status and view and view.current
-	local capsule_w, capsule_h = quests.capsule(view, closed and not status, wide == true, request and request.available, request and request.badge, request and request.reserve)
-	local tooltip
-	if status then
-		tooltip = status.text .. (status.detail and "\n" .. status.detail or "")
-	elseif quest then
-		tooltip = quest.title .. "\n" .. quests.distance_text(quest)
-	end
-	return {
-		quest = quest,
-		capsule_w = capsule_w,
-		capsule_h = capsule_h,
-		tooltip = tooltip,
-		status_closed = status and closed and true or false,
-	}
-end
-
 -- A short mark for the once-a-second island tick. The closed chip cares about
 -- the quest it is showing. The open list also cares that a full scan ran.
 function quests.pulse(full)
@@ -461,29 +438,6 @@ end
 local function call(object, method, ...)
 	local fn = object and object[method]
 	if type(fn) == "function" then return fn(object, ...) end
-end
-
-function quests.aim()
-	if not ui then return end
-	stats.aim = stats.aim + 1
-	local current = options.enabled and context()
-	local angle = current and quests.direction(current.id)
-	ui.angle = angle
-	ui.row:aim(angle)
-end
-
--- Ten updates a second turn the arrow smoothly enough and halve the map calls.
-local AIM_INTERVAL = 0.1
-
-local function follow(frame)
-	local wait = 0
-	call(frame, "SetScript", "OnUpdate", function(_, elapsed)
-		if not number(elapsed) then return end
-		wait = wait + elapsed
-		if wait < AIM_INTERVAL then return end
-		wait = 0
-		quests.aim()
-	end)
 end
 
 function quests.distance_text(record)
@@ -634,11 +588,6 @@ end
 function quests.ensure_ui(adapter)
 	if ui then return end
 	ui = { adapter = adapter }
-	ui.capsule = CreateFrame("Frame", "EverlookIslandQuestCapsule", adapter.root)
-	call(ui.capsule, "EnableMouse", false)
-	call(ui.capsule, "SetPoint", "TOPLEFT", adapter.root, "TOPLEFT", 0, 0)
-	ui.row = island_row.new(ui.capsule, { label = adapter.label, rings = adapter.rings, ring_size = adapter.space.capsule_ring })
-	follow(ui.capsule)
 end
 
 -- How far a quest is: all of it when it can be handed in, otherwise the average
@@ -650,32 +599,6 @@ function quests.progress(current)
 		if type(objective.progress) == "number" then total, count = total + objective.progress, count + 1 end
 	end
 	if count > 0 then return total / count end
-end
-
-function quests.capsule(view, visible, wide, available, badge, reserve)
-	if not ui then return end
-	local current = view and view.current
-	call(ui.capsule, visible and current and "Show" or "Hide")
-	if not current then quests.aim(); return end
-	local tones = ui.adapter.tones
-	local fraction = wide and quests.progress(current)
-	-- A closed pill without the title is just the arrow and the distance.
-	ui.row:set({
-		icon = "quest",
-		arrow = ui.angle,
-		title = wide and current.title or nil,
-		ring = fraction and { fraction = fraction, tone = current.ready and tones.success or tones.quest } or nil,
-		labels = current.distance and { quests.distance_text(current) } or {},
-		badge = badge,
-	}, reserve)
-	local badge_width = ui.row:part_width("badge") > 0 and ui.row:part_width("badge") + island_row.space.gap or 0
-	reserve = reserve or 0
-	local distance_width = ui.row:part_width(1)
-	local width = math.min(available, wide and 300 + badge_width + reserve or math.max(64, distance_width + 45 + badge_width + reserve))
-	local height = wide and 36 or 28
-	call(ui.capsule, "SetSize", width, height)
-	quests.aim()
-	return width, height
 end
 
 -- The game's own objective text usually carries its count ("0/1 Rifle"). Add
@@ -756,9 +679,40 @@ local function plan_section(view)
 	return { source = SOURCE, key = "plan", region = "pane_a", order = 20, title = "Next up", blocks = blocks }
 end
 
+-- The quest on the closed capsule: a background status, so any other status takes the capsule while it lasts. It is the
+-- arrow to the quest, the quest's mark where there is no direction, and with its title on show, the title and a ring
+-- for how far along it is. After them come the distance, the level and the experience percent.
+local function capsule_notice(view)
+	local current = view.current
+	if not current then return nil end
+	local wide = Everlook.module.get("smart_island", "quest_title") == true
+	local fraction = wide and quests.progress(current)
+	local level, experience = ui.adapter.badge()
+	local labels = {}
+	if current.distance then labels[#labels + 1] = quests.distance_text(current) end
+	if level then labels[#labels + 1] = { text = level, tone = "primary" } end
+	if experience then labels[#labels + 1] = { text = experience, tone = "accent" } end
+	local id = current.id
+	return {
+		source = SOURCE, key = "capsule", kind = "quest", text = plain(current.title, 512), detail = quests.distance_text(current),
+		presentation = "status", rank = "background",
+		capsule = {
+			icon = "quest", arrow = function() return options.enabled and quests.direction(id) or nil end,
+			text = wide and plain(current.title, 64) or nil,
+			ring = fraction and { fraction = fraction, tone = current.ready and "success" or "gold" } or nil,
+			labels = labels, min_width = wide and 300 or nil,
+		},
+	}
+end
+
 -- A short key for what the two sections would say, so a second with the same words pushes nothing.
-local function signature(view, card, plan)
+local function signature(view, card, plan, capsule)
 	local parts = { tostring(view and view.pinned), tostring(view and view.reason) }
+	if capsule then
+		parts[#parts + 1] = capsule.text .. "\0" .. capsule.detail .. "\0" .. tostring(capsule.capsule.text) .. "\0" .. tostring(capsule.capsule.min_width)
+		parts[#parts + 1] = tostring(capsule.capsule.ring and capsule.capsule.ring.fraction) .. tostring(capsule.capsule.ring and capsule.capsule.ring.tone)
+		for _, label in ipairs(capsule.capsule.labels) do parts[#parts + 1] = type(label) == "table" and label.text or label end
+	end
 	local function add(section)
 		for _, block in ipairs(section and section.blocks or {}) do
 			parts[#parts + 1] = block.kind
@@ -780,19 +734,26 @@ function quests.push()
 	if not ui or not api or type(api.section) ~= "function" then return false end
 	local view = options.enabled and quests.view() or nil
 	local wanted = view and (view.current or #quests.route(view) > 0)
-	local card, plan
-	if wanted then card, plan = card_section(view), plan_section(view) end
-	local current = signature(view, card, plan) .. (wanted and "1" or "0")
+	local card, plan, capsule
+	if wanted then card, plan, capsule = card_section(view), plan_section(view), capsule_notice(view) end
+	local current = signature(view, card, plan, capsule) .. (wanted and "1" or "0")
 	if current == pushed_signature then return false end
 	pushed_signature = current
-	for key, section in pairs({ card = card, plan = plan }) do
-		if section then ui[key] = api.section(section) end
+	local wanted_sections = { card = card, plan = plan }
+	for key, section in pairs(wanted_sections) do
+		ui[key] = api.section(section)
 	end
 	for _, key in ipairs({ "card", "plan" }) do
-		if ui[key] and not ({ card = card, plan = plan })[key] then
+		if ui[key] and not wanted_sections[key] then
 			api.dismiss(ui[key])
 			ui[key] = nil
 		end
+	end
+	if capsule then
+		ui.capsule = api.notify(capsule)
+	elseif ui.capsule then
+		api.dismiss(ui.capsule)
+		ui.capsule = nil
 	end
 	return true
 end

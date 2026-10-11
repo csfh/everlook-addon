@@ -441,5 +441,7 @@ function capsule.layout(spec, measure, ceiling, reserve)
 	local width = Everlook.island_row.natural_width(row, measured, 14, reserve)
 	if type(spec.min_width) == "number" then width = math.max(width, spec.min_width + (reserve or 0)) end
 	width = math.max(NARROWEST, math.min(math.max(NARROWEST, limit), width))
-	return { width = width, height = HEIGHT, row = row }
+	-- An even width keeps the capsule's centre, and so everything in it, on whole pixels.
+	width = math.ceil(width / 2) * 2
+	return { width = width, height = HEIGHT, row = row, reserve = reserve or 0 }
 end

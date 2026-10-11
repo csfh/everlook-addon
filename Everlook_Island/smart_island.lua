@@ -95,6 +95,8 @@ local island_inbox = Everlook.island_inbox
 local island_toasts = Everlook.island_toasts
 local shell = { quest_offset = 0, quest_height = 0, stats = Everlook.island_stats, scroll_api = Everlook.island_scroll, width = CLOSED_W, height = CLOSED_H, from_w = CLOSED_W, to_w = CLOSED_W, from_h = CLOSED_H, to_h = CLOSED_H }
 local resting_slots = {}
+-- Background statuses: they hold the capsule when nothing with more to say does, and are never history, a toast or timed.
+shell.backgrounds = {}
 -- The open summary spaces everything from these steps. A gap inside a group is
 -- `within`, a gap between siblings `near`, and a gap between groups `section`,
 -- which is at least twice the one inside. `edge` is the inset the rows below share.
@@ -619,9 +621,18 @@ local batch_depth, batch_changed = 0, false
 
 local function sections_changed()
 	if batch_depth > 0 then
-		batch_changed = true
+		if opened() then batch_changed = true end
 	elseif opened() then
 		paint("section")
+	end
+end
+
+-- Something on the closed capsule changed, which shows whether or not the island is open.
+local function capsule_changed()
+	if batch_depth > 0 then
+		batch_changed = true
+	else
+		paint("capsule")
 	end
 end
 
@@ -632,7 +643,7 @@ local function in_batch(work)
 	if not ok then error(result, 0) end
 	if batch_depth == 0 and batch_changed then
 		batch_changed = false
-		sections_changed()
+		paint("section")
 	end
 	return result
 end
@@ -658,6 +669,8 @@ function island.view()
 	return {
 		mode = mode(),
 		sections = sections.count(),
+		background = shell.backgrounds[#shell.backgrounds] and { source = shell.backgrounds[#shell.backgrounds].source, key = shell.backgrounds[#shell.backgrounds].key,
+			text = shell.backgrounds[#shell.backgrounds].text, count = #shell.backgrounds } or nil,
 		quests = quest_context.view(true),
 		pinned = pinned == true,
 		hovering = hovering == true,
@@ -1307,7 +1320,7 @@ end
 -- can each be drawn whole and faded against each other.
 local function place_slot(slot, layout, alpha)
 	if not slot then return end
-	slot.row:set(layout.row)
+	slot.row:set(layout.row, layout.reserve)
 	call(slot.frame, "SetAlpha", alpha)
 	call(slot.frame, "Show")
 end
@@ -1390,7 +1403,7 @@ shell.sample = function()
 	call(shell.face, "SetAlpha", 1 - alpha)
 	call(shell.face, "SetPoint", "TOP", resting, "TOP", 0, 0)
 	call(shell.face, "SetSize", motion.closed_w or CLOSED_W, motion.closed_h or CLOSED_H)
-	if not motion.quest and not motion.capsule then
+	if not motion.capsule then
 		local from_x = width / 2 + (motion.nudge or -4)
 		local from_y = -((motion.closed_h or CLOSED_H) / 2)
 		local title = shell.blocks_header and shell.blocks_header:first_title()
@@ -1411,12 +1424,12 @@ local function drive_shell(target_w, target_h, signature, layout, snap)
 	local same = shell.playing and shell.incoming == signature and shell.to_w == target_w and shell.to_h == target_h
 	if same and not snap then
 		local live = resting_slots[shell.fading and shell.incoming_slot or shell.front]
-		if live and layout then live.row:set(layout.row) end
+		if live and layout then live.row:set(layout.row, layout.reserve) end
 		return
 	end
 	if not snap and not shell.playing and signature == shell.signature and width_delta < 4 and height_delta < 4 then
 		local live = resting_slots[shell.front or 1]
-		if live and layout then live.row:set(layout.row) end
+		if live and layout then live.row:set(layout.row, layout.reserve) end
 		apply_visual(target_w, target_h)
 		return
 	end
@@ -1488,9 +1501,11 @@ paint = function(reason)
 	local list = visual_open and notices or {}
 	local width, height = CLOSED_W, CLOSED_H
 	local status = active_status()
-	local compact = status and status.capsule
+	-- With no status, a background status holds the capsule. A status without a capsule keeps it blank: it has the row.
+	local background = not status and shell.backgrounds[#shell.backgrounds] or nil
+	local compact = status and status.capsule or (background and background.capsule)
 	-- A status can carry its progress outside its capsule. The capsule shows it as a percent.
-	if compact and compact.progress == nil and type(status.progress) == "number" then
+	if status and compact and compact.progress == nil and type(status.progress) == "number" then
 		compact = compact_api.copy(compact)
 		compact.progress = status.progress
 	end
@@ -1504,25 +1519,19 @@ paint = function(reason)
 		call(unread_text, "SetText", tostring(unread))
 		reserve = math.ceil(call(unread_text, "GetStringWidth") or 8) + shell.space.near
 	end
-	local face = quest_context.present({
-		status = status, closed = now == "closed" or morphing, visual_open = visual_open,
-		available = available, content_width = (shell.panes(page_width, two)), badge = shell.badge_text(), reserve = reserve,
-	})
-	local quest = face.quest
-	local layout = compact and compact_api.layout(compact, measure_capsule, available) or nil
+	local layout = compact and compact_api.layout(compact, measure_capsule, available, background and reserve or 0) or nil
 	local closed_w, closed_h = CLOSED_W, CLOSED_H
 	local closed_line
-	if not quest and not layout and not status then closed_line, closed_w = shell.closed_view(available) end
-	if quest then
-		closed_w, closed_h = face.capsule_w or CLOSED_W, face.capsule_h or CLOSED_H
-	elseif layout then
+	if not layout and not status then closed_line, closed_w = shell.closed_view(available) end
+	if layout then
 		closed_w, closed_h = layout.width, layout.height
 	elseif status then
 		closed_w = 88
 	end
 	status_height = 0
 	-- The open island already shows what the tooltip would say.
-	root_hover.tooltip = not visual_open and face.tooltip or nil
+	local holder = status or background
+	root_hover.tooltip = not visual_open and holder and (holder.text .. (holder.detail and "\n" .. holder.detail or "")) or nil
 	call(shell.face, "SetPoint", "TOP", resting, "TOP", 0, 0)
 	call(shell.face, "SetSize", closed_w, closed_h)
 	local show_icon = status and not layout and (now == "closed" or morphing)
@@ -1557,14 +1566,14 @@ paint = function(reason)
 	show_label(empty_text, visual_open and #list == 0, "No notifications yet")
 	show_label(shell.empty_hint, visual_open and #list == 0, EMPTY_HINT)
 	call(unread_text, "ClearAllPoints")
-	call(unread_text, "SetPoint", "RIGHT", shell.face, "RIGHT", quest and -shell.space.edge or -5, 0)
-	show_label(unread_text, (now == "closed" or morphing) and not layout and unread_count() > 0, tostring(unread_count()))
+	call(unread_text, "SetPoint", "RIGHT", shell.face, "RIGHT", layout and -shell.space.edge or -5, 0)
+	show_label(unread_text, (now == "closed" or morphing) and (not layout or background ~= nil) and unread_count() > 0, tostring(unread_count()))
 	local unread_warning = false
 	for _, entry in ipairs(notices) do
 		if entry.unread and priority(entry) > 1 then unread_warning = true end
 	end
 	call(unread_text, "SetTextColor", unpack(unread_warning and COLORS.warning or COLORS.accent))
-	show_label(closed_text, (now == "closed" or morphing) and not quest and not layout, closed_line or island.format_level(readout.level))
+	show_label(closed_text, (now == "closed" or morphing) and not layout, closed_line or island.format_level(readout.level))
 	for index = 1, LIST_MAX do
 		local entry = list[index]
 		local node = history_nodes[index]
@@ -1579,7 +1588,7 @@ paint = function(reason)
 		clear_toasts()
 	end
 	if inspect_rows then inspect_rows() end
-	local signature = layout and compact_api.signature(status.capsule) or nil
+	local signature = layout and compact_api.signature(compact) or nil
 	if preview.land and not preview.motion then
 		preview.land = false
 		if now == "open" then
@@ -1592,7 +1601,6 @@ paint = function(reason)
 		local motion = preview.motion
 		motion.to_w, motion.to_h = width, height
 		motion.closed_w, motion.closed_h = closed_w, closed_h
-		motion.quest = quest and true or false
 		motion.capsule = layout and true or false
 		motion.nudge = status and not layout and 4 or -4
 		if not motion.sized then
@@ -1606,7 +1614,7 @@ paint = function(reason)
 	else
 		drive_shell(closed_w, closed_h, signature, layout, visual_open or changed or reason == "keyboard")
 	end
-	shell.sync_idle(now == "closed" and not morphing and not status and not quest and #active_toasts == 0 and unread_count() == 0)
+	shell.sync_idle(now == "closed" and not morphing and not status and not layout and #active_toasts == 0 and unread_count() == 0)
 end
 
 local function leave_open()
@@ -1743,6 +1751,22 @@ function island.notify(payload)
 	local persist, stack, severity, detail, icon = read.persist, read.stack, read.severity, read.detail, read.icon
 	local money, progress, presentation = read.money, read.progress, read.presentation
 	local compact, runs, spec = read.compact, read.runs, read.spec
+	-- A background status is only a capsule: it takes no part in history, toasts or timers.
+	if read.rank == "background" then
+		local held
+		for _, candidate in ipairs(shell.backgrounds) do
+			if candidate.source == source and candidate.key == key then held = candidate end
+		end
+		if not held then
+			next_notice_id = next_notice_id + 1
+			held = { id = next_notice_id, rank = "background", presentation = "status" }
+			shell.backgrounds[#shell.backgrounds + 1] = held
+		end
+		held.source, held.key, held.kind, held.text, held.detail, held.icon = source, key, kind, text, detail, icon
+		held.severity, held.duration, held.capsule, held.runs = severity, duration, compact, runs
+		capsule_changed()
+		return held.id
+	end
 	if opened() then
 		follow_end = scroll_offset >= content_height - scroll_height - 1
 		for _, node in ipairs(history_nodes) do
@@ -1858,6 +1882,9 @@ function island.dismiss(handle)
 		end
 	end
 	local removed = false
+	for index = #shell.backgrounds, 1, -1 do
+		if shell.backgrounds[index].id == handle then table.remove(shell.backgrounds, index); removed = true end
+	end
 	for index = #statuses, 1, -1 do
 		if statuses[index].id == handle then remove_status(statuses[index]); removed = true end
 	end
@@ -1882,7 +1909,7 @@ end
 -- notify returned, and changes the notice through these calls instead of
 -- building new notices or reaching into the Island's frames.
 local function find_notice(handle)
-	for _, list in ipairs({ notices, statuses, toast_queue, active_toasts }) do
+	for _, list in ipairs({ notices, statuses, toast_queue, active_toasts, shell.backgrounds }) do
 		for index = 1, #list do
 			if list[index].id == handle then return list[index] end
 		end
@@ -1903,7 +1930,7 @@ local function payload_of(entry)
 		severity = entry.severity, detail = entry.detail, icon = entry.icon, money = entry.money, progress = entry.progress,
 		presentation = entry.presentation, persist = entry.persist, stack = entry.stack, interaction = entry.interaction,
 		actions = #rows > 0 and rows or nil, item_id = entry.item_id, spell_id = entry.spell_id,
-		capsule = entry.capsule, runs = entry.runs,
+		capsule = entry.capsule, runs = entry.runs, rank = entry.rank,
 	}
 end
 
@@ -2137,6 +2164,7 @@ local function hide()
 	settle_preview(false)
 	for _, entry in ipairs(statuses) do entry.status_timer = nil end
 	statuses = {}
+	shell.backgrounds = {}
 	undo_state, close_token, scroll_anchor, follow_end = nil, nil, nil, nil
 	scroll_offset, scroll_height, content_height = 0, 0, 0
 	shell.quest_offset, shell.quest_height, shell.quest_shown = 0, 0, nil
@@ -2479,9 +2507,13 @@ local function ensure_frame()
 	preview_controls[#preview_controls + 1] = shell.scrollbar.thumb
 	shell.quest_scrollbar = shell.scroll_api.make(expanded, { name = "EverlookIslandQuestScrollThumb", scroll_to = island.scroll_quests, ratio = drag_ratio })
 	preview_controls[#preview_controls + 1] = shell.quest_scrollbar.thumb
-	quest_context.ensure_ui({ root = shell.face, label = make_label, space = shell.space,
-		tones = { primary = COLORS.primary, muted = COLORS.muted, success = COLORS.success, quest = shell.quest_color },
-		rings = { make = shell.make_ring, place = shell.place_ring, chain = shell.chain_ring, set = shell.set_ring, hide = shell.hide_ring }, pin = island.pin_quest })
+	quest_context.ensure_ui({ pin = island.pin_quest, space = shell.space,
+		-- The level, and the experience percent when the capsule shows it, for the quest on the capsule.
+		badge = function()
+			local level = island.format_level(readout.level)
+			if level == "" then return nil end
+			return level, module.get(id, "closed_xp") and readout.xp_text or nil
+		end })
 	local block_host = { label = make_label, visual = make_visual, link = shell.make_link, set_link_text = shell.set_control_text,
 		hover = function(target, node)
 			hover_target(target, node)
@@ -2614,8 +2646,8 @@ local function apply(enabled)
 			read_coords()
 			pushed = push_summary()
 		end
-		-- A push of the quest sections redraws the open island after the scan, so it covers the quest chip too.
-		local quests_pushed = refresh_quests(false) and open
+		-- A push of the quest sections and capsule redraws the island after the scan, whether it is open or closed.
+		local quests_pushed = refresh_quests(false)
 		pushed = quests_pushed or pushed
 		local minutes = open and notice_minutes(clock_now()) or painted.minutes
 		local quest_mark = nil

@@ -753,11 +753,13 @@ return function(root, check, island_world, quest_world, secret_stat)
 				end
 			end
 		end
-		check("the quest capsule carries the level as a badge, in white", label("|cfff5f7fa12|r") ~= nil)
-		local plain_width = addon.smart_island.view().width
+		local level = label("12")
+		check("the quest capsule carries the level after its distance, in white", level ~= nil and math.abs(level.color[1] - 245 / 255) < 0.01 and label("45%") == nil)
+		local held_width = addon.smart_island.view().width
 		addon.module.set("smart_island", "closed_xp", true)
-		check("and the experience percent in the bar's purple when the pill shows it", label("|cfff5f7fa12|r  |cffad76ef45%|r") ~= nil)
-		check("the capsule grows to make room", addon.smart_island.view().width > plain_width)
+		local percent = label("45%")
+		check("and the experience percent in the bar's purple when the pill shows it", percent ~= nil and math.abs(percent.color[1] - 173 / 255) < 0.01)
+		check("the capsule holds its width when a part is added", addon.smart_island.view().width == held_width)
 	end
 	do
 		local addon, _, _, _, _, _, frames = island_world()
@@ -834,7 +836,7 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local function badge_point()
 			for _, frame in ipairs(frames) do
 				for _, region in ipairs(frame.regions or {}) do
-					if region.text == "|cfff5f7fa12|r  |cffad76ef45%|r" and region.shown ~= false then return region.point end
+					if region.text == "45%" and region.shown ~= false then return region.point end
 				end
 			end
 		end
@@ -849,8 +851,8 @@ return function(root, check, island_world, quest_world, secret_stat)
 				end
 			end
 		end
-		local capsule, count = measure.rectangle(region_for("|cfff5f7fa12|r  |cffad76ef45%|r").parent), measure.rectangle(region_for("1"))
-		local badge = measure.rectangle(region_for("|cfff5f7fa12|r  |cffad76ef45%|r"))
+		local capsule, count = measure.rectangle(region_for("45%").parent), measure.rectangle(region_for("1"))
+		local badge = measure.rectangle(region_for("45%"))
 		check("the unread count sits on the same 12 inset as everything else, and the badge keeps 8 clear of it",
 			capsule.right - count.right == 12 and count.left - badge.right == 8)
 		local ring = measure.rectangle(region_for("~800 yd"))
@@ -960,10 +962,9 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local marked = layout({ text = "Flight", icon = "flight" }, measure, 280)
 		local counted = layout({ text = "Flight", progress = 0.4 }, measure, 280)
 		check("a capsule's width is its title plus the row's insets, and a mark adds its room, 64 at the least",
-			plain.width == math.max(64, 12 + 6 * 7 + 12) and marked.width == math.max(64, 34 + 6 * 7 + 12)
-			and counted.width == math.max(64, 12 + 6 * 7 + 12 + 12 + 3 * 7))
-		check("a capsule is at most 280 wide unless it asks to hold a width", layout({ text = string.rep("x", 100) }, measure, 400).width == 280
-			and layout({ text = "x", min_width = 320 }, measure, 400).width == 320)
+			plain.width == 66 and marked.width == 88 and counted.width == 100)
+		check("a capsule is at most 280 wide unless it asks to hold a width, and its width is even", layout({ text = string.rep("x", 100) }, measure, 400).width == 280
+			and layout({ text = "x", min_width = 320 }, measure, 400).width == 320 and layout({ text = "xxxxxxx" }, measure, 400).width % 2 == 0)
 		check("a held width is kept clear of the unread count's room", layout({ text = "x", min_width = 320 }, measure, 400, 20).width == 340)
 		local signature = addon.island_capsule.signature
 		check("a capsule's shape is what parts it has, so a new distance does not change it",

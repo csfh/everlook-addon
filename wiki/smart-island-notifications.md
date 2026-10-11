@@ -38,6 +38,7 @@ end
 | `severity` | `"info"`, `"success"`, `"warning"` or `"error"`; default `"info"`. Explicit labels and colors accompany success, warning and error. Warning/error affect delivery priority. |
 | `detail` | Optional nonblank, nonsecret string, at most 512 bytes. Supporting text beneath the primary message. |
 | `icon` | Optional nonblank, nonsecret symbolic name, at most 64 bytes. Known names: `generic`, `money`, `bags`, `repair`, `level`, `quest`, `flight`, `mail`, `hearth`, `reputation`, `profession`, `loot`, `clock`. Unknown names use the generic icon. Omission chooses from kind; durability uses repair. Custom texture paths are deferred. |
+| `rank` | Optional, `api` 3 or later: `"normal"` (the default) or `"background"`. A background status needs `presentation = "status"` and a valid `capsule`; without one, or with any other `rank` value, the notice is `invalid_rank` (a capsule on a toast is `invalid_capsule`). See **A background status** below. An island older than `api` 3 does not know this key and would show the notice as an ordinary status, so check `Everlook.island.api >= 3` before sending it. |
 | `capsule` | Optional, and only when `presentation` is `"status"`. The resting pill's one row; see **The capsule** below. `text` is one plain line of 1 to 64 bytes, without `|` or a newline; `icon`, `trailing` and `progress` are as before, and `arrow`, `ring`, `labels`, `badge` and `min_width` arrived with `api` 3. A clock update keeps the handle and does not mark the notice unread again. |
 | `runs` | Optional list of 1 to 6 copied runs, on any presentation. A run is `{ text = "...", tone = "primary" }`, one mark (`icon`, `atlas`, `item_id`, or `spell_id`), or `{ money = -21500 }`. `tone` is `primary`, `secondary`, `accent`, `success`, `warning`, or `error`. The notice `text` stays the tooltip and the plain sentence. Toasts and history draw the compiled runs as their primary line. |
 | `money` | Optional signed nonsecret integer in copper, from -9,007,199,254,740,991 to 9,007,199,254,740,991. Native denomination textures and colors include the sign. This exact-integer bound validates display arithmetic; it does not describe the game's currency cap. |
@@ -47,7 +48,7 @@ end
 | `actions` | Up to two copied actions. Each needs a stable `id`, a visible `label`, and one type. |
 | `item_id`, `spell_id` | Optional presentation metadata for a native icon and tooltip. These fields do not click the item or spell. |
 
-Rejections include `disabled`, `invalid_notification`, `invalid_text`, `invalid_source`, `invalid_key`, `invalid_kind`, `invalid_duration`, `invalid_persist`, `invalid_stack`, `invalid_severity`, `invalid_detail`, `invalid_icon`, `invalid_money`, `invalid_progress`, `invalid_presentation`, `invalid_capsule`, `invalid_runs`, `invalid_run`, `invalid_atlas`, `invalid_status_source`, `invalid_status_key`, `invalid_interaction`, `invalid_actions`, `invalid_action`, `invalid_action_id`, `invalid_action_label`, `invalid_action_type`, `invalid_action_callback`, `invalid_action_item`, `invalid_action_spell`, `invalid_item_id` and `invalid_spell_id`. A frozen card rejects `notify` and `dismiss` with `combat_locked`. Accepted fields are copied, so changing the caller's payload has no effect. Invalid input does not add a row or start a timer. Disabled notices are dropped rather than replayed later. No notification data is persisted.
+Rejections include `disabled`, `invalid_notification`, `invalid_text`, `invalid_source`, `invalid_key`, `invalid_kind`, `invalid_duration`, `invalid_persist`, `invalid_stack`, `invalid_severity`, `invalid_detail`, `invalid_icon`, `invalid_money`, `invalid_progress`, `invalid_presentation`, `invalid_capsule`, `invalid_rank`, `invalid_runs`, `invalid_run`, `invalid_atlas`, `invalid_status_source`, `invalid_status_key`, `invalid_interaction`, `invalid_actions`, `invalid_action`, `invalid_action_id`, `invalid_action_label`, `invalid_action_type`, `invalid_action_callback`, `invalid_action_item`, `invalid_action_spell`, `invalid_item_id` and `invalid_spell_id`. A frozen card rejects `notify` and `dismiss` with `combat_locked`. Accepted fields are copied, so changing the caller's payload has no effect. Invalid input does not add a row or start a timer. Disabled notices are dropped rather than replayed later. No notification data is persisted.
 
 The resting level capsule is 64 × 36, or 88 × 28 with an ongoing activity icon, while up to three toasts appear beneath it. Each toast slides from the island into its own row over 200 ms, using native `OUT` smoothing. Expiration and dismissal fade it back upward over 150 ms. Remaining rows move into the gap after it leaves. New and interrupted motion starts from the current position and opacity.
 
@@ -146,6 +147,20 @@ api.notify({
 Every part is optional, but a capsule needs at least one. `text` is the title, and it gives way with an ellipsis before the parts after it do. A `trailing` string or mark is the last label, so `labels` and `trailing` together may not pass three. `progress` is shown as a purple percent badge only when the capsule has no `trailing`, `labels` or `badge`; a `badge` wins over it. The row is laid out as in the open island: a mark 9 from the left, the title 34 from the left (12 without a mark), the ring after the title, the labels and badge after it, a 12 gap, and a 12 inset at the right. A producer that updates the words of the capsule with `update` sets them in place: a new distance, a new fraction or a turn of the arrow never fades. Adding or removing a part does.
 
 An `arrow` function follows the same contract as in a row: it is asked when the capsule is drawn and then at most ten times a second while the capsule shows, only a finite number turns the arrow, and one that throws is reported once and not called again until another function is set. A capsule that sets `min_width` is that wide, plus the room for the unread count, and does not resize as its words change.
+
+## A background status
+
+A status with `rank = "background"` is the capsule's standing state rather than an event. It holds the closed pill while nothing else claims it, and gives way to any normal status:
+
+```lua
+api.notify({
+    source = "MyAddon", key = "quest", text = "Excavation", detail = "~885 yd",
+    presentation = "status", rank = "background",
+    capsule = { icon = "quest", text = "Excavation", labels = { "~885 yd" } },
+})
+```
+
+The capsule shows, from first to last: a normal status, the newest background status, then the resting level chip. A background status never expires on the 30-second clock, so the producer withdraws it with `dismiss`. It is not kept in history, shows no toast, never marks the island unread, and does not count toward the ten live statuses. It does not appear in the open island's activity row. Updates keep the handle and the rank. Turning the island off clears every background status, so a producer that wants one back pushes it again when the island is enabled. The island's own quest tracker is a background status.
 
 ## Ongoing activity
 
