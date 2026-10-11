@@ -351,57 +351,54 @@ local function mark_key(mark)
 	return ""
 end
 
+-- What a capsule's shape depends on: which parts it has, not what they say. A tick of the distance or a
+-- turn of an arrow does not change it, so it does not crossfade; a new mark or a new part does.
 function capsule.signature(spec)
 	if type(spec) ~= "table" then return nil end
 	local trailing = spec.trailing
-	local trailing_key = type(trailing) == "string" and ("t:" .. trailing) or mark_key(trailing)
-	return mark_key(spec.icon) .. "|" .. trailing_key
+	local trailing_key = type(trailing) == "string" and "t" or mark_key(trailing)
+	local labels = type(spec.labels) == "table" and #spec.labels or 0
+	return table.concat({ mark_key(spec.icon), trailing_key, tostring(spec.arrow ~= nil), tostring(spec.ring ~= nil), labels,
+		tostring(spec.badge ~= nil), tostring(spec.progress ~= nil), tostring(spec.text ~= nil) }, "|")
 end
 
-function capsule.layout(spec, measure, ceiling)
-	if type(spec) ~= "table" or type(spec.text) ~= "string" then return nil end
-	-- Progress is a percent in the purple of experience, unless the spec has its own trailing mark.
+-- A capsule spec as the parts of a row. The older fields map one to one: `text` is the title, a
+-- `trailing` string or mark is a label, and `progress` is a percent in the purple of experience, shown as
+-- the badge when the spec has no trailing, labels or badge of its own.
+function capsule.row_spec(spec)
+	local labels = {}
+	for index, label in ipairs(spec.labels or {}) do labels[index] = label end
 	local trailing = spec.trailing
-	if trailing == nil and type(spec.progress) == "number" then
-		trailing = "|cffad76ef" .. math.floor(math.max(0, math.min(1, spec.progress)) * 100 + 0.5) .. "%|r"
+	if type(trailing) == "string" then
+		labels[#labels + 1] = trailing
+	elseif trailing ~= nil then
+		labels[#labels + 1] = escape_mark(trailing)
 	end
-	local limit = 280
-	if type(ceiling) == "number" and ceiling == ceiling and ceiling > 0 and ceiling < math.huge then
-		limit = math.max(64, math.min(280, ceiling))
+	local badge = spec.badge
+	if badge == nil and trailing == nil and #labels == 0 and type(spec.progress) == "number" then
+		badge = math.floor(math.max(0, math.min(1, spec.progress)) * 100 + 0.5) .. "%"
 	end
-	local function width_of(text)
-		local measured = type(measure) == "function" and measure(text) or nil
-		if type(measured) == "number" and measured == measured and measured >= 0 and measured < math.huge then return measured end
+	return { icon = spec.icon, arrow = spec.arrow, title = spec.text, ring = spec.ring, labels = labels, badge = badge }
+end
+
+-- The widest a capsule goes unless it asks for more with min_width, and the narrowest.
+local WIDEST, NARROWEST, HEIGHT = 280, 64, 36
+
+-- Lays a capsule out: the parts of its row and the width they ask for. `measure(text, role)` gives the width
+-- of text in a font role, `ceiling` is the room there is, and `reserve` is room kept at the right edge.
+function capsule.layout(spec, measure, ceiling, reserve)
+	if type(spec) ~= "table" or type(spec.text) ~= "string" then return nil end
+	-- A capsule that asks for a width holds it, so it does not resize as its words change, and it may be wider than the usual limit.
+	local limit = spec.min_width and math.huge or WIDEST
+	if type(ceiling) == "number" and ceiling == ceiling and ceiling > 0 then limit = math.min(limit, ceiling) end
+	local function measured(text, role)
+		local width = type(measure) == "function" and measure(text, role) or nil
+		if type(width) == "number" and width == width and width >= 0 and width < math.huge then return width end
 		return #text * 8
 	end
-	local leading = spec.icon and MARK or 0
-	local text_width = width_of(spec.text)
-	local trailing_width, show_trailing = 0, false
-	if trailing ~= nil then
-		show_trailing = true
-		trailing_width = type(trailing) == "string" and width_of(trailing) or MARK
-	end
-	local function span(with_trailing)
-		local pieces = (leading > 0 and 1 or 0) + 1 + (with_trailing and 1 or 0)
-		local body = leading + text_width + (with_trailing and trailing_width or 0)
-		return PAD * 2 + body + math.max(0, pieces - 1) * GAP
-	end
-	local width = span(show_trailing)
-	if width > limit and show_trailing then
-		show_trailing = false
-		width = span(false)
-	end
-	if width > limit then width = limit end
-	if width < 64 then width = 64 end
-	local line = spec.text
-	if show_trailing then
-		if type(trailing) == "string" then
-			line = spec.text .. "  " .. trailing
-		else
-			line = spec.text .. "  " .. escape_mark(trailing)
-		end
-	end
-	local gaps = (leading > 0 and 1 or 0) + (show_trailing and 1 or 0)
-	local line_width = math.max(1, width - PAD * 2 - leading - gaps * GAP)
-	return { width = width, height = 36, show_trailing = show_trailing, line = line, line_width = line_width, leading = leading }
+	local row = capsule.row_spec(spec)
+	local width = Everlook.island_row.natural_width(row, measured, 14, reserve)
+	if type(spec.min_width) == "number" then width = math.max(width, spec.min_width + (reserve or 0)) end
+	width = math.max(NARROWEST, math.min(math.max(NARROWEST, limit), width))
+	return { width = width, height = HEIGHT, row = row }
 end

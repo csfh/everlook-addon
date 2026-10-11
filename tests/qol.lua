@@ -6053,6 +6053,7 @@ return function(root, check)
 	assert(loadfile(root .. "/tests/island_seam.lua"))()(root, check, island_world, quest_world, secret_stat)
 	assert(loadfile(root .. "/tests/island_sections.lua"))()(root, check, island_world, quest_world)
 	assert(loadfile(root .. "/tests/island_reactions.lua"))()(root, check, island_world, quest_world)
+	assert(loadfile(root .. "/tests/island_capsule_states.lua"))()(root, check, island_world, quest_world)
 	assert(loadfile(root .. "/tests/island_react_addon.lua"))()(root, check, island_world)
 	assert(loadfile(root .. "/tests/island_share.lua"))()(root, check, load_qol)
 

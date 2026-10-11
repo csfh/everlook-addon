@@ -58,6 +58,29 @@ local function whole_width(label)
 	call(label, "SetWidth", math.ceil(call(label, "GetStringWidth") or 0))
 end
 
+-- The width a row asks for, worked out from the width of its words and with no frames: where its title
+-- starts, the title, a group gap, then the ring, labels and badge each a gap apart, and the right inset.
+-- `measure(text, role)` gives a width, and `ring_size` the ring's, `reserve` the room kept at the right.
+function row.natural_width(spec, measure, ring_size, reserve)
+	local width = (spec.icon ~= nil or spec.arrow ~= nil) and SPACE.title or SPACE.edge
+	if spec.title then width = width + measure(spec.title, "title") end
+	local trailing, previous = 0, nil
+	local function add(size, gap)
+		trailing = trailing + (previous and gap or 0) + size
+		previous = true
+	end
+	if spec.ring then add(ring_size, 0) end
+	local after_ring = spec.ring ~= nil
+	for _, label in ipairs(spec.labels or {}) do
+		local text = type(label) == "table" and label.text or label
+		add(math.ceil(measure(text, "body")), after_ring and SPACE.ring or SPACE.gap)
+		after_ring = false
+	end
+	if spec.badge then add(math.ceil(measure(spec.badge, "body")), after_ring and SPACE.ring or SPACE.gap) end
+	if trailing > 0 then width = width + (spec.title and SPACE.gap or 0) + trailing end
+	return width + SPACE.edge + (reserve or 0)
+end
+
 local Row = {}
 Row.__index = Row
 

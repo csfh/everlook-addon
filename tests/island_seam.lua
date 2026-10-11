@@ -949,10 +949,27 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local layout = addon.island_capsule.layout
 		local function measure(text) return #text * 7 end
 		local with_progress = layout({ text = "Flight to Stormwind", progress = 0.4 }, measure, 280)
-		check("a status capsule shows its progress as a percent in purple, not as a bar", with_progress.show_trailing
-			and with_progress.line == "Flight to Stormwind  |cffad76ef40%|r")
-		check("a trailing mark of its own is left alone", layout({ text = "Flight", trailing = "soon", progress = 0.4 }, measure, 280).line == "Flight  soon")
-		check("with no progress there is nothing to show", layout({ text = "Flight" }, measure, 280).show_trailing == false)
+		check("a status capsule shows its progress as a percent in purple, not as a bar",
+			with_progress.row.badge == "40%" and with_progress.row.title == "Flight to Stormwind" and #with_progress.row.labels == 0)
+		local with_trailing = layout({ text = "Flight", trailing = "soon", progress = 0.4 }, measure, 280)
+		check("a trailing mark of its own is a label and keeps the percent away", with_trailing.row.labels[1] == "soon" and with_trailing.row.badge == nil)
+		check("with no progress there is nothing to show", layout({ text = "Flight" }, measure, 280).row.badge == nil)
+		-- The width a capsule asks for is worked out from its words with the row's own spacing:
+		-- 12 inset, the title, 12, then the trailing parts, then 12 more. With a mark the title starts at 34.
+		local plain = layout({ text = "Flight" }, measure, 280)
+		local marked = layout({ text = "Flight", icon = "flight" }, measure, 280)
+		local counted = layout({ text = "Flight", progress = 0.4 }, measure, 280)
+		check("a capsule's width is its title plus the row's insets, and a mark adds its room, 64 at the least",
+			plain.width == math.max(64, 12 + 6 * 7 + 12) and marked.width == math.max(64, 34 + 6 * 7 + 12)
+			and counted.width == math.max(64, 12 + 6 * 7 + 12 + 12 + 3 * 7))
+		check("a capsule is at most 280 wide unless it asks to hold a width", layout({ text = string.rep("x", 100) }, measure, 400).width == 280
+			and layout({ text = "x", min_width = 320 }, measure, 400).width == 320)
+		check("a held width is kept clear of the unread count's room", layout({ text = "x", min_width = 320 }, measure, 400, 20).width == 340)
+		local signature = addon.island_capsule.signature
+		check("a capsule's shape is what parts it has, so a new distance does not change it",
+			signature({ text = "a", labels = { "~5 yd" } }) == signature({ text = "b", labels = { "~6 yd" } })
+			and signature({ text = "a", labels = { "~5 yd" } }) ~= signature({ text = "a", labels = { "~5 yd", "12" } })
+			and signature({ text = "a" }) ~= signature({ text = "a", ring = { fraction = 0.5 } }))
 	end
 	do
 		local addon = island_world()

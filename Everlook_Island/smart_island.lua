@@ -8,6 +8,7 @@ local island_blocks = Everlook.island_blocks
 local island_reaction = Everlook.island_reaction
 local island_capsule = Everlook.island_capsule
 local island_summary = Everlook.island_summary
+local island_row = Everlook.island_row
 
 BINDING_HEADER_EVERLOOK = BINDING_HEADER_EVERLOOK or "Everlook"
 BINDING_NAME_EVERLOOK_SMART_ISLAND = "Open smart island"
@@ -1251,8 +1252,11 @@ end
 
 shell.apply = apply_visual
 
-local function measure_capsule(text)
-	if shell.measure then call(shell.measure, "SetText", text) end
+local function measure_capsule(text, role)
+	if shell.measure then
+		shell.role(shell.measure, role or "title")
+		call(shell.measure, "SetText", text)
+	end
 	local measured = call(shell.measure, "GetStringWidth")
 	if type(measured) == "number" and measured == measured and measured >= 0 and measured < math.huge then return measured end
 	return #text * 8
@@ -1299,31 +1303,18 @@ shell.closed_view = function(available)
 	return table.concat(shown, "   "), width
 end
 
-local function place_slot(slot, layout, mark, alpha)
+-- A resting slot is a frame holding a row of its own, so the capsule that is leaving and the one arriving
+-- can each be drawn whole and faded against each other.
+local function place_slot(slot, layout, alpha)
 	if not slot then return end
-	call(slot.icon, "ClearAllPoints")
-	call(slot.icon, "SetPoint", "LEFT", shell.face or resting, "LEFT", 8, 0)
-	call(slot.line, "ClearAllPoints")
-	call(slot.line, "SetPoint", "LEFT", shell.face or resting, "LEFT", 8 + (layout.leading > 0 and 20 or 0), 0)
-	call(slot.line, "SetWidth", layout.line_width)
-	call(slot.line, "SetMaxLines", 1)
-	call(slot.line, "SetWordWrap", false)
-	call(slot.line, "SetText", layout.line)
-	call(slot.line, "SetAlpha", alpha)
-	call(slot.line, "Show")
-	if layout.leading > 0 and mark then
-		compact_api.apply(slot.icon, mark)
-		call(slot.icon, "SetAlpha", alpha)
-		call(slot.icon, "Show")
-	else
-		call(slot.icon, "Hide")
-	end
+	slot.row:set(layout.row)
+	call(slot.frame, "SetAlpha", alpha)
+	call(slot.frame, "Show")
 end
 
 local function hide_slot(slot)
 	if not slot then return end
-	call(slot.icon, "Hide")
-	call(slot.line, "Hide")
+	call(slot.frame, "Hide")
 end
 
 local function finish_shell()
@@ -1335,8 +1326,7 @@ local function finish_shell()
 			hide_slot(incoming)
 			call(closed_text, "SetAlpha", 1)
 		elseif incoming then
-			call(incoming.line, "SetAlpha", 1)
-			call(incoming.icon, "SetAlpha", 1)
+			call(incoming.frame, "SetAlpha", 1)
 			call(closed_text, "SetAlpha", 1)
 			if shell.to_level == false then call(closed_text, "Hide") end
 		end
@@ -1357,12 +1347,10 @@ local function sample_shell()
 		local outgoing = resting_slots[shell.outgoing]
 		local incoming = resting_slots[shell.incoming_slot]
 		if outgoing then
-			call(outgoing.line, "SetAlpha", 1 - progress)
-			call(outgoing.icon, "SetAlpha", 1 - progress)
+			call(outgoing.frame, "SetAlpha", 1 - progress)
 		end
 		if incoming then
-			call(incoming.line, "SetAlpha", progress)
-			call(incoming.icon, "SetAlpha", progress)
+			call(incoming.frame, "SetAlpha", progress)
 		end
 		if shell.from_level then call(closed_text, "SetAlpha", 1 - progress) end
 		if shell.to_level then call(closed_text, "SetAlpha", progress) end
@@ -1415,7 +1403,7 @@ end
 
 -- Width moves only when the measured pill changes by at least 4. A one-step
 -- m:ss tick stays put. Icon and trailing changes still crossfade.
-local function drive_shell(target_w, target_h, signature, layout, mark, snap)
+local function drive_shell(target_w, target_h, signature, layout, snap)
 	if preview.motion then return end
 	local reduced = module.get(id, "reduced_motion")
 	local width_delta = math.abs(target_w - shell.width)
@@ -1423,12 +1411,12 @@ local function drive_shell(target_w, target_h, signature, layout, mark, snap)
 	local same = shell.playing and shell.incoming == signature and shell.to_w == target_w and shell.to_h == target_h
 	if same and not snap then
 		local live = resting_slots[shell.fading and shell.incoming_slot or shell.front]
-		if live and layout then call(live.line, "SetText", layout.line) end
+		if live and layout then live.row:set(layout.row) end
 		return
 	end
 	if not snap and not shell.playing and signature == shell.signature and width_delta < 4 and height_delta < 4 then
 		local live = resting_slots[shell.front or 1]
-		if live and layout then call(live.line, "SetText", layout.line) end
+		if live and layout then live.row:set(layout.row) end
 		apply_visual(target_w, target_h)
 		return
 	end
@@ -1439,7 +1427,7 @@ local function drive_shell(target_w, target_h, signature, layout, mark, snap)
 		apply_visual(target_w, target_h)
 		hide_slot(resting_slots[shell.front == 1 and 2 or 1])
 		if layout and signature then
-			place_slot(resting_slots[shell.front], layout, mark, 1)
+			place_slot(resting_slots[shell.front], layout, 1)
 			call(closed_text, "Hide")
 		else
 			hide_slot(resting_slots[shell.front])
@@ -1464,7 +1452,7 @@ local function drive_shell(target_w, target_h, signature, layout, mark, snap)
 	shell.front = shell.front or 1
 	if reduced then apply_visual(target_w, target_h) end
 	if fading and layout and signature then
-		place_slot(resting_slots[shell.incoming_slot], layout, mark, 0)
+		place_slot(resting_slots[shell.incoming_slot], layout, 0)
 		if shell.from_level then
 			call(closed_text, "Show")
 			call(closed_text, "SetAlpha", 1)
@@ -1475,7 +1463,7 @@ local function drive_shell(target_w, target_h, signature, layout, mark, snap)
 		call(closed_text, "Show")
 	end
 	if not fading and layout then
-		place_slot(resting_slots[shell.front], layout, mark, 1)
+		place_slot(resting_slots[shell.front], layout, 1)
 	end
 	play_shell()
 end
@@ -1591,13 +1579,12 @@ paint = function(reason)
 	end
 	if inspect_rows then inspect_rows() end
 	local signature = layout and compact_api.signature(status.capsule) or nil
-	local icon = compact and compact.icon
 	if preview.land and not preview.motion then
 		preview.land = false
 		if now == "open" then
 			shell.apply(width, height)
 		else
-			drive_shell(closed_w, closed_h, signature, layout, icon, true)
+			drive_shell(closed_w, closed_h, signature, layout, true)
 			call(shell.face, "SetAlpha", 1)
 		end
 	elseif preview.motion then
@@ -1616,7 +1603,7 @@ paint = function(reason)
 	elseif now == "open" then
 		shell.apply(width, height)
 	else
-		drive_shell(closed_w, closed_h, signature, layout, icon, visual_open or changed or reason == "keyboard")
+		drive_shell(closed_w, closed_h, signature, layout, visual_open or changed or reason == "keyboard")
 	end
 	shell.sync_idle(now == "closed" and not morphing and not status and not quest and #active_toasts == 0 and unread_count() == 0)
 end
@@ -2400,12 +2387,12 @@ local function ensure_frame()
 	shell.measure = make_label(resting, "LEFT")
 	call(shell.measure, "Hide")
 	for index = 1, 2 do
-		local icon = call(shell.face, "CreateTexture", nil, "OVERLAY")
-		call(icon, "SetSize", 16, 16)
-		call(icon, "Hide")
-		local line = make_label(shell.face, "LEFT")
-		call(line, "Hide")
-		resting_slots[index] = { icon = icon, line = line }
+		local slot_frame = CreateFrame("Frame", nil, shell.face)
+		call(slot_frame, "SetAllPoints", shell.face)
+		call(slot_frame, "EnableMouse", false)
+		call(slot_frame, "Hide")
+		resting_slots[index] = { frame = slot_frame, row = island_row.new(slot_frame, { label = make_label, ring_size = shell.space.capsule_ring,
+			rings = { make = shell.make_ring, place = shell.place_ring, chain = shell.chain_ring, set = shell.set_ring, hide = shell.hide_ring } }) }
 	end
 	shell.group = call(resting, "CreateAnimationGroup")
 	if shell.group then
