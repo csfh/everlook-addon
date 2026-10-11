@@ -1,4 +1,5 @@
--- The quest mark beside a nameplate: whom it marks, where it goes, and that it comes and goes with the plate.
+-- The quest mark beside a nameplate: whom it marks, where it goes, that the name is left-aligned beside it and put
+-- back, and that it all comes and goes with the plate.
 return function(root, check, island_world)
 	local addon, env, event = island_world()
 	local function texture()
@@ -6,6 +7,7 @@ return function(root, check, island_world)
 		function mark:SetAtlas(atlas) self.atlas, self.path = atlas, nil end
 		function mark:SetTexture(path) self.path, self.atlas = path, nil end
 		function mark:SetSize(width, height) self.width, self.height = width, height end
+		function mark:SetWidth(width) self.width, self.height = width, nil end
 		function mark:ClearAllPoints() self.points = {} end
 		function mark:SetPoint(...) self.points[#self.points + 1] = { ... } end
 		function mark:Show() self.shown = true end
@@ -14,10 +16,13 @@ return function(root, check, island_world)
 	end
 	local plates, made = {}, {}
 	for _, unit in ipairs({ "nameplate1", "nameplate2", "nameplate3", "nameplate4" }) do
-		local name, bar = { label = "name" }, { label = "bar" }
+		local name = { label = "name", justify = "CENTER" }
+		function name:GetJustifyH() return self.justify end
+		function name:SetJustifyH(value) self.justify = value end
+		local bar = { label = "bar" }
 		local created = {}
 		made[unit] = created
-		plates[unit] = { namePlateUnitToken = unit, UnitFrame = { name = name, healthBar = bar,
+		plates[unit] = { namePlateUnitToken = unit, UnitFrame = { name = name, HealthBarsContainer = bar,
 			CreateTexture = function() local mark = texture(); created[#created + 1] = mark; return mark end } }
 	end
 	local related = { nameplate1 = true, nameplate2 = true, nameplate4 = false }
@@ -28,38 +33,52 @@ return function(root, check, island_world)
 	env.C_QuestLog = env.C_QuestLog or {}
 	env.C_QuestLog.UnitIsRelatedToActiveQuest = function(unit) return related[unit] == true end
 	env.UnitIsQuestBoss = function(unit) return unit == "nameplate3" end
+	local function frame_of(unit) return plates[unit].UnitFrame end
 
 	addon.module.set("quest_nameplates", "enabled", true)
 	event("NAME_PLATE_UNIT_ADDED", "nameplate1")
 	local mark = made.nameplate1[1]
 	check("a unit that is part of a quest you are on gets a mark", mark and mark.shown)
-	check("it goes to the left of the name by default, a little off it", mark.points[1][1] == "RIGHT" and mark.points[1][2] == plates.nameplate1.UnitFrame.name and mark.points[1][3] == "LEFT" and mark.points[1][4] == -2)
-	check("it is the size the setting says, and the quest boss badge's atlas or, without it, the badge's file", mark.width == 16 and mark.height == 16 and mark.path == "Interface\\TargetingFrame\\PortraitQuestBadge")
+	check("by default it spans both rows: from the top of the name to the bottom of the health bar, left of them",
+		#mark.points == 2 and mark.points[1][1] == "TOPRIGHT" and mark.points[1][2] == frame_of("nameplate1").name and mark.points[1][3] == "TOPLEFT"
+		and mark.points[2][1] == "BOTTOMRIGHT" and mark.points[2][2] == frame_of("nameplate1").HealthBarsContainer and mark.points[2][3] == "BOTTOMLEFT")
+	check("it is the width the setting says, 26, and takes its height from the two rows", mark.width == 26 and mark.height == nil)
+	check("it is the quest boss badge's atlas or, without it, the badge's file", mark.path == "Interface\\TargetingFrame\\PortraitQuestBadge")
+	check("the name is left-aligned beside it", frame_of("nameplate1").name.justify == "LEFT")
 	event("NAME_PLATE_UNIT_ADDED", "nameplate2")
-	check("a player gets none, quest or not", #made.nameplate2 == 0)
+	check("a player gets none, quest or not, and keeps its name where it was", #made.nameplate2 == 0 and frame_of("nameplate2").name.justify == "CENTER")
 	event("NAME_PLATE_UNIT_ADDED", "nameplate3")
 	check("a quest boss gets one", made.nameplate3[1] and made.nameplate3[1].shown)
 	event("NAME_PLATE_UNIT_ADDED", "nameplate4")
-	check("a unit that is not part of a quest gets none", #made.nameplate4 == 0)
+	check("a unit that is not part of a quest gets none, and its name stays centred", #made.nameplate4 == 0 and frame_of("nameplate4").name.justify == "CENTER")
 
-	addon.module.set("quest_nameplates", "place", "name_right")
-	check("the place can be the right of the name", mark.points[1][1] == "LEFT" and mark.points[1][2] == plates.nameplate1.UnitFrame.name and mark.points[1][3] == "RIGHT" and mark.points[1][4] == 2)
-	addon.module.set("quest_nameplates", "place", "bar_left")
-	check("or the left of the health bar", mark.points[1][1] == "RIGHT" and mark.points[1][2] == plates.nameplate1.UnitFrame.healthBar and mark.points[1][3] == "LEFT")
-	addon.module.set("quest_nameplates", "size", 24)
-	check("a larger mark is applied at once", mark.width == 24 and mark.height == 24)
+	addon.module.set("quest_nameplates", "layout", "name_right")
+	check("the place can be the right of the name, square", #mark.points == 1 and mark.points[1][1] == "LEFT" and mark.points[1][2] == frame_of("nameplate1").name and mark.points[1][3] == "RIGHT" and mark.width == 26 and mark.height == 26)
+	addon.module.set("quest_nameplates", "layout", "bar_left")
+	check("or the left of the health bar", mark.points[1][1] == "RIGHT" and mark.points[1][2] == frame_of("nameplate1").HealthBarsContainer and mark.points[1][3] == "LEFT")
+	addon.module.set("quest_nameplates", "layout", "name_left")
+	check("or the left of the name", mark.points[1][1] == "RIGHT" and mark.points[1][2] == frame_of("nameplate1").name and mark.points[1][3] == "LEFT")
+	addon.module.set("quest_nameplates", "layout", "rows")
+	addon.module.set("quest_nameplates", "width", 34)
+	check("a wider mark is applied at once, and the two rows are back", mark.width == 34 and #mark.points == 2)
+
+	addon.module.set("quest_nameplates", "align_name", false)
+	check("with left-aligning off the name goes back to how the game had it", frame_of("nameplate1").name.justify == "CENTER")
+	addon.module.set("quest_nameplates", "align_name", true)
+	check("and on, it is left again", frame_of("nameplate1").name.justify == "LEFT")
 
 	event("NAME_PLATE_UNIT_REMOVED", "nameplate1")
 	check("the mark goes when the plate does", mark.shown == false)
+	check("and the plate gets its centred name back, for the next unit it is given", frame_of("nameplate1").name.justify == "CENTER")
 	event("NAME_PLATE_UNIT_ADDED", "nameplate1")
-	check("and the same mark comes back with it", #made.nameplate1 == 1 and mark.shown == true)
+	check("the same mark comes back with it, and the name is left again", #made.nameplate1 == 1 and mark.shown == true and frame_of("nameplate1").name.justify == "LEFT")
 
 	related.nameplate4 = true
 	event("QUEST_LOG_UPDATE")
-	check("a change to your quests marks a unit that has become part of one", made.nameplate4[1] and made.nameplate4[1].shown)
+	check("a change to your quests marks a unit that has become part of one", made.nameplate4[1] and made.nameplate4[1].shown and frame_of("nameplate4").name.justify == "LEFT")
 	related.nameplate4 = false
 	event("QUEST_LOG_UPDATE")
-	check("and clears one that no longer is", made.nameplate4[1].shown == false)
+	check("and clears one that no longer is, with its name back", made.nameplate4[1].shown == false and frame_of("nameplate4").name.justify == "CENTER")
 
 	local secret = {}
 	env.issecretvalue = function(value) return rawequal(value, secret) end
@@ -73,5 +92,5 @@ return function(root, check, island_world)
 	env.UnitIsQuestBoss = function() return false end
 	event("QUEST_LOG_UPDATE")
 	addon.module.set("quest_nameplates", "enabled", false)
-	check("turning the module off takes every mark down", mark.shown == false and made.nameplate3[1].shown == false)
+	check("turning the module off takes every mark down and every name back", mark.shown == false and frame_of("nameplate1").name.justify == "CENTER" and made.nameplate3[1].shown == false)
 end
