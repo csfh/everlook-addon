@@ -93,4 +93,17 @@ return function(root, check, island_world, quest_world)
 		check("and with its mouse off the buttons have it back", #unreachable(frames, buttons) == 0)
 	end
 
+	do
+		local addon, env, frames = open_world({ reduced = true, click = true })
+		local lines = {}
+		env.print = function(...)
+			local parts = {}
+			for index = 1, select("#", ...) do parts[#parts + 1] = tostring((select(index, ...))) end
+			lines[#lines + 1] = table.concat(parts, " ")
+		end
+		local ran, err = pcall(env.SlashCmdList.EVERLOOKISLANDMOUSE, "")
+		check("/islandmouse reports the island's state without an error" .. (ran and "" or ": " .. tostring(err)), ran and #lines >= 3 and lines[1]:find("mode open", 1, true) ~= nil)
+		ran, err = pcall(env.SlashCmdList.EVERLOOKISLANDMOUSE, "click")
+		check("and /islandmouse click presses the link without an error" .. (ran and "" or ": " .. tostring(err)), ran)
+	end
 end

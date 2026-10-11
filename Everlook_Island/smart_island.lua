@@ -2718,6 +2718,38 @@ function everlook_smart_island_dismiss()
 	island.dismiss_top()
 end
 
+-- /islandmouse: what the game says is under the pointer, for when a control does not answer. Hover the
+-- control within three seconds of typing it. "/islandmouse click" presses the Clear history link without
+-- the mouse, which tells a covered link from one whose click does nothing.
+SLASH_EVERLOOKISLANDMOUSE1 = "/islandmouse"
+SlashCmdList = SlashCmdList or {}
+SlashCmdList.EVERLOOKISLANDMOUSE = function(argument)
+	-- A missing method gives no value at all, which tostring refuses.
+	local function str(...) return tostring((...)) end
+	local function describe(target)
+		if not target then return "nothing" end
+		local text = str(call(target, "GetDebugName") or call(target, "GetName") or call(target, "GetObjectType") or "?")
+		return text .. " L" .. str(call(target, "GetFrameLevel")) .. " " .. str(call(target, "GetFrameStrata"))
+			.. " mouse=" .. str(call(target, "IsMouseEnabled")) .. " wheel=" .. str(call(target, "IsMouseWheelEnabled"))
+	end
+	local link = _G.EverlookIslandClearHistory
+	if argument and argument:lower():find("click", 1, true) then
+		print("Everlook island: pressing Clear history", describe(link), "shown=" .. str(call(link, "IsShown")), "enabled=" .. str(call(link, "IsEnabled")))
+		call(link, "Click")
+		return
+	end
+	local read = island.view()
+	print("Everlook island: mode " .. tostring(read.mode) .. ", pinned " .. tostring(read.pinned) .. ", " .. tostring(read.shell and read.shell.width) .. " x " .. tostring(read.shell and read.shell.height))
+	print("Everlook island: Clear history is " .. describe(link) .. ", shown " .. str(call(link, "IsShown")) .. ", alpha " .. str(call(link, "GetEffectiveAlpha")))
+	print("Everlook island: hover the control now")
+	local function report()
+		local foci = _G.GetMouseFoci and _G.GetMouseFoci() or { _G.GetMouseFocus and _G.GetMouseFocus() or nil }
+		if #foci == 0 then print("Everlook island: the pointer is over nothing") end
+		for index = 1, math.min(#foci, 6) do print("Everlook island: under the pointer " .. index .. ": " .. describe(foci[index])) end
+	end
+	if C_Timer and C_Timer.After then C_Timer.After(3, report) else report() end
+end
+
 -- Called by Bindings.xml. Same press-and-release shape as the radial menu key.
 function everlook_smart_island_key(keystate)
 	if keystate == "down" then key_down() else key_up() end
