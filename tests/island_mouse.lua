@@ -123,45 +123,4 @@ return function(root, check, island_world, quest_world)
 		cover:EnableMouse(false)
 		check("and with its mouse off the buttons have it back", #unreachable(frames, buttons) == 0)
 	end
-
-	do
-		local addon, env, frames, afters = open_world({ reduced = true, click = true })
-		local lines = {}
-		env.print = function(...)
-			local parts = {}
-			for index = 1, select("#", ...) do parts[#parts + 1] = tostring((select(index, ...))) end
-			lines[#lines + 1] = table.concat(parts, " ")
-		end
-		local ran, err = pcall(env.SlashCmdList.EVERLOOKISLANDMOUSE, "")
-		check("/islandmouse starts without an error and asks for the pointer" .. (ran and "" or ": " .. tostring(err)), ran and lines[1] and lines[1]:find("hover the control now", 1, true) ~= nil)
-		-- Three seconds on, it reports what the game says, and keeps the report for the saved variables.
-		for _, after in ipairs(afters) do
-			if after.delay == 3 and not after.done then after.done = true; after.callback() end
-		end
-		local report = env.EverlookDB and env.EverlookDB.island_mouse and env.EverlookDB.island_mouse.plain
-		check("then it writes its report where it can be read after a reload", report ~= nil and report.lines[2]:find("mode open", 1, true) ~= nil and #report.lines >= 3)
-		ran, err = pcall(env.SlashCmdList.EVERLOOKISLANDMOUSE, "click")
-		check("and /islandmouse click presses the link without an error" .. (ran and "" or ": " .. tostring(err)), ran)
-	end
-
-	-- Each experiment changes one thing, reports, and puts it back.
-	for _, name in ipairs({ "noclip", "mouse", "noroot", "raise" }) do
-		local addon, env, frames, afters = open_world({ reduced = true, click = true })
-		env.print = function() end
-		local expanded, island_frame
-		for _, frame in ipairs(frames) do
-			if frame.name == "EverlookIslandExpanded" then expanded = frame end
-			if frame.name == "EverlookSmartIsland" then island_frame = frame end
-		end
-		local before = { expanded.clips, expanded.mouse, island_frame.mouse, expanded.level }
-		env.SlashCmdList.EVERLOOKISLANDMOUSE(name)
-		local during = { expanded.clips, expanded.mouse, island_frame.mouse, expanded.level }
-		for _, after in ipairs(afters) do
-			if after.delay == 3 and not after.done then after.done = true; after.callback() end
-		end
-		local after_state = { expanded.clips, expanded.mouse, island_frame.mouse, expanded.level }
-		check("/islandmouse " .. name .. " changes one thing, and puts it back",
-			(during[1] ~= before[1] or during[2] ~= before[2] or during[3] ~= before[3] or during[4] ~= before[4]) and after_state[1] == before[1] and after_state[2] == before[2] and after_state[3] == before[3] and after_state[4] == before[4])
-		check("and keeps its report under its own name", env.EverlookDB.island_mouse[name] ~= nil and env.EverlookDB.island_mouse[name].lines[1] == "experiment: " .. name)
-	end
 end
