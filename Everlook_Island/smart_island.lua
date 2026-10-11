@@ -2750,6 +2750,18 @@ SlashCmdList.EVERLOOKISLANDMOUSE = function(argument)
 			.. " rect " .. rect_of(target)
 	end
 	local link = _G.EverlookIslandClearHistory
+	-- One change at a time, for the three seconds it takes to put the pointer on a button, then put back.
+	-- "noclip" stops the open panel clipping what is in it, "mouse" lets the panel take the mouse itself, and
+	-- "noroot" takes the mouse from the island's own frame. What each does to what gets the mouse tells which
+	-- of them is in the way.
+	local named = (argument or ""):lower():match("^%s*(%a*)") or ""
+	local experiments = {
+		noclip = { apply = function() call(expanded, "SetClipsChildren", false) end, restore = function() call(expanded, "SetClipsChildren", true) end },
+		mouse = { apply = function() call(expanded, "EnableMouse", true) end, restore = function() call(expanded, "EnableMouse", false) end },
+		noroot = { apply = function() call(frame, "EnableMouse", false) end, restore = function() call(frame, "EnableMouse", true) end },
+	}
+	local experiment = experiments[named]
+	local label = experiment and named or "plain"
 	if argument and argument:lower():find("click", 1, true) then
 		print("Everlook island: pressing Clear history", describe(link))
 		call(link, "Click")
@@ -2758,9 +2770,11 @@ SlashCmdList.EVERLOOKISLANDMOUSE = function(argument)
 	local read = island.view()
 	local lines = {}
 	local function say(text) lines[#lines + 1] = text end
+	say("experiment: " .. label)
 	say("mode " .. tostring(read.mode) .. ", pinned " .. tostring(read.pinned) .. ", shell " .. tostring(read.shell and read.shell.width) .. " x " .. tostring(read.shell and read.shell.height))
 	say("Clear history is " .. describe(link))
-	print("Everlook island: hover the control now")
+	if experiment then experiment.apply() end
+	print("Everlook island: " .. label .. ": hover the control now")
 	local function report()
 		local foci = _G.GetMouseFoci and _G.GetMouseFoci() or { _G.GetMouseFocus and _G.GetMouseFocus() or nil }
 		if #foci == 0 then say("the pointer is over nothing") end
@@ -2788,8 +2802,10 @@ SlashCmdList.EVERLOOKISLANDMOUSE = function(argument)
 			walker = try(walker, "GetParent")
 			depth = depth + 1
 		end
+		if experiment then experiment.restore() end
 		EverlookDB = EverlookDB or {}
-		EverlookDB.island_mouse = { when = date and date("%Y-%m-%d %H:%M:%S") or "?", lines = lines }
+		EverlookDB.island_mouse = type(EverlookDB.island_mouse) == "table" and EverlookDB.island_mouse or {}
+		EverlookDB.island_mouse[label] = { when = date and date("%Y-%m-%d %H:%M:%S") or "?", lines = lines }
 		print("Everlook island: report of " .. #lines .. " lines saved; type /reload to write it to disk")
 		for index = 1, math.min(#lines, 6) do print("Everlook island: " .. lines[index]) end
 	end
