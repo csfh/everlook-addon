@@ -24,4 +24,3 @@ fills it, held at a percentage the way the game's own honor ring is.
 `island_ring_small.tga` is the same ring at 32 × 32, with a stroke of 4.5, for rings under 20 units
 across: the capsule's and an objective's. The large ring, shrunk to 14, blurred; this one is drawn
 near its size, so its stroke is two pixels.
-
