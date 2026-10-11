@@ -22,7 +22,7 @@ EverlookDB = EverlookDB or {}
 
 ## Shape
 
-The collection is `EverlookDB.pages`, a table of strings. The signed upload is `EverlookDB.segments` with `manifest`, `signer` and `signature` beside it. The minimap angle stays with them.
+The collection is `EverlookDB.pages`, a table of strings. The signed upload is `EverlookDB.segments` with `manifest`, `signer` and `signature` beside it. The minimap angle stays with them. `EverlookDB.groundEffectsBefore` holds the three ground clutter settings as the game had them before Ground effects was turned on, so turning it off after a reload puts those back and not its own numbers; it is emptied when they are put back.
 
 ```lua
 EverlookDB = {

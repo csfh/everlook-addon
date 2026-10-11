@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffGroundEffects|r
+## Notes: Sets how much ground clutter, such as grass, the game draws, how far away, and how far it fades out.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+ground_effects.lua
