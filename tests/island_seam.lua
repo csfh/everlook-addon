@@ -1146,4 +1146,19 @@ return function(root, check, island_world, quest_world, secret_stat)
 		check("finishing the pinned quest offers the next best one",
 			suggestion() and suggestion().detail:find("Your pinned quest is done", 1, true) ~= nil and addon.island_quests.pinned_id() == nil)
 	end
+	do
+		local addon, _, _, _, _, _, frames = island_world()
+		addon.module.set("smart_island", "enabled", true)
+		addon.island.notify({ source = "Test", key = "two", text = "Two choices", duration = 4, interaction = "buttons",
+			actions = { { id = "yes", label = "Yes", type = "callback", on_click = function() end },
+				{ id = "later", label = "Not now", type = "callback", on_click = function() end } } })
+		local yes, later
+		for _, frame in ipairs(frames) do
+			if frame.action_id == "yes" and frame.quiet then yes = frame end
+			if frame.action_id == "later" and frame.quiet then later = frame end
+		end
+		check("the first of two actions is the blue one to press, and the other is the quiet grey",
+			yes and later and yes.quiet.style == "accent" and later.quiet.style == "quiet"
+			and math.abs(yes.quiet.fill.pieces[5].color[1] - 30 / 255) < 0.01 and math.abs(later.quiet.fill.pieces[5].color[1] - 22 / 255) < 0.01)
+	end
 end

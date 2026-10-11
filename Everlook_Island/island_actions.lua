@@ -188,21 +188,28 @@ function actions.invoke(entry, snapshot, generation)
 	return ok
 end
 
--- An action button is blue: a thin outline round a deep blue fill, lighter under the pointer with its
--- words turning white, and darker while pressed. It is the thing to press on a notice, so it is the
--- one color on the card. Nothing in it is the game's red button art, which is louder than anything
--- else on the island. Either way button.label takes SetText.
+-- The first action on a notice is the one to press, and it is blue: a thin lighter-blue outline round
+-- a deep blue fill, lighter under the pointer with its words turning white, and darker while
+-- pressed. The others are quiet, the island's own grey outline, so there is one color on a card.
+-- Nothing in them is the game's red button art, which is louder than anything else on the island.
+-- Either way button.label takes SetText.
 local function tint(button, state)
 	if button.quiet then Everlook.island_surface.tint_button(button.quiet, state) end
-	local words = Everlook.island_surface.button_words.accent
+	local words = Everlook.island_surface.button_words[button.quiet and button.quiet.style or "quiet"]
 	local color = state == "rest" and words.rest or words.lit
 	call(button.label, "SetTextColor", color[1], color[2], color[3], color[4])
 end
 
-local function skin(button)
+-- The first action of a notice is primary. A pooled button is restyled each time it is given an action.
+local function set_primary(button, primary)
+	if button.quiet then button.quiet.style = primary and "accent" or "quiet" end
+	tint(button, "rest")
+end
+
+local function skin(button, primary)
 	local surface = Everlook.island_surface
 	if surface and surface.make_button then
-		button.quiet = surface.make_button(button, "accent")
+		button.quiet = surface.make_button(button, primary and "accent" or "quiet")
 		surface.size_button(button.quiet, 120, 22)
 	end
 	local label = call(button, "CreateFontString", nil, "OVERLAY", "GameFontHighlightSmall")
@@ -222,7 +229,7 @@ local function ensure_button(node, index)
 	-- Above everything else on the card, so nothing drawn there takes the click.
 	call(button, "SetFrameLevel", (call(node.frame, "GetFrameLevel") or 51) + 4)
 	call(button, "RegisterForClicks", "LeftButtonUp", "RightButtonUp")
-	skin(button)
+	skin(button, index == 1)
 	node.action_buttons[index] = button
 	return button
 end
@@ -289,6 +296,7 @@ function actions.paint(node, entry, compact)
 	for index = 1, #callbacks do
 		local action = callbacks[index].action
 		local button = ensure_button(node, index)
+		set_primary(button, callbacks[index].at == 1)
 		button.bound_entry, button.action_id = entry, action.id
 		call(button.label, "SetText", action.label)
 		call(button, "ClearAllPoints")
@@ -340,7 +348,7 @@ local function acquire_card()
 		local button = CreateFrame("Button", nil, frame, "SecureActionButtonTemplate")
 		call(button, "SetSize", 120, 22)
 		call(button, "RegisterForClicks", "LeftButtonUp")
-		skin(button)
+		skin(button, index == 1)
 		call(button, "SetScript", "PostClick", function() tint(button, "hover") end)
 		call(button, "SetScript", "OnEnter", function() tint(button, "hover") end)
 		call(button, "SetScript", "OnLeave", function() tint(button, "rest") end)
