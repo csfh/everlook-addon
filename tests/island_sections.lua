@@ -87,7 +87,7 @@ return function(root, check, island_world, quest_world)
 		rejected("a table with nine rows", spec({ blocks = { { kind = "table", title = "T", columns = { "a" }, rows = (function() local list = {} for index = 1, 9 do list[index] = { "r", "1" } end return list end)() } } }), "invalid_block")
 		check("a table with columns, rows, a footer, an action and a state is accepted", api.section(spec({ key = "table", blocks = {
 			{ kind = "table", title = "Experience", columns = { "Hour", "Day" }, rows = { { "Total", "1,200", "20,000" }, { "Quests", "800", "9,000" } },
-				footer = "Rested 20%", open = true, action = { id = "fold", label = "Show only the total", on_click = function() end } } } })) ~= nil)
+				footer = "Rested 20%", action = { id = "fold", label = "Show sources", on_click = function() end } } } })) ~= nil)
 		local builtin = api.section(spec({ source = "everlook_quests", key = "first", order = 10 }))
 		check("one of our own sources may take a slot below 100", type(builtin) == "number")
 
@@ -191,9 +191,16 @@ return function(root, check, island_world, quest_world)
 		check("with a section showing, nothing sits outside its frame and no two lines of text overlap", #problems == 0)
 		if #problems > 0 then print(table.concat(problems, "\n")) end
 
+		local function showing(frame)
+			while frame do
+				if frame.shown == false then return false end
+				frame = frame.parent
+			end
+			return true
+		end
 		local function button_with(text)
 			for _, frame in ipairs(frames) do
-				if frame.scripts and frame.scripts.OnClick then
+				if frame.scripts and frame.scripts.OnClick and showing(frame) then
 					for _, child in ipairs(frames) do
 						if child.parent == frame then
 							for _, region in ipairs(child.regions or {}) do if region.text == text then return frame end end
@@ -280,14 +287,14 @@ return function(root, check, island_world, quest_world)
 			handle:write(layout.export(frames, top, env.GetTime()))
 			handle:close()
 		end
-		-- A link has room each side of its words; the words, not the room, sit on the inset.
+		-- A heading button's outline, not just its words, ends on the inset.
 		local measure = layout.new()
 		local island_rect
 		for _, frame in ipairs(frames) do if frame.name == "EverlookSmartIsland" then island_rect = measure.rectangle(frame) end end
 		local pin_words, clear_words = find_text(frames, "Pin quest"), find_text(frames, "Clear history")
-		check("the words of a heading link end on the pane's 12 inset, as the figures below them do",
-			pin_words and measure.rectangle(pin_words).right == island_rect.left + 300 - 12
-			and measure.rectangle(clear_words).right == island_rect.right - 12)
+		check("a heading button's outline ends on the pane's 12 inset, as the figures below it do",
+			pin_words and measure.rectangle(pin_words.parent).right == island_rect.left + 300 - 12
+			and measure.rectangle(clear_words.parent).right == island_rect.right - 12)
 		local problems = layout.lint(frames, { skip = function(frame) return frame.name == "EverlookIslandResting" end })
 		check("with a quest and a section in each pane, nothing sits outside its frame and no two lines of text overlap", #problems == 0)
 		if #problems > 0 then print(table.concat(problems, "\n")) end
@@ -299,12 +306,12 @@ return function(root, check, island_world, quest_world)
 		local api = env.Everlook.island
 		local folded
 		api.section(spec({ key = "experience", title = nil, blocks = { { kind = "table", title = "Experience", columns = { "Hour", "Day" },
-			rows = { { "Total", "1,200", "20,000" }, { "Quests", "800", "9,000" } }, footer = "Rested 20%", open = true,
+			rows = { { "Total", "1,200", "20,000" }, { "Quests", "800", "9,000" } }, footer = "Rested 20%",
 			action = { id = "fold", label = "Show only the total", on_click = function(_, id) folded = id end } } } }))
 		open(addon, frames)
 		local measure = layout.new()
-		local title, hour, day = find_text(frames, "v EXPERIENCE"), find_text(frames, "HOUR"), find_text(frames, "DAY")
-		check("a table shows its heading with its fold marker, its columns, its rows and its footer",
+		local title, hour, day = find_text(frames, "EXPERIENCE"), find_text(frames, "HOUR"), find_text(frames, "DAY")
+		check("a table shows its heading, its button, its columns, its rows and its footer",
 			title and hour and day and find_text(frames, "Quests") and find_text(frames, "800") and find_text(frames, "Rested 20%"))
 		local total, total_hour, total_day = measure.rectangle(find_text(frames, "Total")), measure.rectangle(find_text(frames, "1,200")), measure.rectangle(find_text(frames, "20,000"))
 		local hour_head, day_head = measure.rectangle(hour), measure.rectangle(day)
@@ -317,8 +324,12 @@ return function(root, check, island_world, quest_world)
 		check("a table sits inside its pane, its last column ending on the 12 inset, and overlaps nothing", #problems == 0 and right_edge == island.right - 12)
 		if #problems > 0 then print(table.concat(problems, "\n")) end
 		local toggle
-		for _, frame in ipairs(frames) do if frame.scripts and frame.scripts.OnClick and frame.shown ~= false and frame.height == 14 + 8 then toggle = frame end end
-		check("the heading line is a button that calls the action", toggle ~= nil)
+		for _, frame in ipairs(frames) do
+			for _, region in ipairs(frame.regions or {}) do
+				if region.text == "Show only the total" and region.shown ~= false then toggle = region.parent.parent end
+			end
+		end
+		check("the heading line carries a button after its title", toggle ~= nil and find_text(frames, "Show only the total") ~= nil)
 		if toggle then
 			toggle.scripts.OnClick(toggle)
 			check("clicking the heading calls the producer with the action id", folded == "fold")
@@ -343,5 +354,44 @@ return function(root, check, island_world, quest_world)
 		local beside, alone_height = with_history(), alone()
 		check("a long history asks for at most 200 beside the quests, and the panes take the quest column's height if it is taller",
 			beside >= 200 and beside < 320 and alone_height == 320)
+	end
+
+	-- The quest card: ready is green, and the plan's rows say they can be pinned.
+	do
+		local addon, env, event, state, _, _, frames = quest_world()
+		addon.module.set("smart_island", "quest_context", true)
+		addon.module.set("smart_island", "quest_plan", true)
+		for _, quest in ipairs(state.quests) do quest.ready = true end
+		event("QUEST_LOG_UPDATE")
+		open(addon, frames)
+		local function ready_label()
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if type(region.text) == "string" and region.text:find("ready to turn in", 1, true) and region.shown ~= false then return region.text end
+				end
+			end
+		end
+		if os.getenv("ISLAND_LAYOUT_DIR") then
+			local top
+			for _, frame in ipairs(frames) do if frame.name == "EverlookSmartIsland" then top = frame end end
+			local handle = assert(io.open(os.getenv("ISLAND_LAYOUT_DIR") .. "/card.json", "w"))
+			handle:write(layout.export(frames, top, env.GetTime()))
+			handle:close()
+		end
+		local text = ready_label()
+		check("a quest that can be handed in says so in green, the color the capsule's ring turns", text and text:find("|cff80e6a6ready to turn in|r", 1, true) ~= nil)
+		local pins = 0
+		for _, frame in ipairs(frames) do
+			for _, region in ipairs(frame.regions or {}) do
+				if region.text == "Pin" and region.shown ~= false then
+					local button = frame.parent
+					local visible = true
+					local walker = button
+					while walker do if walker.shown == false then visible = false end walker = walker.parent end
+					if visible then pins = pins + 1 end
+				end
+			end
+		end
+		check("each row of the plan has its own Pin button", pins >= 1)
 	end
 end

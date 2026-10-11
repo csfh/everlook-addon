@@ -18,7 +18,7 @@ local BLOCK_KEYS = {
 	gap = { kind = true, size = true },
 	meter = { kind = true, label = true, value = true, fraction = true, tone = true },
 	cells = { kind = true, cells = true },
-	table = { kind = true, title = true, columns = true, rows = true, footer = true, action = true, open = true },
+	table = { kind = true, title = true, columns = true, rows = true, footer = true, action = true },
 }
 local MAX_COLUMNS, MAX_ROWS = 3, 8
 local CELL_KEYS = { icon = true, label = true, value = true, ring = true, tone = true, tooltip = true }
@@ -209,8 +209,6 @@ local function read_block(block)
 			copy.footer = block.footer
 			bytes = bytes + #block.footer
 		end
-		if block.open ~= nil and type(block.open) ~= "boolean" then return nil, "invalid_block" end
-		copy.open = block.open
 		if block.action ~= nil then
 			local action, reason = read_action(block.action)
 			if not action then return nil, reason end

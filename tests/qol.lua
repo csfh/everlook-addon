@@ -127,7 +127,9 @@ return function(root, check)
 					GetStringWidth = function(self) return #(self.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", "OO") * 7 end,
 					SetNonSpaceWrap = function() end,
 					GetStringHeight = function(self)
-						local lines = self.wrap and math.max(1, math.ceil(#(self.text or "") / math.max(1, math.floor((self.width and self.width > 0 and self.width or 300) / 7)))) or 1
+						-- Colour codes draw nothing, so they take no room.
+						local shown_length = #((self.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+						local lines = self.wrap and math.max(1, math.ceil(shown_length / math.max(1, math.floor((self.width and self.width > 0 and self.width or 300) / 7)))) or 1
 						if self.max_lines and self.max_lines > 0 then lines = math.min(lines, self.max_lines) end
 						return lines * 14 + (lines - 1) * (self.spacing or 0)
 					end,

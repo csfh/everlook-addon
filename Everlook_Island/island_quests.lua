@@ -498,8 +498,18 @@ function quests.distance_text(record)
 	return "Distance unavailable"
 end
 
-local function reason(record)
-	return (record.ready and "ready to turn in" or (record.level and "level " .. record.level or "level unavailable")) .. ", " .. quests.distance_text(record)
+-- Words in a tone, as the inline colour the label reads.
+local function in_tone(text, tone)
+	return string.format("|cff%02x%02x%02x%s|r", math.floor(tone[1] * 255 + 0.5), math.floor(tone[2] * 255 + 0.5), math.floor(tone[3] * 255 + 0.5), text)
+end
+
+-- A quest that can be handed in says so in green, the color the closed capsule's ring turns.
+local function ready_words(tones)
+	return in_tone("ready to turn in", tones.success)
+end
+
+local function reason(record, tones)
+	return (record.ready and ready_words(tones) or (record.level and "level " .. record.level or "level unavailable")) .. ", " .. quests.distance_text(record)
 end
 
 -- Where a quest is: its zone from the log, and how far it is.
@@ -666,6 +676,14 @@ function quests.ensure_ui(adapter)
 		call(target, "RegisterForClicks", "LeftButtonUp")
 		local visual = adapter.visual(target, true)
 		local node = { frame = target, visual = visual, title = adapter.label(visual, "LEFT", "text"), detail = adapter.label(visual, "LEFT", "caption") }
+		-- A row lights under the pointer, and its Pin button says what a click on it does.
+		local wash = call(visual, "CreateTexture", nil, "BACKGROUND")
+		call(wash, "SetAllPoints", visual)
+		call(wash, "SetColorTexture", 1, 1, 1, 0.06)
+		call(wash, "Hide")
+		node.on_hover = function(inside) call(wash, inside and "Show" or "Hide") end
+		node.pin = adapter.link(target, nil, "Pin", function() if node.record then adapter.pin(node.record.id) end end)
+		call(node.pin, "SetPoint", "TOPRIGHT", target, "TOPRIGHT", 0, 0)
 		call(target, "SetScript", "OnClick", function() if node.record then adapter.pin(node.record.id) end end)
 		adapter.hover(target, node)
 		adapter.controls[#adapter.controls + 1] = target
@@ -758,7 +776,7 @@ function quests.inspection(view, visible, width)
 	if current then
 		-- The title leaves room for the arrow beside it.
 		top = line(ui.heading, current.title, width - 22, top) + space.within
-		top = line(ui.explanation, view.reason .. ", " .. reason(current), width, top) + space.near
+		top = line(ui.explanation, view.reason .. ", " .. reason(current, tones), width, top) + space.near
 		-- Four objectives fit in the card. Any more fold into one line.
 		local shown = math.min(#current.objectives, #ui.objectives, OBJECTIVES_SHOWN)
 		local lead = space.mark + space.lead
@@ -806,19 +824,22 @@ function quests.inspection(view, visible, width)
 			if record then
 				local where, why = quests.where(record), quests.why(record)
 				node.record, node.tooltip = record, "Pin quest: " .. record.title .. "\n" .. where .. "\nWhy: " .. why
+				-- The Pin button takes the right of the row, so the words keep clear of it.
+				local words = width - 2 * edge - (call(node.pin, "GetWidth") or 56) - space.near
 				call(node.title, "SetText", index .. ". " .. record.title)
-				call(node.title, "SetWidth", width - 2 * edge)
+				call(node.title, "SetWidth", words)
 				call(node.title, "SetMaxLines", 2)
 				call(node.title, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 0, 0)
 				local title_height = call(node.title, "GetStringHeight") or 14
-				call(node.detail, "SetText", record.ready and where .. ", ready to turn in" or where)
-				call(node.detail, "SetWidth", width - 2 * edge)
+				call(node.detail, "SetText", record.ready and where .. ", " .. ready_words(tones) or where)
+				call(node.detail, "SetWidth", words)
 				call(node.detail, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 0, -title_height - space.within)
 				local detail_height = call(node.detail, "GetStringHeight") or 12
 				local height = title_height + space.within + detail_height
 				call(node.frame, "SetSize", width - 2 * edge, height)
 				call(node.frame, "ClearAllPoints")
 				call(node.frame, "SetPoint", "TOPLEFT", ui.panel, "TOPLEFT", edge, -top)
+				call(node.pin, "Show")
 				call(node.frame, "Show")
 				top = top + height + space.near
 			end

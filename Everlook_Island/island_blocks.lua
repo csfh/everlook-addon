@@ -68,15 +68,14 @@ local function table_slot(self, index)
 	local slot = self.tables[index]
 	if slot then return slot end
 	local host = self.host
-	slot = { heads = {}, names = {}, values = {}, node = { tooltip = nil } }
-	slot.toggle = CreateFrame("Button", nil, self.parent)
-	call(slot.toggle, "RegisterForClicks", "LeftButtonUp")
-	host.hover(slot.toggle, slot.node)
-	call(slot.toggle, "SetScript", "OnClick", function()
+	slot = { heads = {}, names = {}, values = {} }
+	slot.title = host.label(self.parent, "LEFT", "heading")
+	call(slot.title, "SetWordWrap", false)
+	slot.footer = host.label(self.parent, "LEFT", "caption")
+	-- The action is a small button after the title, like the one on a row.
+	slot.button = host.link(self.parent, nil, "Action", function()
 		if slot.action then run(slot.action, slot.handle) end
 	end)
-	slot.title = host.label(self.parent, "LEFT", "heading")
-	slot.footer = host.label(self.parent, "LEFT", "caption")
 	self.tables[index] = slot
 	return slot
 end
@@ -261,20 +260,26 @@ function View:paint(sections, top, width, title_in_band)
 				used.tables = used.tables + 1
 				local slot = table_slot(self, used.tables)
 				slot.action, slot.handle = block.action, record.handle
-				slot.node.tooltip = block.action and block.action.label or nil
 				local columns = #block.columns
 				local names_width = math.max(40, inner - columns * COLUMN_WIDTH - columns * space.near)
 				local line = call(slot.title, "GetLineHeight") or 12
-				-- The heading line names the table and the columns, and folds the rows when it has an action.
-				host.heading(slot.title, block.title, block.action and (block.open and "v " or "> ") or "")
+				-- The heading line names the table and the columns. With an action it is as tall as the
+				-- button, and the title and the column heads sit on its middle.
+				local heading_height = block.action and math.max(line, space.link) or line
+				local text_top = y + (heading_height - line) / 2
+				host.heading(slot.title, block.title)
 				call(slot.title, "ClearAllPoints")
-				call(slot.title, "SetPoint", "TOPLEFT", self.parent, "TOPLEFT", inset, -y)
-				call(slot.title, "SetWidth", names_width)
+				call(slot.title, "SetPoint", "TOPLEFT", self.parent, "TOPLEFT", inset, -text_top)
+				call(slot.title, "SetWidth", math.ceil(call(slot.title, "GetStringWidth") or names_width))
 				call(slot.title, "Show")
-				call(slot.toggle, "ClearAllPoints")
-				call(slot.toggle, "SetPoint", "TOPLEFT", self.parent, "TOPLEFT", inset, -y)
-				call(slot.toggle, "SetSize", inner, line + space.near)
-				call(slot.toggle, block.action and "Show" or "Hide")
+				if block.action then
+					host.set_link_text(slot.button, block.action.label)
+					call(slot.button, "ClearAllPoints")
+					call(slot.button, "SetPoint", "LEFT", slot.title, "RIGHT", space.near, 0)
+					call(slot.button, "Show")
+				else
+					call(slot.button, "Hide")
+				end
 				local function column_left(position)
 					return inset + names_width + space.near + (position - 1) * (COLUMN_WIDTH + space.near)
 				end
@@ -282,11 +287,11 @@ function View:paint(sections, top, width, title_in_band)
 					local head = table_label(slot, slot.heads, position, host, self.parent, "heading")
 					host.heading(head, block.columns[position])
 					call(head, "ClearAllPoints")
-					call(head, "SetPoint", "TOPLEFT", self.parent, "TOPLEFT", column_left(position), -y)
+					call(head, "SetPoint", "TOPLEFT", self.parent, "TOPLEFT", column_left(position), -text_top)
 					call(head, "SetWidth", COLUMN_WIDTH)
 					call(head, "Show")
 				end
-				local row_y = y + line + space.near
+				local row_y = y + heading_height + space.near
 				for row_index, cells in ipairs(block.rows) do
 					local name = table_label(slot, slot.names, row_index, host, self.parent, "text")
 					call(name, "SetJustifyH", "LEFT")
@@ -361,7 +366,7 @@ function View:paint(sections, top, width, title_in_band)
 	for index = used.cells + 1, #self.cells do call(self.cells[index].frame, "Hide") end
 	for index = used.tables + 1, #self.tables do
 		local slot = self.tables[index]
-		for _, region in ipairs({ slot.toggle, slot.title, slot.footer }) do call(region, "Hide") end
+		for _, region in ipairs({ slot.button, slot.title, slot.footer }) do call(region, "Hide") end
 		for _, head in ipairs(slot.heads) do call(head, "Hide") end
 		for _, name in ipairs(slot.names) do call(name, "Hide") end
 		for _, values in pairs(slot.values) do for _, value in ipairs(values) do call(value, "Hide") end end

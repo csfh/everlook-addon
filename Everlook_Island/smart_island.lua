@@ -99,10 +99,9 @@ local resting_slots = {}
 -- which is at least twice the one inside. `edge` is the inset the rows below share.
 -- `lead` is the gap between a 16 mark and its text, so every text column sits 22 from the
 -- content edge, as the capsule's does. `block` is the space between a header and what it
--- heads, `control` a button's height, `link` a text control's (with `link_pad` of room each side of
--- its words, which the words, not the room, line up on the inset), and `step` a wheel notch.
+-- heads, `control` a button's height, `link` a small button's, and `step` a wheel notch.
 shell.space = { within = 4, near = 8, section = 16, edge = 12, ring = 28, icon = 14, mark = 16, capsule_ring = 14, head = 32, pane_min = 48, pane_max = 320, pane_floor = 200,
-	lead = 6, block = 24, control = 28, link = 24, link_pad = 8, step = 40 }
+	lead = 6, block = 24, control = 28, link = 24, step = 40 }
 -- The surface's corner radius: the capsule, a card or panel, and a control.
 shell.radius = { capsule = 14, panel = 12, control = 8 }
 -- A notice card, as a toast or an inbox row. The text column is the inset, the icon and the
@@ -1206,7 +1205,7 @@ local function layout_expanded(list, status, inspection_height, two)
 	call(shell.quest_head, "SetSize", left_w, space.head)
 	for _, action in ipairs(quest_context.actions()) do
 		call(action, "ClearAllPoints")
-		call(action, "SetPoint", "TOPRIGHT", shell.quest_head, "TOPRIGHT", -(space.edge - space.link_pad), -(space.head - space.link) / 2)
+		call(action, "SetPoint", "TOPRIGHT", shell.quest_head, "TOPRIGHT", -space.edge, -(space.head - space.link) / 2)
 	end
 	call(clear_button, #notices > 0 and "Show" or "Hide")
 	call(undo_button, undo_state and "Show" or "Hide")
@@ -1214,7 +1213,7 @@ local function layout_expanded(list, status, inspection_height, two)
 	if #notices > 0 then
 		call(undo_button, "SetPoint", "RIGHT", clear_button, "LEFT", -space.near, 0)
 	else
-		call(undo_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -(space.edge - space.link_pad), -(space.head - space.link) / 2)
+		call(undo_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -space.edge, -(space.head - space.link) / 2)
 	end
 	local unread_below = shell.unread_below
 	call(new_button, show_new and "Show" or "Hide")
@@ -2301,35 +2300,32 @@ local function make_control(parent, name, title, width, callback)
 	return button
 end
 
--- A quiet action for a heading row: words with an underline and no frame, so
--- it does not outweigh the list beside it. Hover lights the words and a wash behind them.
+-- A quiet button for a heading row or a line of content: a thin outline round muted words, the
+-- same look as the buttons on a notice. Under the pointer the fill lightens and the words turn white.
+shell.tint_link = function(button, state)
+	island_surface.tint_button(button.quiet, state)
+	call(button.label, "SetTextColor", unpack(state == "rest" and COLORS.secondary or COLORS.primary))
+end
+
 shell.make_link = function(parent, name, title, callback)
 	local button = CreateFrame("Button", name, parent)
-	call(button, "SetSize", 48, shell.space.link)
+	call(button, "SetSize", 56, shell.space.link)
 	call(button, "RegisterForClicks", "LeftButtonUp")
 	local visual = make_visual(button, true)
-	local wash = call(visual, "CreateTexture", nil, "BACKGROUND")
-	call(wash, "SetAllPoints", visual)
-	call(wash, "SetColorTexture", 1, 1, 1, 0.08)
-	call(wash, "Hide")
+	button.quiet = island_surface.make_button(visual)
 	local label = make_label(visual, "CENTER", true)
 	call(label, "SetPoint", "CENTER")
 	call(label, "SetText", title)
-	local underline = call(visual, "CreateTexture", nil, "ARTWORK")
-	call(underline, "SetColorTexture", unpack(COLORS.secondary))
-	call(underline, "SetAlpha", 0.4)
-	call(underline, "SetHeight", 1)
-	call(underline, "SetPoint", "BOTTOMLEFT", label, "BOTTOMLEFT", 0, -2)
-	call(underline, "SetPoint", "BOTTOMRIGHT", label, "BOTTOMRIGHT", 0, -2)
-	call(button, "SetScript", "OnClick", callback)
-	button.label, button.pad = label, 16
-	button.hover = { tooltip = nil, on_hover = function(inside)
-		call(label, "SetTextColor", unpack(inside and COLORS.primary or COLORS.secondary))
-		call(underline, "SetAlpha", inside and 0.9 or 0.4)
-		call(wash, inside and "Show" or "Hide")
-	end }
+	call(button, "SetScript", "OnClick", function(...)
+		shell.tint_link(button, "hover")
+		callback(...)
+	end)
+	call(button, "SetScript", "OnMouseDown", function() shell.tint_link(button, "press") end)
+	button.label, button.pad = label, 24
+	button.hover = { tooltip = nil, on_hover = function(inside) shell.tint_link(button, inside and "hover" or "rest") end }
 	hover_target(button, button.hover)
 	preview_controls[#preview_controls + 1] = button
+	shell.tint_link(button, "rest")
 	shell.set_control_text(button, title)
 	return button
 end
@@ -2337,9 +2333,10 @@ end
 -- A control whose words change sizes itself to them.
 shell.set_control_text = function(button, text)
 	call(button.label, "SetText", text)
-	local width = math.max(48, math.ceil(call(button.label, "GetStringWidth") or 0) + button.pad)
+	local width = math.max(56, math.ceil(call(button.label, "GetStringWidth") or 0) + button.pad)
 	call(button, "SetWidth", width)
 	if button.background then island_surface.size(button.background, width, shell.space.control, shell.radius.control) end
+	if button.quiet then island_surface.size_button(button.quiet, width, shell.space.link) end
 end
 
 local function ensure_frame()
@@ -2459,7 +2456,7 @@ local function ensure_frame()
 	end
 	footer = CreateFrame("Frame", nil, expanded)
 	clear_button = shell.make_link(footer, "EverlookIslandClearHistory", "Clear history", island.clear_history)
-	call(clear_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -(shell.space.edge - shell.space.link_pad), -((shell.space.head - shell.space.link) / 2))
+	call(clear_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -shell.space.edge, -((shell.space.head - shell.space.link) / 2))
 	undo_button = shell.make_link(footer, "EverlookIslandUndo", "Undo", island.undo_clear)
 	-- The pill floats over the foot of the list, so it sits above the edge fades.
 	new_button = make_control(expanded, "EverlookIslandNewNotices", "New notices", 96, function() island.scroll_to(shell.unread_first or content_height) end)

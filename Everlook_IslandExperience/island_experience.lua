@@ -411,9 +411,9 @@ local function rested_line(bar)
 	end
 	if levels >= 1 then
 		local phrase = levels == 1 and "1 level" or digits(levels) .. " levels"
-		return "Rested " .. phrase .. " and " .. digits(remainder)
+		return "Rested " .. phrase .. " and " .. digits(remainder) .. " XP"
 	end
-	return "Rested " .. digits(remainder)
+	return "Rested " .. digits(remainder) .. " XP"
 end
 
 local function pace_line(hour, now, bar)
@@ -546,7 +546,7 @@ push = function()
 		section_handle = nil
 		return
 	end
-	-- Collapsed, the table is its Total row. A click on the heading shows each source.
+	-- Collapsed, the table is its Total row. The button shows each source.
 	local expandable = #data.rows > 1
 	local rows = {}
 	for index, row in ipairs(data.rows) do
@@ -557,8 +557,7 @@ push = function()
 		blocks = { {
 			kind = "table", title = "Experience", columns = { "Hour", "Day" }, rows = rows,
 			footer = data.footer and plain(data.footer) or nil,
-			open = expandable and unfolded or nil,
-			action = expandable and { id = "fold", label = unfolded and "Show only the total" or "Show each source",
+			action = expandable and { id = "fold", label = unfolded and "Hide sources" or "Show sources",
 				on_click = function() unfolded = not unfolded; push() end } or nil,
 		} },
 	})

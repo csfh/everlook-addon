@@ -786,16 +786,18 @@ return function(root, check, island_world, quest_world, secret_stat)
 		end
 		local function heading_button()
 			for _, frame in ipairs(frames) do
-				if frame.scripts and frame.scripts.OnClick and frame.shown ~= false and frame.height == 14 + 8 then return frame end
+				for _, region in ipairs(frame.regions or {}) do
+					if (region.text == "Show sources" or region.text == "Hide sources") and region.shown ~= false then return region.parent.parent end
+				end
 			end
 		end
-		check("experience starts folded to its Total row", text_of("> EXPERIENCE") and text_of("Total") and not text_of("Other"))
+		check("experience starts folded to its Total row, with a button to show the sources", text_of("EXPERIENCE") and not text_of("> EXPERIENCE") and text_of("Show sources") and text_of("Total") and not text_of("Other"))
 		local toggle = heading_button()
 		toggle.scripts.OnClick(toggle)
-		check("a click on the heading opens the slices", text_of("v EXPERIENCE") and text_of("Other"))
+		check("the button opens the slices and offers to hide them", text_of("Hide sources") and text_of("Other"))
 		toggle = heading_button()
 		toggle.scripts.OnClick(toggle)
-		check("and another folds them again", not text_of("Other") and text_of("> EXPERIENCE"))
+		check("and another folds them again", not text_of("Other") and text_of("Show sources"))
 	end
 	do
 		local addon, env, _, _, _, _, frames = island_world()
