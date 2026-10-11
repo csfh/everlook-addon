@@ -131,7 +131,7 @@ local function run_scan()
 			scanned_at = now
 		end
 	end
-	Everlook.factions.scan()
+	Everlook.world.defer("factions", Everlook.factions.scan)
 end
 
 local function request_scan()

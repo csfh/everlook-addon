@@ -221,5 +221,6 @@ frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
 frame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
 frame:RegisterEvent("TRAIT_CONFIG_UPDATED")
 frame:SetScript("OnEvent", function()
-	Everlook.talents.scan()
+	-- A change fires several of these at once. They are read once, in a coming frame.
+	Everlook.world.defer("talents", Everlook.talents.scan)
 end)

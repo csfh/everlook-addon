@@ -229,6 +229,26 @@ function Everlook.spells.record(unit, spellId, extra)
 	end
 end
 
+-- A spell is seen cast. What an npc cast adds is counted now, with the unit
+-- as it is at this moment. The spell's own row is a dozen client calls, and
+-- needs nothing from the moment, so it waits for a free frame, once for a burst
+-- of casts of the same spell.
+function Everlook.spells.cast(unit, spellId)
+	spellId = public(spellId)
+	if type(spellId) ~= "number" then
+		return
+	end
+	if not recorded[spellId] then
+		Everlook.world.defer("spell:" .. spellId, Everlook.spells.record, "player", spellId)
+	end
+	if unit and unit ~= "player" and UnitGUID then
+		local npcId = Everlook.npcs.creature_id(UnitGUID(unit))
+		if npcId then
+			note_cast(npcId, spellId)
+		end
+	end
+end
+
 function Everlook.spells.scan_book()
 	if not C_SpellBook or not C_SpellBook.GetNumSpellBookSkillLines or not C_SpellBook.GetSpellBookSkillLineInfo or not C_SpellBook.GetSpellBookItemInfo then
 		return
@@ -264,7 +284,7 @@ frame:RegisterEvent("SPELL_TEXT_UPDATE")
 frame:RegisterEvent("SPELL_DATA_LOAD_RESULT")
 frame:SetScript("OnEvent", function(_, event, first, second, third)
 	if event == "UNIT_SPELLCAST_SUCCEEDED" then
-		Everlook.spells.record(first, third)
+		Everlook.spells.cast(first, third)
 		return
 	end
 	local spellId = public(first)

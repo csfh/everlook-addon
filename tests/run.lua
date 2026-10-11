@@ -1360,6 +1360,37 @@ swept.spells.record(nil, 133)
 spell = swept.world.document().spells[1]
 check("spell text updates still refresh a recorded spell", spell and spell[7] == "A hotter ball of fire.")
 
+do
+	local reads, plain_record = {}, swept.spells.record
+	swept.spells.record = function(unit, id, extra)
+		reads[#reads + 1] = unit .. ":" .. id
+		return plain_record(unit, id, extra)
+	end
+	swept.spells.cast("target", 134)
+	swept.spells.cast("target", 134)
+	check("a spell seen for the first time is read in a later frame", #reads == 0)
+	local counted
+	for _, row in ipairs(swept.world.document().npcSpells) do
+		if row[2] == 134 then
+			counted = row[3]
+		end
+	end
+	check("what an npc cast adds is counted at once", counted == 2)
+	swept.sched.tick()
+	check("a burst of the same cast is read once, with no unit", #reads == 1 and reads[1] == "player:134")
+	swept.spells.cast("target", 133)
+	swept.sched.tick()
+	check("a spell already recorded is not read again", #reads == 1)
+	swept.spells.record = plain_record
+	local runs = 0
+	for _ = 1, 3 do
+		swept.world.defer("scan", function() runs = runs + 1 end)
+	end
+	check("a deferred scan waits for its turn", runs == 0)
+	swept.sched.tick()
+	check("and runs once for a burst of events", runs == 1)
+end
+
 _G.C_Spell = {
 	GetSpellInfo = function(id)
 		if id == 19740 then

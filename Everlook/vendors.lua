@@ -183,23 +183,10 @@ function Everlook.vendors.scan()
 	end
 end
 
--- Opening a merchant fires show and update together. One scan next tick
--- reads the settled list once. Without a timer each event scans immediately.
-local scan_waiting = false
-
+-- Opening a merchant fires show and update together. One scan in a coming
+-- frame reads the settled list once. Without a scheduler each event scans immediately.
 local function queue_scan()
-	if scan_waiting then
-		return
-	end
-	if not C_Timer or type(C_Timer.After) ~= "function" then
-		Everlook.vendors.scan()
-		return
-	end
-	scan_waiting = true
-	C_Timer.After(0, function()
-		scan_waiting = false
-		Everlook.vendors.scan()
-	end)
+	Everlook.world.defer("vendors", Everlook.vendors.scan)
 end
 
 local frame = CreateFrame("Frame")

@@ -2098,6 +2098,18 @@ function Everlook.world.migrated()
 	rows = {}
 end
 
+-- Runs `fn` in a coming frame, in the time the scheduler gives it, and not
+-- while in combat. A second call under the same key before it runs replaces the
+-- first, so a burst of events is answered once. Where there is no scheduler it
+-- runs on the spot.
+function Everlook.world.defer(key, fn, ...)
+	if Everlook.sched then
+		Everlook.sched.defer(key, fn, ...)
+	else
+		fn(...)
+	end
+end
+
 -- The part of the logout time that queued work may use, in milliseconds.
 local QUEUE_FLUSH_MS = 100
 
@@ -2106,7 +2118,8 @@ function Everlook.world.flush(include_counts)
 		return
 	end
 	-- Work still waiting for a frame, such as items to be read, is done before
-	-- anything is saved, so it is not lost. It gets a part of the logout time.
+	-- anything is saved, so it is not lost. It has its own limit, ahead of the
+	-- one the saving of pages keeps, so logout can take both together.
 	if Everlook.sched then
 		Everlook.sched.flush(QUEUE_FLUSH_MS)
 	end

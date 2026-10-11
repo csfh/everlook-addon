@@ -1008,7 +1008,7 @@ local function run_scan()
 			scanned_at = now
 		end
 	end
-	scan_log()
+	Everlook.world.defer("quest_log", scan_log)
 end
 
 local function queue_log()

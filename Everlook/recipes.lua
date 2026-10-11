@@ -111,7 +111,7 @@ local function run_scan()
 			scanned_at = now
 		end
 	end
-	Everlook.recipes.scan()
+	Everlook.world.defer("recipes", Everlook.recipes.scan)
 end
 
 local function queue_scan()
