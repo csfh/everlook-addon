@@ -240,7 +240,7 @@ class LayoutTest(unittest.TestCase):
                 color = self.ISLAND if self.is_island(name) else self.MODULE
                 self.assertEqual(fields.get("Title"), f"{prefix} |cff{color}{name}|r")
 
-    NAMEPLATE_PROVIDERS = {"QuestNameplates"}
+    NAMEPLATE_PROVIDERS = {"QuestNameplates", "NameplateTitles"}
 
     def test_modules_depend_on_everlook_and_sit_in_its_group(self):
         core, _ = self.fields(ADDON / "Everlook" / "Everlook.toc")

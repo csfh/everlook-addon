@@ -192,7 +192,7 @@ return function(root, check)
 			frames[#frames + 1] = frame
 			return frame
 		end
-		for _, file in ipairs({ "links", "module", "quest_interface", "flight_time", "friend_conveniences", "useful_tooltips", "faster_loot", "quest_automation", "auto_repair", "sell_junk", "open_containers", "fonts", "site_links", "hide_clutter", "auto_responses", "chat_tweaks", "map_pins", "coordinates", "quest_levels", "cinematic_skip", "camera", "swing_timers", "unit_names", "npc_titles", "nameplate_kinds", "nameplate_view", "nameplate_probe", "quest_nameplates", "quest_tracker", "mail", "gossip_continue", "tooltip_cursor", "chat_format", "radial_wheel", "radial_menu", "island_capsule", "island_row", "island_grid", "island_section", "island_blocks", "island_reaction", "island_summary", "island_quests", "island_actions", "island_vitals", "island_history", "island_surface", "island_scroll", "island_notice", "island_inbox", "island_toasts", "smart_island", "island_feed_kit", "island_share", "island_quest_notices", "island_loot", "island_hearth", "island_reputation", "island_professions", "island_mail", "island_invites", "island_buffs", "island_recap", "island_experience", "island_react", "island_warnings", "action_shortcuts" }) do
+		for _, file in ipairs({ "links", "module", "quest_interface", "flight_time", "friend_conveniences", "useful_tooltips", "faster_loot", "quest_automation", "auto_repair", "sell_junk", "open_containers", "fonts", "site_links", "hide_clutter", "auto_responses", "chat_tweaks", "map_pins", "coordinates", "quest_levels", "cinematic_skip", "camera", "swing_timers", "unit_names", "nameplate_kinds", "nameplate_view", "nameplate_probe", "npc_titles", "quest_nameplates", "quest_tracker", "mail", "gossip_continue", "tooltip_cursor", "chat_format", "radial_wheel", "radial_menu", "island_capsule", "island_row", "island_grid", "island_section", "island_blocks", "island_reaction", "island_summary", "island_quests", "island_actions", "island_vitals", "island_history", "island_surface", "island_scroll", "island_notice", "island_inbox", "island_toasts", "smart_island", "island_feed_kit", "island_share", "island_quest_notices", "island_loot", "island_hearth", "island_reputation", "island_professions", "island_mail", "island_invites", "island_buffs", "island_recap", "island_experience", "island_react", "island_warnings", "action_shortcuts" }) do
 			if not left_out[file] then
 				local chunk = assert(loadfile(source(file)))
 				setfenv(chunk, env)
@@ -766,28 +766,35 @@ return function(root, check)
 	end
 
 	do
-		local titles, title_env, title_event = load_qol()
-		local function fontstring()
-			local line = { shown = false, points = {} }
-			function line:SetFont(path, size, flags) self.path, self.size, self.flags = path, size, flags end
-			function line:SetTextColor(r, g, b) self.color = { r, g, b } end
-			function line:ClearAllPoints() self.points = {} end
-			function line:SetPoint(...) self.points[#self.points + 1] = { ... } end
-			function line:SetText(text) self.text = text end
-			function line:Show() self.shown = true end
-			function line:Hide() self.shown = false end
-			return line
-		end
-		local function plate()
-			local name = { points = {} }
+		-- NPC titles give the nameplate view a subtitle line for a friendly NPC, and keep the game's settings.
+		local titles, title_env, title_event, _, _, _, _ = load_qol()
+		local function made_plate(unit, title_row)
+			local name = { justify = "CENTER" }
 			function name:GetFont() return "Fonts\\Plate.ttf", 16, "OUTLINE" end
 			function name:GetTextColor() return 0.1, 0.9, 0.2 end
-			local created = {}
-			local frame = { name = name, CreateFontString = function() local line = fontstring(); created[#created + 1] = line; return line end }
-			return { UnitFrame = frame }, created
+			function name:GetJustifyH() return self.justify end
+			function name:SetJustifyH(value) self.justify = value end
+			local lines = {}
+			local frame = { name = name, HealthBarsContainer = {}, IsFriend = function() return true end, IsPlayer = function() return false end,
+				IsShowOnlyName = function() return false end, IsSimplified = function() return false end }
+			function frame:CreateTexture() return { SetSize = function() end, SetWidth = function() end, SetPoint = function() end, ClearAllPoints = function() end, Show = function() end, Hide = function() end, SetTexture = function() end, SetVertexColor = function() end } end
+			function frame:CreateFontString()
+				local line = { points = {}, shown = false }
+				function line:SetFont(path, size, flags) self.path, self.size, self.flags = path, size, flags end
+				function line:SetTextColor(r, g, b) self.color = { r, g, b } end
+				function line:ClearAllPoints() self.points = {} end
+				function line:SetPoint(...) self.points[#self.points + 1] = { ... } end
+				function line:SetText(text) self.text = text end
+				function line:SetJustifyH() end
+				function line:Show() self.shown = true end
+				function line:Hide() self.shown = false end
+				lines[#lines + 1] = line
+				return line
+			end
+			return { GetUnit = function() return unit end, UnitFrame = frame }, lines
 		end
-		local plates, created = {}, {}
-		for _, unit in ipairs({ "nameplate1", "nameplate2", "nameplate3", "nameplate4" }) do plates[unit], created[unit] = plate() end
+		local plates, lines = {}, {}
+		for _, unit in ipairs({ "nameplate1", "nameplate2", "nameplate3", "nameplate4" }) do plates[unit], lines[unit] = made_plate(unit) end
 		local tooltips = {
 			nameplate1 = { lines = { { leftText = "Thorgrum Borrelson" }, { leftText = "<Gryphon Master>" } } },
 			nameplate2 = { lines = { { leftText = "A Player" }, { leftText = "<Some Guild>" } } },
@@ -799,28 +806,29 @@ return function(root, check)
 		title_env.UnitExists = function() return true end
 		title_env.UnitIsPlayer = function(unit) return unit == "nameplate2" end
 		title_env.UnitCanAttack = function(_, unit) return unit == "nameplate3" end
+		title_env.UnitIsUnit = function() return false end
 		local cvars, set_calls = { nameplateShowFriendlyNpcs = "0", UnitNameNPC = "1", UnitNameFriendlySpecialNPCName = "1" }, {}
 		title_env.GetCVar = function(name) return cvars[name] end
 		title_env.SetCVar = function(name, value) cvars[name] = value; set_calls[#set_calls + 1] = name end
 		title_env.InCombatLockdown = function() return false end
+		titles.module.set("nameplates", "enabled", true)
 		titles.module.set("npc_titles", "use_nameplates", false)
 		titles.module.set("npc_titles", "enabled", true)
 		check("turning the module on without the setting leaves the game's settings alone", #set_calls == 0)
 		title_event("NAME_PLATE_UNIT_ADDED", "nameplate1")
-		local line = created.nameplate1[1]
-		check("a friendly NPC's title goes under its name", line and line.shown and line.text == "<Gryphon Master>"
-			and line.points[1][1] == "TOP" and line.points[1][2] == plates.nameplate1.UnitFrame.name and line.points[1][3] == "BOTTOM")
+		local line = lines.nameplate1[1]
+		check("a friendly NPC's title goes in the subtitle line, under its health bar", line and line.shown and line.text == "<Gryphon Master>" and line.points[1][1] == "TOPLEFT")
 		check("in the name's face and outline, a little smaller", line.path == "Fonts\\Plate.ttf" and line.size == 13 and line.flags == "OUTLINE")
 		check("and in the name's colour", line.color[1] == 0.1 and line.color[2] == 0.9 and line.color[3] == 0.2)
 		title_event("NAME_PLATE_UNIT_ADDED", "nameplate2")
 		title_event("NAME_PLATE_UNIT_ADDED", "nameplate3")
 		title_event("NAME_PLATE_UNIT_ADDED", "nameplate4")
 		check("players, hostile NPCs and NPCs without a title get no line",
-			#created.nameplate2 == 0 and #created.nameplate3 == 0 and #created.nameplate4 == 0)
+			#lines.nameplate2 == 0 and #lines.nameplate3 == 0 and #lines.nameplate4 == 0)
 		title_event("NAME_PLATE_UNIT_REMOVED", "nameplate1")
 		check("the line goes when the nameplate does", line.shown == false)
 		title_event("NAME_PLATE_UNIT_ADDED", "nameplate1")
-		check("the same line is reused when the nameplate returns", #created.nameplate1 == 1 and line.shown == true)
+		check("the same line is reused when the nameplate returns", #lines.nameplate1 == 1 and line.shown == true)
 		local secret = {}
 		title_env.issecretvalue = function(value) return rawequal(value, secret) end
 		tooltips.nameplate1 = { lines = { { leftText = "x" }, { leftText = secret } } }

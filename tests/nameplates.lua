@@ -43,6 +43,7 @@ return function(root, check, island_world)
 		function name:GetJustifyH() return self.justify end
 		function name:SetJustifyH(value) self.justify = value end
 		function name:GetFont() return "Fonts\\Name.ttf", 17.5, "OUTLINE" end
+		function name:GetStringWidth() return 100 end
 		local frame = { name = name, HealthBarsContainer = { label = "bar" }, widgetsOnlyMode = flags.widgets or nil,
 			textures = {}, lines = {} }
 		function frame:CreateTexture() local mark = texture(); self.textures[#self.textures + 1] = mark; return mark end
@@ -103,9 +104,11 @@ return function(root, check, island_world)
 			and frame.lines[1] and frame.lines[1].shown and frame.lines[1].text == "<Title>" and frame.name.justify == "LEFT")
 	end
 	local only = made.a5.UnitFrame
-	check("a name-only plate gets a one-row mark, and its subtitle under the name",
-		only.textures[1].shown and #only.textures[1].points == 1 and only.textures[1].width == 26 and only.textures[1].height == 26
-		and only.lines[1].points[1][2] == only.name and only.name.justify == "LEFT")
+	check("a name-only plate keeps its name centred, since there is no bar to line up with", only.name.justify == "CENTER")
+	check("its mark is beside the text itself, one row tall, and its subtitle centred under the name",
+		only.textures[1].shown and #only.textures[1].points == 1 and only.textures[1].points[1][1] == "RIGHT" and only.textures[1].points[1][2] == only.name
+		and only.textures[1].points[1][3] == "CENTER" and only.textures[1].points[1][4] == -52 and only.textures[1].width == 26 and only.textures[1].height == 26
+		and only.lines[1].points[1][1] == "TOP" and only.lines[1].points[1][2] == only.name and only.lines[1].justify == "CENTER")
 	for _, case in ipairs({ "a6", "a7", "a8", "personal" }) do
 		local frame = made[case].UnitFrame
 		check("the plate that is hands-off (" .. case .. ") is left exactly as the game made it", #frame.textures == 0 and #frame.lines == 0 and frame.name.justify == "CENTER")
@@ -157,7 +160,27 @@ return function(root, check, island_world)
 	check("a view that already has settings is left as it is", plates.migrate_saved() == false and env.EverlookDB.qol.nameplates.enabled == false)
 	env.EverlookDB.qol = { quest_nameplates = { enabled = false, layout = "bar_left" } }
 	check("and quest marks that were off bring nothing", plates.migrate_saved() == false and env.EverlookDB.qol.nameplates == nil)
+	env.EverlookDB.qol = { npc_titles = { enabled = true } }
+	check("anyone who had NPC titles on gets the nameplate view on too", plates.migrate_saved() == true and env.EverlookDB.qol.nameplates.enabled == true)
 	env.EverlookDB.qol = { nameplates = { enabled = true } }
+
+	-- A friendly player shown by name only can be given a bar, and the game's own setting is put back.
+	local cvars = { nameplateShowOnlyNameForFriendlyPlayerUnits = "1" }
+	local set_calls = 0
+	env.GetCVar = function(name) return cvars[name] end
+	env.SetCVar = function(name, value) cvars[name] = value; set_calls = set_calls + 1 end
+	env.InCombatLockdown = function() return false end
+	addon.module.set("nameplates", "player_bars", true)
+	check("health bars on friendly players turn the game's name-only setting off", cvars.nameplateShowOnlyNameForFriendlyPlayerUnits == "0")
+	check("and the setting it was is kept", env.EverlookDB.nameplates_cvars and env.EverlookDB.nameplates_cvars.nameplateShowOnlyNameForFriendlyPlayerUnits == "1")
+	addon.module.set("nameplates", "player_bars", false)
+	check("turning them off puts the setting back as it was", cvars.nameplateShowOnlyNameForFriendlyPlayerUnits == "1" and env.EverlookDB.nameplates_cvars == nil)
+	env.InCombatLockdown = function() return true end
+	set_calls = 0
+	addon.module.set("nameplates", "player_bars", true)
+	check("in combat the game's setting is left alone", set_calls == 0 and cvars.nameplateShowOnlyNameForFriendlyPlayerUnits == "1")
+	addon.module.set("nameplates", "player_bars", false)
+	env.InCombatLockdown = function() return false end
 
 	-- Off puts everything back.
 	addon.module.set("nameplates", "enabled", false)
