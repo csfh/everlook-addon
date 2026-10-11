@@ -280,6 +280,14 @@ return function(root, check, island_world, quest_world)
 			handle:write(layout.export(frames, top, env.GetTime()))
 			handle:close()
 		end
+		-- A link has room each side of its words; the words, not the room, sit on the inset.
+		local measure = layout.new()
+		local island_rect
+		for _, frame in ipairs(frames) do if frame.name == "EverlookSmartIsland" then island_rect = measure.rectangle(frame) end end
+		local pin_words, clear_words = find_text(frames, "Pin quest"), find_text(frames, "Clear history")
+		check("the words of a heading link end on the pane's 12 inset, as the figures below them do",
+			pin_words and measure.rectangle(pin_words).right == island_rect.left + 300 - 12
+			and measure.rectangle(clear_words).right == island_rect.right - 12)
 		local problems = layout.lint(frames, { skip = function(frame) return frame.name == "EverlookIslandResting" end })
 		check("with a quest and a section in each pane, nothing sits outside its frame and no two lines of text overlap", #problems == 0)
 		if #problems > 0 then print(table.concat(problems, "\n")) end

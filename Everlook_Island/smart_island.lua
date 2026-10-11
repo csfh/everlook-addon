@@ -99,9 +99,10 @@ local resting_slots = {}
 -- which is at least twice the one inside. `edge` is the inset the rows below share.
 -- `lead` is the gap between a 16 mark and its text, so every text column sits 22 from the
 -- content edge, as the capsule's does. `block` is the space between a header and what it
--- heads, `control` a button's height, `link` a text control's, and `step` a wheel notch.
+-- heads, `control` a button's height, `link` a text control's (with `link_pad` of room each side of
+-- its words, which the words, not the room, line up on the inset), and `step` a wheel notch.
 shell.space = { within = 4, near = 8, section = 16, edge = 12, ring = 28, icon = 14, mark = 16, capsule_ring = 14, head = 32, pane_min = 48, pane_max = 320,
-	lead = 6, block = 24, control = 28, link = 24, step = 40 }
+	lead = 6, block = 24, control = 28, link = 24, link_pad = 8, step = 40 }
 -- The surface's corner radius: the capsule, a card or panel, and a control.
 shell.radius = { capsule = 14, panel = 12, control = 8 }
 -- A notice card, as a toast or an inbox row. The text column is the inset, the icon and the
@@ -1202,7 +1203,7 @@ local function layout_expanded(list, status, inspection_height, two)
 	call(shell.quest_head, "SetSize", left_w, space.head)
 	for _, action in ipairs(quest_context.actions()) do
 		call(action, "ClearAllPoints")
-		call(action, "SetPoint", "TOPRIGHT", shell.quest_head, "TOPRIGHT", -space.edge, -(space.head - space.link) / 2)
+		call(action, "SetPoint", "TOPRIGHT", shell.quest_head, "TOPRIGHT", -(space.edge - space.link_pad), -(space.head - space.link) / 2)
 	end
 	call(clear_button, #notices > 0 and "Show" or "Hide")
 	call(undo_button, undo_state and "Show" or "Hide")
@@ -1210,7 +1211,7 @@ local function layout_expanded(list, status, inspection_height, two)
 	if #notices > 0 then
 		call(undo_button, "SetPoint", "RIGHT", clear_button, "LEFT", -space.near, 0)
 	else
-		call(undo_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -space.edge, -(space.head - space.link) / 2)
+		call(undo_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -(space.edge - space.link_pad), -(space.head - space.link) / 2)
 	end
 	local unread_below = shell.unread_below
 	call(new_button, show_new and "Show" or "Hide")
@@ -2455,7 +2456,7 @@ local function ensure_frame()
 	end
 	footer = CreateFrame("Frame", nil, expanded)
 	clear_button = shell.make_link(footer, "EverlookIslandClearHistory", "Clear history", island.clear_history)
-	call(clear_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -shell.space.edge, -((shell.space.head - shell.space.link) / 2))
+	call(clear_button, "SetPoint", "TOPRIGHT", footer, "TOPRIGHT", -(shell.space.edge - shell.space.link_pad), -((shell.space.head - shell.space.link) / 2))
 	undo_button = shell.make_link(footer, "EverlookIslandUndo", "Undo", island.undo_clear)
 	-- The pill floats over the foot of the list, so it sits above the edge fades.
 	new_button = make_control(expanded, "EverlookIslandNewNotices", "New notices", 96, function() island.scroll_to(shell.unread_first or content_height) end)

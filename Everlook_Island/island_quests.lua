@@ -640,7 +640,8 @@ function quests.ensure_ui(adapter)
 	call(ui.panel, "SetPoint", "TOPLEFT", adapter.content, "TOPLEFT", 0, 0)
 	ui.visual = adapter.visual(ui.panel, true)
 	ui.heading_arrow = island_row.make_arrow(ui.visual)
-	call(ui.heading_arrow, "SetPoint", "TOPRIGHT", ui.visual, "TOPRIGHT", -8, -12)
+	-- The arrow sits level with the title's line, on the same right inset as everything else.
+	call(ui.heading_arrow, "SetPoint", "TOPRIGHT", ui.visual, "TOPRIGHT", -adapter.space.edge, -adapter.space.near)
 	ui.heading = adapter.label(ui.visual, "LEFT")
 	ui.explanation = adapter.label(ui.visual, "LEFT", true)
 	for index = 1, 20 do ui.objectives[index] = adapter.label(ui.visual, "LEFT", "text") end
