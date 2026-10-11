@@ -28,7 +28,8 @@ return function(root, check, island_world)
 		local bar = { label = "bar" }
 		local created = {}
 		made[unit] = created
-		plates[unit] = { namePlateUnitToken = unit, UnitFrame = { name = name, HealthBarsContainer = bar,
+		-- The game's own accessor gives the unit; the field the token is kept in has differed between clients.
+		plates[unit] = { GetUnit = function() return unit end, UnitFrame = { name = name, HealthBarsContainer = bar,
 			CreateTexture = function() local mark = texture(); created[#created + 1] = mark; return mark end } }
 	end
 	local related = { nameplate1 = true, nameplate2 = true, nameplate4 = false }

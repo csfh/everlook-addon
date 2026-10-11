@@ -16,6 +16,17 @@ local function plain(value)
 	return value ~= nil and not (issecretvalue and issecretvalue(value))
 end
 
+-- The unit a plate shows. The game's own accessor comes first; the fields it keeps the token in have differed.
+local function unit_of(plate)
+	local unit
+	if type(plate.GetUnit) == "function" then
+		local ok, value = pcall(plate.GetUnit, plate)
+		if ok then unit = value end
+	end
+	unit = unit or plate.unitToken or plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
+	if plain(unit) and type(unit) == "string" then return unit end
+end
+
 local function plate_of(unit)
 	local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit and C_NamePlate.GetNamePlateForUnit(unit)
 	if not plate or (plate.IsForbidden and plate:IsForbidden()) then return nil end
@@ -145,8 +156,8 @@ local function refresh_all()
 	for unit in pairs(by_unit) do hide(unit) end
 	if not module.enabled(id) or not (C_NamePlate and C_NamePlate.GetNamePlates) then return end
 	for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
-		local unit = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
-		if plain(unit) and type(unit) == "string" then show(unit) end
+		local unit = unit_of(plate)
+		if unit then show(unit) end
 	end
 end
 
@@ -240,8 +251,8 @@ SlashCmdList.EVERLOOKPLATES = function()
 		say("no C_NamePlate.GetNamePlates")
 	else
 		for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
-			local unit = plate.namePlateUnitToken
-			say("== " .. text(unit) .. " forbidden=" .. text(try(plate, "IsForbidden")))
+			local unit = unit_of(plate)
+			say("== " .. text(unit) .. " forbidden=" .. text(try(plate, "IsForbidden")) .. " plate.GetUnit=" .. text(try(plate, "GetUnit")) .. " unitToken=" .. text(plate.unitToken) .. " namePlateUnitToken=" .. text(plate.namePlateUnitToken) .. " UnitFrame.unit=" .. text(plate.UnitFrame and plate.UnitFrame.unit))
 			if type(unit) == "string" then
 				say("unit: exists=" .. text(UnitExists and UnitExists(unit)) .. " player=" .. text(UnitIsPlayer and UnitIsPlayer(unit)) .. " canattack=" .. text(UnitCanAttack and UnitCanAttack("player", unit))
 					.. " friend=" .. text(UnitIsFriend and UnitIsFriend("player", unit)) .. " classification=" .. text(UnitClassification and UnitClassification(unit)) .. " level=" .. text(UnitLevel and UnitLevel(unit)))
@@ -253,10 +264,11 @@ SlashCmdList.EVERLOOKPLATES = function()
 			else
 				say(describe("UnitFrame", frame))
 				local methods = {}
-				for _, method in ipairs({ "IsShowOnlyName", "IsSimplified", "IsFriend", "IsPlayer", "UpdateAnchors", "UpdateName", "ApplyFrameOptions", "OnUnitSet" }) do
-					methods[#methods + 1] = method .. "=" .. text(type(frame[method]) == "function")
+				for _, method in ipairs({ "IsShowOnlyName", "IsSimplified", "IsFriend", "IsPlayer", "IsMinion", "IsMinusMob", "IsTarget", "IsFocus", "IsDead" }) do
+					methods[#methods + 1] = method .. "=" .. (type(frame[method]) == "function" and text(try(frame, method)) or "none")
 				end
-				say("methods " .. table.concat(methods, " "))
+				say("flags " .. table.concat(methods, " "))
+				say("widgetsOnlyMode=" .. text(frame.widgetsOnlyMode) .. " showOnlyName=" .. text(frame.showOnlyName) .. " isSimplified=" .. text(frame.isSimplified) .. " disableMouse=" .. text(frame.disableMouse))
 				local keys = {}
 				for key in pairs(frame) do keys[#keys + 1] = tostring(key) end
 				table.sort(keys)
