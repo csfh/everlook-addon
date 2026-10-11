@@ -127,7 +127,7 @@ return function(root, check, island_world, quest_world)
 	end
 
 	-- Each experiment changes one thing, reports, and puts it back.
-	for _, name in ipairs({ "noclip", "mouse", "noroot" }) do
+	for _, name in ipairs({ "noclip", "mouse", "noroot", "raise" }) do
 		local addon, env, frames, afters = open_world({ reduced = true, click = true })
 		env.print = function() end
 		local expanded, island_frame
@@ -135,15 +135,15 @@ return function(root, check, island_world, quest_world)
 			if frame.name == "EverlookIslandExpanded" then expanded = frame end
 			if frame.name == "EverlookSmartIsland" then island_frame = frame end
 		end
-		local before = { expanded.clips, expanded.mouse, island_frame.mouse }
+		local before = { expanded.clips, expanded.mouse, island_frame.mouse, expanded.level }
 		env.SlashCmdList.EVERLOOKISLANDMOUSE(name)
-		local during = { expanded.clips, expanded.mouse, island_frame.mouse }
+		local during = { expanded.clips, expanded.mouse, island_frame.mouse, expanded.level }
 		for _, after in ipairs(afters) do
 			if after.delay == 3 and not after.done then after.done = true; after.callback() end
 		end
-		local after_state = { expanded.clips, expanded.mouse, island_frame.mouse }
+		local after_state = { expanded.clips, expanded.mouse, island_frame.mouse, expanded.level }
 		check("/islandmouse " .. name .. " changes one thing, and puts it back",
-			(during[1] ~= before[1] or during[2] ~= before[2] or during[3] ~= before[3]) and after_state[1] == before[1] and after_state[2] == before[2] and after_state[3] == before[3])
+			(during[1] ~= before[1] or during[2] ~= before[2] or during[3] ~= before[3] or during[4] ~= before[4]) and after_state[1] == before[1] and after_state[2] == before[2] and after_state[3] == before[3] and after_state[4] == before[4])
 		check("and keeps its report under its own name", env.EverlookDB.island_mouse[name] ~= nil and env.EverlookDB.island_mouse[name].lines[1] == "experiment: " .. name)
 	end
 end

@@ -2746,7 +2746,8 @@ SlashCmdList.EVERLOOKISLANDMOUSE = function(argument)
 		return name_of(target) .. " L" .. str(try(target, "GetFrameLevel")) .. " " .. str(try(target, "GetFrameStrata"))
 			.. " click=" .. str(try(target, "IsMouseClickEnabled")) .. " motion=" .. str(try(target, "IsMouseMotionEnabled"))
 			.. " visible=" .. str(try(target, "IsVisible")) .. " alpha=" .. str(try(target, "GetEffectiveAlpha"))
-			.. " scale=" .. str(try(target, "GetEffectiveScale")) .. " clips=" .. str(try(target, "DoesClipChildren"))
+			.. " over=" .. str(try(target, "IsMouseOver")) .. " scale=" .. str(try(target, "GetEffectiveScale"))
+			.. " clips=" .. str(try(target, "DoesClipChildren")) .. " flat=" .. str(try(target, "GetEffectivelyFlattensRenderLayers"))
 			.. " rect " .. rect_of(target)
 	end
 	local link = _G.EverlookIslandClearHistory
@@ -2759,6 +2760,8 @@ SlashCmdList.EVERLOOKISLANDMOUSE = function(argument)
 		noclip = { apply = function() call(expanded, "SetClipsChildren", false) end, restore = function() call(expanded, "SetClipsChildren", true) end },
 		mouse = { apply = function() call(expanded, "EnableMouse", true) end, restore = function() call(expanded, "EnableMouse", false) end },
 		noroot = { apply = function() call(frame, "EnableMouse", false) end, restore = function() call(frame, "EnableMouse", true) end },
+		-- The panel and the island's own frame are both level 50. "raise" puts the panel one level above it.
+		raise = { apply = function() call(expanded, "SetFrameLevel", 51) end, restore = function() call(expanded, "SetFrameLevel", 50) end },
 	}
 	local experiment = experiments[named]
 	local label = experiment and named or "plain"
@@ -2780,17 +2783,17 @@ SlashCmdList.EVERLOOKISLANDMOUSE = function(argument)
 		if #foci == 0 then say("the pointer is over nothing") end
 		for index = 1, math.min(#foci, 4) do say("GETS THE MOUSE " .. index .. ": " .. describe(foci[index])) end
 		say("hit insets of the island: " .. str(try(_G.EverlookSmartIsland, "GetHitRectInsets")))
-		-- Every mouse-enabled island frame whose area holds the pointer, wherever it ranks. Frames that are not
-		-- ours are never measured: Blizzard's restricted ones refuse it.
+		-- Every mouse-enabled island frame whose area holds the pointer, wherever it ranks. The walk goes down the
+		-- island's own tree, so no frame of Blizzard's, restricted ones included, is ever measured.
+		say("the panel layer: " .. describe(_G.EverlookIslandExpanded))
 		local held = {}
-		local frame = _G.EnumerateFrames and _G.EnumerateFrames()
-		while frame do
-			local name = name_of(frame)
-			if name:find("Everlook", 1, true) and not try(frame, "IsForbidden") and try(frame, "IsMouseEnabled") and try(frame, "IsMouseOver") then
-				held[#held + 1] = frame
+		local function visit(node, depth)
+			if try(node, "IsMouseEnabled") and try(node, "IsMouseOver") then held[#held + 1] = node end
+			if depth < 10 then
+				for _, child in ipairs({ try(node, "GetChildren") }) do visit(child, depth + 1) end
 			end
-			frame = _G.EnumerateFrames(frame)
 		end
+		if _G.EverlookSmartIsland then visit(_G.EverlookSmartIsland, 0) end
 		table.sort(held, function(left, right) return (try(left, "GetFrameLevel") or 0) > (try(right, "GetFrameLevel") or 0) end)
 		say(#held .. " island frames hold the pointer, highest level first")
 		for _, held_frame in ipairs(held) do say("INSIDE " .. describe(held_frame)) end

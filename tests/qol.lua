@@ -86,6 +86,13 @@ return function(root, check)
 			function frame:SetStatusBarTexture(texture) self.status_texture = texture end
 			function frame:Hide() self.shown = false end
 			function frame:IsShown() return self.shown ~= false end
+			function frame:GetChildren()
+				local list = {}
+				for _, other in ipairs(frames) do
+					if other.parent == self and other.kind ~= nil and other.name ~= "" then list[#list + 1] = other end
+				end
+				return unpack(list)
+			end
 			function frame:Show() self.shown = true end
 			function frame:CreateTexture(_, layer)
 				local texture = {
