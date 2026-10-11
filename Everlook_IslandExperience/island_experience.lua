@@ -520,12 +520,67 @@ function experience.on_event(event, ...)
 	end
 end
 
--- The island reads report() and table() while this option is on, and passes
--- its events here.
+-- The experience table is a section in the island's notifications pane. This pushes it, and
+-- pushes it again when the figures change, so the island holds a copy and reads nothing from here.
+local section_handle
+local unfolded = false
+local last_push = 0
+local PUSH_EVERY = 30
+local push
+
+local function wanted()
+	return Everlook.module.enabled("smart_island") and Everlook.module.get("smart_island", "feed_experience") == true
+end
+
+local function plain(text)
+	return (text:gsub("|", ""):sub(1, 160))
+end
+
+push = function()
+	local api = Everlook.island
+	if not api or type(api.section) ~= "function" then return end
+	last_push = GetTime and GetTime() or 0
+	local data = wanted() and experience.table() or nil
+	if not data then
+		if section_handle then api.dismiss(section_handle) end
+		section_handle = nil
+		return
+	end
+	-- Collapsed, the table is its Total row. A click on the heading shows each source.
+	local expandable = #data.rows > 1
+	local rows = {}
+	for index, row in ipairs(data.rows) do
+		if unfolded or not expandable or index == 1 then rows[#rows + 1] = { row[1], row[2], row[3] } end
+	end
+	section_handle = api.section({
+		source = "everlook_experience", key = "table", region = "pane_b", order = 20,
+		blocks = { {
+			kind = "table", title = "Experience", columns = { "Hour", "Day" }, rows = rows,
+			footer = data.footer and plain(data.footer) or nil,
+			open = expandable and unfolded or nil,
+			action = expandable and { id = "fold", label = unfolded and "Show only the total" or "Show each source",
+				on_click = function() unfolded = not unfolded; push() end } or nil,
+		} },
+	})
+end
+
+-- The experience events the island used to forward are this extension's own now.
 Everlook.module.extend("smart_island", {
 	id = "experience", addon = addon_name, order = 100,
 	options = {
 		feed_experience = { name = "Experience detail", default = false, description = "On the open Island, lists experience from the last hour and the last day, and names how much came from quest turn-ins, kills, and everything else. The closed capsule stays a level chip, nothing is listed until the experience bar has been read once, the first look is not counted, rested experience is shown when the client gives a whole amount and no rested bonus says Not rested, an estimate of time to this level appears only after a minute of gains and stays off when the bar is full or you are at the level cap, a missing reading or a skipped level is marked incomplete, a reading the client hides or the first gain after a reload lists any part that is not a turn-in or a kill as Unsorted and marks that line incomplete, and turning this off hides the lines while Smart island keeps counting.", presets = { Quiet = false, Standard = false, Informative = true } },
 	},
 	sections = { { name = "Activity", keys = { "feed_experience" }, before = "source_repair" } },
+	events = { "PLAYER_ENTERING_WORLD", "QUEST_TURNED_IN", "CHAT_MSG_COMBAT_XP_GAIN", "PLAYER_XP_UPDATE", "PLAYER_LEVEL_UP", "PLAYER_REGEN_ENABLED" },
+	on_event = function(event, ...)
+		experience.on_event(event, ...)
+		push()
+	end,
+	refresh = function(force)
+		if not force and GetTime and GetTime() - last_push >= PUSH_EVERY then push() end
+	end,
+	apply = function(enabled)
+		if enabled then experience.on_event("PLAYER_ENTERING_WORLD") end
+		push()
+	end,
 })

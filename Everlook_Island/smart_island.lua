@@ -581,13 +581,6 @@ local function animate_preview(is_open)
 	call(preview_group, "Play")
 end
 
--- The experience heading folds the hour and day slices away and back.
-function island.toggle_experience()
-	shell.exp_open = not shell.exp_open
-	if paint then paint() end
-	return shell.exp_open
-end
-
 -- The open island's top right: the game time, then the experience percent.
 function island.header_figures()
 	local parts = {}
@@ -621,15 +614,6 @@ local function mode()
 	return "closed"
 end
 
-local function experience_view()
-	if not module.get(id, "feed_experience") or not Everlook.island_experience or not Everlook.island_experience.report then
-		return nil
-	end
-	local report = Everlook.island_experience.report()
-	if not report or not report.ready then return nil end
-	return { hour = report.hour, day = report.day, lines = report.lines }
-end
-
 function island.view()
 	local preview_y, preview_alpha = preview_position()
 	return {
@@ -650,7 +634,6 @@ function island.view()
 		bags = readout.bags_text,
 		clock = readout.clock_text,
 		coords = readout.coords_text,
-		experience = experience_view(),
 		shown = frame ~= nil and frame.shown ~= false and module.enabled(id),
 		width = frame and frame.width,
 		height = frame and frame.height,
@@ -726,74 +709,6 @@ local function refresh_readouts()
 	vitals.follow("refresh")
 end
 
--- The experience detail is a small table: a heading row, then a row per slice
--- with an hour and a day column, then one footer line.
-local EXPERIENCE_COLUMN = 84
-
--- The table fills the column that starts at `left` and is `width` wide. Its
--- heading row names the columns, and a click on it folds the slices.
-local function experience_height(left, width, top)
-	local exp = shell.exp
-	if not exp then return 0 end
-	local space = shell.space
-	local data = module.get(id, "feed_experience") and Everlook.island_experience and Everlook.island_experience.table
-		and Everlook.island_experience.table() or nil
-	if not data then
-		for _, label in pairs(exp) do call(label, "Hide") end
-		return 0
-	end
-	-- Collapsed, the table is its Total row. A click on the heading shows the slices.
-	local expandable = #data.rows > 1
-	local shown_rows = (shell.exp_open or not expandable) and #data.rows or 1
-	local marker = expandable and (shell.exp_open and "v " or "> ") or ""
-	local names, hours, days = {}, {}, {}
-	for index = 1, shown_rows do
-		local row = data.rows[index]
-		names[#names + 1] = row[1]
-		hours[#hours + 1] = row[2]
-		days[#days + 1] = row[3]
-	end
-	local hour_left = left + width - EXPERIENCE_COLUMN * 2 - space.near
-	local day_left = left + width - EXPERIENCE_COLUMN
-	local function place(label, text, x, label_width, y)
-		call(label, "ClearAllPoints")
-		call(label, "SetPoint", "TOPLEFT", summary, "TOPLEFT", x, -y)
-		call(label, "SetWidth", label_width)
-		if label == exp.heading then
-			shell.heading(label, "Experience", marker)
-		elseif label == exp.hour_heading or label == exp.day_heading then
-			shell.heading(label, text)
-		else
-			call(label, "SetText", text)
-		end
-		call(label, "Show")
-	end
-	place(exp.heading, "Experience", left, math.max(40, width - EXPERIENCE_COLUMN * 2 - space.near), top)
-	place(exp.hour_heading, "Hour", hour_left, EXPERIENCE_COLUMN, top)
-	place(exp.day_heading, "Day", day_left, EXPERIENCE_COLUMN, top)
-	local heading_height = call(exp.heading, "GetLineHeight") or 12
-	call(exp.toggle, "ClearAllPoints")
-	call(exp.toggle, "SetPoint", "TOPLEFT", summary, "TOPLEFT", left, -top)
-	call(exp.toggle, "SetSize", math.max(1, width), heading_height + space.near)
-	call(exp.toggle, expandable and "Show" or "Hide")
-	local rows_top = top + heading_height + space.near
-	place(exp.names, table.concat(names, "\n"), left, math.max(40, width - EXPERIENCE_COLUMN * 2 - space.near), rows_top)
-	place(exp.hour, table.concat(hours, "\n"), hour_left, EXPERIENCE_COLUMN, rows_top)
-	place(exp.day, table.concat(days, "\n"), day_left, EXPERIENCE_COLUMN, rows_top)
-	local height = heading_height + space.near + shown_rows * ((call(exp.names, "GetLineHeight") or 14) + space.within)
-	if data.footer then
-		call(exp.footer, "ClearAllPoints")
-		call(exp.footer, "SetPoint", "TOPLEFT", summary, "TOPLEFT", left, -(top + height + space.within))
-		call(exp.footer, "SetWidth", math.max(0, width))
-		call(exp.footer, "SetText", data.footer)
-		call(exp.footer, "Show")
-		height = height + space.within + (call(exp.footer, "GetStringHeight") or 14)
-	else
-		call(exp.footer, "Hide")
-	end
-	return height
-end
-
 -- The open summary is a header, an Experience table and a Status heading over
 -- a grid of cells. Each cell has a mark, a small name over its value and, for a
 -- figure with a fraction, a ring around the mark that fills to it.
@@ -826,16 +741,11 @@ local function layout_summary(width, left_w)
 	call(right_text, "ClearAllPoints")
 	call(right_text, "SetPoint", "TOPRIGHT", shell.header_visual, "TOPRIGHT", -edge, -(edge + math.max(0, left_line - right_line - 1)))
 	local block_top = edge + heading_height + space.section
-	-- The Experience table takes the left column. Status takes the right, or
-	-- the whole width in one row when there is no table to sit beside.
+	-- Status takes the whole width: four cells across, or two when the island is one pane.
 	local stacked = left_w == 0
-	local experience_bottom = block_top + experience_height(edge, (stacked and width or left_w) - 2 * edge, block_top)
-	local has_table = experience_bottom > block_top
-	local beside = has_table and not stacked
-	local status_left = beside and left_w + edge or edge
-	local status_width = beside and width - left_w - 2 * edge or width - 2 * edge
-	-- Two columns of cells, unless there is a whole row to spread four across.
-	local per_row = (beside or stacked) and 2 or 4
+	local status_left = edge
+	local status_width = width - 2 * edge
+	local per_row = stacked and 2 or 4
 	-- Money and position share a row, and gear and bags share the next, so the
 	-- rings line up whichever readouts are missing.
 	local rows_of, shown = per_row == 2 and { {}, {} } or { {} }, {}
@@ -850,8 +760,7 @@ local function layout_summary(width, left_w)
 	for _, group in ipairs(rows_of) do
 		if #group > 0 then cell_rows[#cell_rows + 1] = group end
 	end
-	-- Under the table when stacked, level with it when beside.
-	local y = (stacked and has_table) and experience_bottom + space.section or block_top
+	local y = block_top
 	call(shell.status_heading, #shown > 0 and "Show" or "Hide")
 	if #shown > 0 then
 		call(shell.status_heading, "ClearAllPoints")
@@ -908,7 +817,7 @@ local function layout_summary(width, left_w)
 			call(node.frame, "Hide")
 		end
 	end
-	summary_height = math.max(experience_bottom, y + grid_height) + edge
+	summary_height = y + grid_height + edge
 	call(summary, "SetSize", width, summary_height)
 	call(shell.divider, "ClearAllPoints")
 	call(shell.divider, "SetPoint", "BOTTOMLEFT", summary, "BOTTOMLEFT", edge, 0)
@@ -1716,9 +1625,6 @@ paint = function(reason)
 		if entry.unread and priority(entry) > 1 then unread_warning = true end
 	end
 	call(unread_text, "SetTextColor", unpack(unread_warning and COLORS.warning or COLORS.accent))
-	if shell.exp and not visual_open then
-		for _, label in pairs(shell.exp) do call(label, "Hide") end
-	end
 	show_label(closed_text, (now == "closed" or morphing) and not quest and not layout, closed_line or island.format_level(readout.level))
 	show_label(left_text, visual_open, "Level " .. island.format_level(readout.level))
 	show_label(right_text, visual_open, island.header_figures())
@@ -2572,24 +2478,6 @@ local function ensure_frame()
 	call(left_text, "SetPoint", "TOPLEFT", header_visual, "TOPLEFT", shell.space.edge, -shell.space.edge)
 	right_text = make_label(header_visual, "RIGHT", true)
 	call(right_text, "SetPoint", "TOPRIGHT", header_visual, "TOPRIGHT", -shell.space.edge, -shell.space.edge)
-	shell.exp = {
-		heading = make_label(header_visual, "LEFT", "heading"),
-		hour_heading = make_label(header_visual, "RIGHT", "heading"),
-		day_heading = make_label(header_visual, "RIGHT", "heading"),
-		names = make_label(header_visual, "LEFT", true),
-		hour = make_label(header_visual, "RIGHT", true),
-		day = make_label(header_visual, "RIGHT", true),
-		footer = make_label(header_visual, "LEFT", true),
-	}
-	shell.exp.toggle = CreateFrame("Button", nil, summary)
-	call(shell.exp.toggle, "RegisterForClicks", "LeftButtonUp")
-	call(shell.exp.toggle, "SetScript", "OnClick", island.toggle_experience)
-	preview_controls[#preview_controls + 1] = shell.exp.toggle
-	-- One font size across the three columns keeps their rows level. The figures
-	-- take the primary color instead.
-	call(shell.exp.hour, "SetTextColor", unpack(COLORS.primary))
-	call(shell.exp.day, "SetTextColor", unpack(COLORS.primary))
-	for _, label in pairs(shell.exp) do call(label, "Hide") end
 	shell.status_heading = make_label(header_visual, "LEFT", "heading")
 	call(shell.status_heading, "Hide")
 	shell.divider = call(header_visual, "CreateTexture", nil, "ARTWORK")
@@ -2767,9 +2655,6 @@ local function apply(enabled)
 	refresh_readouts()
 	refresh_quests(true)
 	vitals.follow("sync")
-	if Everlook.island_experience and Everlook.island_experience.on_event then
-		Everlook.island_experience.on_event("PLAYER_ENTERING_WORLD")
-	end
 	paint()
 	note_screen()
 	if ticker or not C_Timer or not C_Timer.NewTicker then return end
@@ -2810,9 +2695,6 @@ local function on_event(event, ...)
 	if event == "PLAYER_LOGOUT" then
 		if module.enabled(id) and Everlook.island_history then Everlook.island_history.save(notices, clock_now()) end
 		return
-	end
-	if Everlook.island_experience and Everlook.island_experience.on_event then
-		Everlook.island_experience.on_event(event, ...)
 	end
 	if event == "CHAT_MSG_COMBAT_XP_GAIN" or event == "UPDATE_EXHAUSTION" or event == "PLAYER_XP_UPDATE" then
 		take_bar(vitals.follow(event))

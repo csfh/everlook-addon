@@ -781,10 +781,18 @@ return function(root, check, island_world, quest_world, secret_stat)
 				end
 			end
 		end
+		local function heading_button()
+			for _, frame in ipairs(frames) do
+				if frame.scripts and frame.scripts.OnClick and frame.shown ~= false and frame.height == 14 + 8 then return frame end
+			end
+		end
 		check("experience starts folded to its Total row", text_of("> EXPERIENCE") and text_of("Total") and not text_of("Other"))
-		check("a click on the heading opens the slices", addon.smart_island.toggle_experience() == true
-			and text_of("v EXPERIENCE") and text_of("Other"))
-		check("and another folds them again", addon.smart_island.toggle_experience() == false and not text_of("Other") and text_of("> EXPERIENCE"))
+		local toggle = heading_button()
+		toggle.scripts.OnClick(toggle)
+		check("a click on the heading opens the slices", text_of("v EXPERIENCE") and text_of("Other"))
+		toggle = heading_button()
+		toggle.scripts.OnClick(toggle)
+		check("and another folds them again", not text_of("Other") and text_of("> EXPERIENCE"))
 	end
 	do
 		local addon, env, _, _, _, _, frames = island_world()

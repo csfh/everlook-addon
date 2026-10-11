@@ -2805,14 +2805,13 @@ return function(root, check)
 		event("PLAYER_XP_UPDATE")
 		addon.module.set("smart_island", "feed_experience", true)
 		env.everlook_smart_island_key("down")
-		local status, quests_heading, notices_heading, names, hour, quest_pane, notice_pane
+		local status, quests_heading, notices_heading, hour, quest_pane, notice_pane
 		for _, object in ipairs(frames) do
 			for _, region in ipairs(object.regions or {}) do
 				if region.shown ~= false then
 					if region.text == "STATUS" then status = region end
 					if region.text == "QUESTS" then quests_heading = region end
 					if region.text == "NOTIFICATIONS" then notices_heading = region end
-					if region.text and region.text:find("EXPERIENCE", 1, true) then names = region end
 					if region.text == "HOUR" then hour = region end
 				end
 			end
@@ -2820,13 +2819,20 @@ return function(root, check)
 				if object.point[4] == 0 then quest_pane = object else notice_pane = object end
 			end
 		end
+		if os.getenv("ISLAND_LAYOUT_DIR") then
+			local layout = dofile(root .. "/tests/layout.lua")
+			local top
+			for _, frame in ipairs(frames) do if frame.name == "EverlookSmartIsland" then top = frame end end
+			layout.settle(frames)
+			local handle = assert(io.open(os.getenv("ISLAND_LAYOUT_DIR") .. "/experience.json", "w"))
+			handle:write(layout.export(frames, top, env.GetTime()))
+			handle:close()
+		end
 		-- 720 wide on the 12-column grid: pane A is five columns, so the divider is at 12 + 276 + 12 = 300.
 		check("the island is two columns wide when there is a quest to show", addon.smart_island.view().width == 720)
-		check("the Experience table and the quests share the left column's edge", names and quests_heading
-			and names.point[4] == 12 and quests_heading.point[4] == 12)
-		check("Status and the notifications share the right column's edge", status and notices_heading
-			and status.point[4] == 300 + 12 and notices_heading.point[4] == 300 + 12)
-		check("the table and Status begin on one line", status and hour and hour.point[5] == status.point[5])
+		check("Status and the quests share the left edge, and the notifications start at the divider and the inset", status and quests_heading
+			and status.point[4] == 12 and quests_heading.point[4] == 12 and notices_heading and notices_heading.point[4] == 300 + 12)
+		check("the experience table is a section in the notifications pane, under its heading", hour ~= nil and addon.smart_island.view().sections == 1)
 		check("the two panes share a top and a height, and the left ends where the right begins",
 			quest_pane and notice_pane and quest_pane.point[5] == notice_pane.point[5] and quest_pane.height == notice_pane.height
 			and quest_pane.width == notice_pane.point[4] and quest_pane.width + notice_pane.width == 720)
@@ -5704,8 +5710,8 @@ return function(root, check)
 			ui_state.xp = 600
 			ui_event("PLAYER_XP_UPDATE")
 			local view = ui.smart_island.view()
-			check("experience detail stays off the view until the option is on",
-				view.experience == nil and view.mode == "closed" and view.level == 12
+			check("experience detail stays off the island until the option is on",
+				view.sections == 0 and view.mode == "closed" and view.level == 12
 				and ui.island_experience.report().hour.total == 150)
 			ui.module.set("smart_island", "feed_experience", true)
 			view = ui.smart_island.view()
@@ -5716,40 +5722,34 @@ return function(root, check)
 					end
 				end
 			end
-			local function money_chip()
+			local function text_shown(text)
 				for _, object in ipairs(ui_frames) do
 					for _, region in ipairs(object.regions or {}) do
-						if region.text == "Money" and region.parent and region.parent.parent then
-							return region.parent.parent
-						end
+						if region.text == text and region.shown ~= false then return region end
 					end
 				end
 			end
-			check("the closed capsule stays a level chip while the hour is recorded",
-				view.mode == "closed" and view.level == 12 and view.experience.hour.total == 150
-				and (not hour_label() or hour_label().shown == false))
+			check("the closed capsule stays a level chip while the hour is recorded, and the experience is a section",
+				view.mode == "closed" and view.level == 12 and view.sections == 1 and ui.island_experience.report().hour.total == 150)
 			ui_env.everlook_smart_island_key("down")
-			local label, money = hour_label(), money_chip()
-			check("the open island places the hour above money",
-				label and label.shown ~= false and label.text == "HOUR"
-				and money and money.point and label.point and label.point[5] > money.point[5])
+			local label = hour_label()
+			check("the open island shows the table in the notifications pane, with the hour and the total",
+				label and label.shown ~= false and label.text == "HOUR" and text_shown("150") ~= nil and text_shown("Total") ~= nil
+				and text_shown("NOTIFICATIONS") ~= nil)
 			ui.module.set("smart_island", "size", 150)
-			label, money = hour_label(), money_chip()
-			check("a larger island keeps the hour above money",
-				ui.smart_island.view().experience.hour.total == 150
-				and label and label.shown ~= false and money and label.point and label.point[5] > money.point[5])
+			check("a larger island keeps the table", ui.island_experience.report().hour.total == 150 and hour_label() ~= nil)
 			ui.module.set("smart_island", "size", 100)
 			local notices = #ui.smart_island.view().notices
 			ui_event("QUEST_TURNED_IN", 9, 100, 0)
 			ui_state.xp = 700
 			ui_event("PLAYER_XP_UPDATE")
 			view = ui.smart_island.view()
+			local report = ui.island_experience.report()
 			check("a turned-in quest labels the next bar move on the open island",
-				view.experience.hour.quest == 100 and view.experience.hour.total == 250
-				and #view.notices == notices)
+				report.hour.quest == 100 and report.hour.total == 250 and #view.notices == notices)
 			ui.module.set("smart_island", "feed_experience", false)
-			check("turning experience detail off hides the rows and keeps the hour",
-				ui.smart_island.view().experience == nil and ui.island_experience.report().hour.total == 250)
+			check("turning experience detail off removes the section and keeps the hour",
+				ui.smart_island.view().sections == 0 and hour_label() == nil and ui.island_experience.report().hour.total == 250)
 		end
 		experience_ledger()
 		local function lifetime_tests()
