@@ -101,7 +101,7 @@ local resting_slots = {}
 -- content edge, as the capsule's does. `block` is the space between a header and what it
 -- heads, `control` a button's height, `link` a text control's (with `link_pad` of room each side of
 -- its words, which the words, not the room, line up on the inset), and `step` a wheel notch.
-shell.space = { within = 4, near = 8, section = 16, edge = 12, ring = 28, icon = 14, mark = 16, capsule_ring = 14, head = 32, pane_min = 48, pane_max = 320,
+shell.space = { within = 4, near = 8, section = 16, edge = 12, ring = 28, icon = 14, mark = 16, capsule_ring = 14, head = 32, pane_min = 48, pane_max = 320, pane_floor = 200,
 	lead = 6, block = 24, control = 28, link = 24, link_pad = 8, step = 40 }
 -- The surface's corner radius: the capsule, a card or panel, and a control.
 shell.radius = { capsule = 14, panel = 12, control = 8 }
@@ -1154,7 +1154,10 @@ local function layout_expanded(list, status, inspection_height, two)
 	local a_end = shell.blocks_a:paint(a_list, quest_height > 0 and (quest_height - space.edge + space.section) or space.near, left_w, quest_title ~= nil)
 	if #a_list > 0 then quest_height = a_end + space.edge end
 	local room = math.max(space.pane_min, screen_size("GetHeight") - viewport_top - space.edge - space.block)
-	scroll_height = math.min(math.max(content_height, quest_height, space.pane_min), space.pane_max, room)
+	-- Beside the quests, the notifications ask for no more than `pane_floor` of the height, and scroll
+	-- past it, so a long history does not stretch a short quest column into empty space.
+	local wanted = two and math.max(quest_height, math.min(content_height, space.pane_floor)) or content_height
+	scroll_height = math.min(math.max(wanted, space.pane_min), space.pane_max, room)
 	if follow_end then
 		scroll_offset = content_height - scroll_height
 	elseif scroll_anchor then

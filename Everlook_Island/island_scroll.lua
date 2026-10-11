@@ -6,8 +6,8 @@ local Everlook = Everlook
 local scroll = {}
 Everlook.island_scroll = scroll
 
--- The thumb sits this far in from the list's right edge, inside its padding.
-local THUMB_MIN, WIDTH, OFFSET = 24, 6, 4
+-- The thumb is 4 wide and sits 2 in from the list's right edge, so it leaves 6 clear of the figures that end on the 12 inset.
+local THUMB_MIN, WIDTH, OFFSET = 24, 4, 2
 -- A fade this tall tells you the list goes on past that edge. It sits above the
 -- rows and below the thumb.
 local FADE_HEIGHT, FADE_LEVEL = 20, 58

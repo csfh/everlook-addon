@@ -324,4 +324,24 @@ return function(root, check, island_world, quest_world)
 			check("clicking the heading calls the producer with the action id", folded == "fold")
 		end
 	end
+
+	-- Beside the quests, a long history does not stretch the panes.
+	do
+		local function with_history()
+			local addon, env, _, _, _, _, frames = quest_world()
+			addon.module.set("smart_island", "quest_context", true)
+			for index = 1, 8 do env.Everlook.island.notify({ source = "MyAddon", key = "n" .. index, text = "Notice " .. index, detail = "Something happened", persist = true }) end
+			open(addon, frames)
+			return addon.smart_island.view().scroll_height
+		end
+		local function alone()
+			local addon, env, _, _, _, _, frames = world()
+			for index = 1, 8 do env.Everlook.island.notify({ source = "MyAddon", key = "n" .. index, text = "Notice " .. index, detail = "Something happened", persist = true }) end
+			open(addon, frames)
+			return addon.smart_island.view().scroll_height
+		end
+		local beside, alone_height = with_history(), alone()
+		check("a long history asks for at most 200 beside the quests, and the panes take the quest column's height if it is taller",
+			beside >= 200 and beside < 320 and alone_height == 320)
+	end
 end
