@@ -152,7 +152,7 @@ return function(root, check)
 			frames[#frames + 1] = frame
 			return frame
 		end
-		for _, file in ipairs({ "links", "module", "quest_interface", "flight_time", "friend_conveniences", "useful_tooltips", "faster_loot", "quest_automation", "auto_repair", "sell_junk", "open_containers", "fonts", "site_links", "hide_clutter", "auto_responses", "chat_tweaks", "map_pins", "coordinates", "quest_levels", "cinematic_skip", "camera", "swing_timers", "unit_names", "npc_titles", "quest_tracker", "mail", "gossip_continue", "tooltip_cursor", "chat_format", "radial_wheel", "radial_menu", "island_capsule", "island_row", "island_grid", "island_section", "island_blocks", "island_reaction", "island_quests", "island_actions", "island_vitals", "island_history", "island_surface", "island_scroll", "island_notice", "island_inbox", "island_toasts", "smart_island", "island_feed_kit", "island_share", "island_quest_notices", "island_loot", "island_hearth", "island_reputation", "island_professions", "island_mail", "island_invites", "island_buffs", "island_recap", "island_experience", "island_react", "island_warnings", "action_shortcuts" }) do
+		for _, file in ipairs({ "links", "module", "quest_interface", "flight_time", "friend_conveniences", "useful_tooltips", "faster_loot", "quest_automation", "auto_repair", "sell_junk", "open_containers", "fonts", "site_links", "hide_clutter", "auto_responses", "chat_tweaks", "map_pins", "coordinates", "quest_levels", "cinematic_skip", "camera", "swing_timers", "unit_names", "npc_titles", "quest_tracker", "mail", "gossip_continue", "tooltip_cursor", "chat_format", "radial_wheel", "radial_menu", "island_capsule", "island_row", "island_grid", "island_section", "island_blocks", "island_reaction", "island_summary", "island_quests", "island_actions", "island_vitals", "island_history", "island_surface", "island_scroll", "island_notice", "island_inbox", "island_toasts", "smart_island", "island_feed_kit", "island_share", "island_quest_notices", "island_loot", "island_hearth", "island_reputation", "island_professions", "island_mail", "island_invites", "island_buffs", "island_recap", "island_experience", "island_react", "island_warnings", "action_shortcuts" }) do
 			if not left_out[file] then
 				local chunk = assert(loadfile(source(file)))
 				setfenv(chunk, env)
@@ -2832,7 +2832,7 @@ return function(root, check)
 		check("the island is two columns wide when there is a quest to show", addon.smart_island.view().width == 720)
 		check("Status and the quests share the left edge, and the notifications start at the divider and the inset", status and quests_heading
 			and status.point[4] == 12 and quests_heading.point[4] == 12 and notices_heading and notices_heading.point[4] == 300 + 12)
-		check("the experience table is a section in the notifications pane, under its heading", hour ~= nil and addon.smart_island.view().sections == 1)
+		check("the experience table is a section in the notifications pane, with the summary's two", hour ~= nil and addon.smart_island.view().sections == 3)
 		check("the two panes share a top and a height, and the left ends where the right begins",
 			quest_pane and notice_pane and quest_pane.point[5] == notice_pane.point[5] and quest_pane.height == notice_pane.height
 			and quest_pane.width == notice_pane.point[4] and quest_pane.width + notice_pane.width == 720)
@@ -3932,20 +3932,23 @@ return function(root, check)
 		addon.module.set("smart_island", "enabled", true)
 		check("the closed chip draws no bar", shown_bar(frames) == nil)
 		env.everlook_smart_island_key("down")
-		local heading, metric, clear, undo, experience, status
+		local heading, metric, clear, undo, clock, experience, status
 		for _, object in ipairs(frames) do
 			if object.name == "EverlookIslandClearHistory" then clear = object end
 			if object.name == "EverlookIslandUndo" then undo = object end
 			for _, region in ipairs(object.regions) do
 				if region.text == "Level 12" then heading = region end
 				if region.text == "STATUS" then status = region end
-				if region.text == "14:05    |cffad76ef45%|r" then experience = region end
+				if region.text == "14:05" then clock = region end
+				if region.text == "|cffad76ef45%|r" or region.text == "45%" then experience = region end
 				if region.text == "Money" then metric = region end
 			end
 		end
-		check("the open bar shows the phrased experience", experience ~= nil)
-		check("the first section clears the level text", -status.point[5] >= -heading.point[5] + heading:GetStringHeight() + 6)
-		check("expanded metrics begin below the Status heading", -metric.parent.parent.point[5] >= -status.point[5] + 6)
+		local lay = dofile(root .. "/tests/layout.lua").new()
+		check("the open bar shows the time and the experience percent beside the level", clock ~= nil and experience ~= nil
+			and lay.rectangle(clock).top == lay.rectangle(heading).top + (lay.rectangle(heading).height - lay.rectangle(clock).height) / 2)
+		check("the first section clears the level text by a section gap", lay.rectangle(status).top >= lay.rectangle(heading).bottom + 16 - 4)
+		check("expanded metrics begin below the Status heading", lay.rectangle(metric).top >= lay.rectangle(status).bottom + 6)
 		check("empty history has no disabled Clear button", clear.shown == false)
 		check("an empty island holds its panes to the height of its empty message", addon.smart_island.view().scroll_height >= 48 and addon.smart_island.view().scroll_height <= 80)
 		local empty_height = addon.smart_island.view().height
@@ -4136,12 +4139,14 @@ return function(root, check)
 			local position, money_cell
 			for _, object in ipairs(frames) do
 				for _, region in ipairs(object.regions or {}) do
-					if region.text == "Position" and region.shown ~= false then position = region.parent.parent end
-					if region.text == "Money" and region.shown ~= false then money_cell = region.parent.parent end
+					if region.text == "Position" and region.shown ~= false then position = region.parent end
+					if region.text == "Money" and region.shown ~= false then money_cell = region.parent end
 				end
 			end
+			local lay = dofile(root .. "/tests/layout.lua").new()
+			local position_box, money_box = lay.rectangle(position), lay.rectangle(money_cell)
 			check("the position cell shares money's row, to its right",
-				position and money_cell and position.point[5] == money_cell.point[5] and position.point[4] == money_cell.point[4] + money_cell.width + 24)
+				position_box.top == money_box.top and position_box.left == money_box.right + 24)
 		end
 		addon.module.set("coordinates", "enabled", false)
 		event("PLAYER_ENTERING_WORLD")
@@ -4198,11 +4203,11 @@ return function(root, check)
 		local function status_top()
 			for _, object in ipairs(frames) do
 				for _, region in ipairs(object.regions or {}) do
-					if region.text == "STATUS" and region.shown ~= false then return -region.point[5] end
+					if region.text == "STATUS" and region.shown ~= false then return dofile(root .. "/tests/layout.lua").new().rectangle(region).top - 12 end
 				end
 			end
 		end
-		check("the Status heading is a section gap under the level line: edge, line, section", status_top() == 12 + 14 + 16)
+		check("the Status heading is a section gap under the level row: edge, row, section", status_top() == 12 + 20 + 16)
 		state.xp, state.xp_max = 700, 2000
 		env.issecretvalue = nil
 		event("PLAYER_XP_UPDATE", "player")
@@ -5711,7 +5716,7 @@ return function(root, check)
 			ui_event("PLAYER_XP_UPDATE")
 			local view = ui.smart_island.view()
 			check("experience detail stays off the island until the option is on",
-				view.sections == 0 and view.mode == "closed" and view.level == 12
+				view.sections == 2 and view.mode == "closed" and view.level == 12
 				and ui.island_experience.report().hour.total == 150)
 			ui.module.set("smart_island", "feed_experience", true)
 			view = ui.smart_island.view()
@@ -5730,7 +5735,7 @@ return function(root, check)
 				end
 			end
 			check("the closed capsule stays a level chip while the hour is recorded, and the experience is a section",
-				view.mode == "closed" and view.level == 12 and view.sections == 1 and ui.island_experience.report().hour.total == 150)
+				view.mode == "closed" and view.level == 12 and view.sections == 3 and ui.island_experience.report().hour.total == 150)
 			ui_env.everlook_smart_island_key("down")
 			local label = hour_label()
 			check("the open island shows the table in the notifications pane, with the hour and the total",
@@ -5749,7 +5754,7 @@ return function(root, check)
 				report.hour.quest == 100 and report.hour.total == 250 and #view.notices == notices)
 			ui.module.set("smart_island", "feed_experience", false)
 			check("turning experience detail off removes the section and keeps the hour",
-				ui.smart_island.view().sections == 0 and hour_label() == nil and ui.island_experience.report().hour.total == 250)
+				ui.smart_island.view().sections == 2 and hour_label() == nil and ui.island_experience.report().hour.total == 250)
 		end
 		experience_ledger()
 		local function lifetime_tests()
@@ -5966,7 +5971,7 @@ return function(root, check)
 		local function cell_rect(text)
 			for _, frame in ipairs(frames) do
 				for _, region in ipairs(frame.regions or {}) do
-					if region.text == text and region.shown ~= false then return measure.rectangle(region.parent.parent) end
+					if region.text == text and region.shown ~= false then return measure.rectangle(region.parent) end
 				end
 			end
 		end

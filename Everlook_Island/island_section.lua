@@ -8,9 +8,8 @@ Everlook.island_section = section
 
 local capsule = Everlook.island_capsule
 
--- Only these regions draw in this release. The header and the metrics join in a
--- later one, so a producer cannot name a region that would silently show nothing.
-local REGIONS = { pane_a = true, pane_b = true }
+-- The regions the open island draws: the header, the metrics under it, and the two panes.
+local REGIONS = { header = true, metrics = true, pane_a = true, pane_b = true }
 local SPEC_KEYS = { source = true, key = true, region = true, title = true, order = true, blocks = true, expires = true }
 local BLOCK_KEYS = {
 	row = { kind = true, row = true, action = true, tooltip = true },
@@ -22,7 +21,7 @@ local BLOCK_KEYS = {
 	table = { kind = true, title = true, columns = true, rows = true, footer = true, action = true, open = true },
 }
 local MAX_COLUMNS, MAX_ROWS = 3, 8
-local CELL_KEYS = { icon = true, label = true, value = true, ring = true }
+local CELL_KEYS = { icon = true, label = true, value = true, ring = true, tone = true, tooltip = true }
 local RING_KEYS = { fraction = true, tone = true }
 local MAX_CELLS = 6
 local ACTION_KEYS = { id = true, label = true, on_click = true }
@@ -131,9 +130,29 @@ local function read_block(block)
 		for index = 1, #list do
 			local cell = list[index]
 			if not plain_table(cell) or not known_keys(cell, CELL_KEYS) then return nil, "invalid_block" end
-			if not plain_text(cell.label, 24) or not plain_text(cell.value, 24) then return nil, "invalid_block" end
-			local copy = { label = cell.label, value = cell.value }
-			bytes = bytes + #cell.label + #cell.value
+			if not plain_text(cell.label, 24) then return nil, "invalid_block" end
+			local copy = { label = cell.label }
+			bytes = bytes + #cell.label
+			-- A value is plain text, or an amount of money the island draws with the game's coin marks.
+			if type(cell.value) == "table" then
+				local money = plain_table(cell.value) and known_keys(cell.value, { money = true }) and cell.value.money
+				if type(money) ~= "number" or money ~= money or money % 1 ~= 0 or math.abs(money) > 9007199254740991 then return nil, "invalid_block" end
+				copy.value = { money = money }
+				bytes = bytes + 8
+			else
+				if not plain_text(cell.value, 24) then return nil, "invalid_block" end
+				copy.value = cell.value
+				bytes = bytes + #cell.value
+			end
+			if cell.tone ~= nil then
+				if type(cell.tone) ~= "string" or not capsule.tone_color(cell.tone) then return nil, "invalid_block" end
+				copy.tone = capsule.tone_color(cell.tone)
+			end
+			if cell.tooltip ~= nil then
+				if not plain_text(cell.tooltip, 96) then return nil, "invalid_block" end
+				copy.tooltip = cell.tooltip
+				bytes = bytes + #cell.tooltip
+			end
 			if cell.icon ~= nil then
 				local icon, reason = capsule.read_mark(cell.icon)
 				if reason then return nil, reason end
@@ -270,6 +289,15 @@ function section.new_store(next_handle)
 
 	function store.count() local total = 0; for _ in pairs(store.records) do total = total + 1 end; return total end
 
+	-- The sections of other addons. Our own do not count against the limit.
+	local function foreign_count()
+		local total = 0
+		for _, record in pairs(store.records) do
+			if not section.builtin(record.source) then total = total + 1 end
+		end
+		return total
+	end
+
 	function store.bytes(source)
 		local total = 0
 		for _, record in pairs(store.records) do
@@ -285,7 +313,7 @@ function section.new_store(next_handle)
 	function store.put(record, now)
 		local limits = section.limits
 		local existing = find(record.source, record.key)
-		if not existing and store.count() >= limits.sections then return nil, "limit" end
+		if not existing and not section.builtin(record.source) and foreign_count() >= limits.sections then return nil, "limit" end
 		local others = store.bytes(record.source) - (existing and existing.bytes or 0)
 		if others + record.bytes > limits.bytes then return nil, "limit" end
 		record.expires_at = record.expires and (now + record.expires) or nil

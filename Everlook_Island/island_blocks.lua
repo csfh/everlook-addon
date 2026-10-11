@@ -35,8 +35,16 @@ local COLUMN_WIDTH = 84
 
 local BAR_ART = "Interface\\AddOns\\Everlook_Island\\assets\\island_white.tga"
 
-function blocks.new(parent, host)
-	return setmetatable({ parent = parent, host = host, rows = {}, texts = {}, headings = {}, meters = {}, cells = {}, tables = {} }, View)
+-- options: title_role (the font of a row's title, "text" unless told), row_height (a row's height,
+-- the control height unless told) and across (how many cells share a row, two unless told). A pane
+-- takes the defaults; the header and the metrics under it set their own.
+function blocks.new(parent, host, options)
+	return setmetatable({ parent = parent, host = host, options = options or {}, rows = {}, texts = {}, headings = {}, meters = {}, cells = {}, tables = {} }, View)
+end
+
+-- The title of the first row drawn, for the one thing that has to know where it sits.
+function View:first_title()
+	return self.rows[1] and self.rows[1].row.title or nil
 end
 
 local function meter_slot(self, index)
@@ -89,8 +97,11 @@ local function cell_slot(self, index)
 	local slot = self.cells[index]
 	if slot then return slot end
 	local host, space = self.host, self.host.space
-	slot = { frame = CreateFrame("Frame", nil, self.parent) }
-	call(slot.frame, "EnableMouse", false)
+	-- A cell is part of the background: it shows a tooltip, and a click on it does what a click beside it does.
+	slot = { frame = CreateFrame("Button", nil, self.parent), node = {} }
+	call(slot.frame, "RegisterForClicks", "LeftButtonUp")
+	host.hover(slot.frame, slot.node)
+	if host.click then call(slot.frame, "SetScript", "OnClick", host.click) end
 	slot.icon = call(slot.frame, "CreateTexture", nil, "OVERLAY")
 	call(slot.icon, "SetSize", space.icon, space.icon)
 	call(slot.icon, "SetPoint", "TOPLEFT", slot.frame, "TOPLEFT", (space.ring - space.icon) / 2, -(space.ring - space.icon) / 2)
@@ -111,7 +122,7 @@ local function row_slot(self, index)
 	call(frame, "RegisterForClicks", "LeftButtonUp")
 	local visual = host.visual(frame, true)
 	slot = { frame = frame, node = { tooltip = nil } }
-	slot.row = island_row.new(visual, { label = host.label, rings = host.rings, ring_size = host.ring_size, title_role = "text" })
+	slot.row = island_row.new(visual, { label = host.label, rings = host.rings, ring_size = host.ring_size, title_role = self.options.title_role or "text" })
 	slot.link = host.link(frame, nil, "Action", function()
 		if slot.action then run(slot.action, slot.handle) end
 	end)
@@ -162,7 +173,7 @@ function View:paint(sections, top, width, title_in_band)
 		if index > 1 then y = y + space.section end
 		if record.title and not (index == 1 and title_in_band) then
 			heading(record.title)
-			y = y + space.within
+			y = y + space.near
 		end
 		local previous
 		for _, block in ipairs(record.blocks) do
@@ -198,7 +209,7 @@ function View:paint(sections, top, width, title_in_band)
 			elseif kind == "cells" then
 				-- Two across, on the grid's gutter, and as many rows as it takes.
 				local gutter = Everlook.island_grid.gutter
-				local across = 2
+				local across = self.options.across or 2
 				local column_width = math.floor((inner - (across - 1) * gutter) / across)
 				local label_height, value_height = nil, nil
 				local lead = space.ring + space.near
@@ -236,7 +247,10 @@ function View:paint(sections, top, width, title_in_band)
 					call(slot.label, "ClearAllPoints")
 					call(slot.label, "SetPoint", "TOPLEFT", slot.frame, "TOPLEFT", lead, -text_top)
 					call(slot.label, "SetWidth", math.max(1, column_width - lead))
-					call(slot.value, "SetText", cell.value)
+					call(slot.value, "SetText", type(cell.value) == "table" and host.money(cell.value.money) or cell.value)
+					local tone = cell.tone or host.primary
+					call(slot.value, "SetTextColor", tone[1], tone[2], tone[3], tone[4] or 1)
+					slot.node.tooltip = cell.tooltip
 					call(slot.value, "ClearAllPoints")
 					call(slot.value, "SetPoint", "TOPLEFT", slot.frame, "TOPLEFT", lead, -(text_top + label_height + space.within))
 					call(slot.value, "SetWidth", math.max(1, column_width - lead))
@@ -323,7 +337,7 @@ function View:paint(sections, top, width, title_in_band)
 				slot.handle, slot.action = record.handle, block.action
 				slot.node.tooltip = tooltip_text(block.tooltip)
 				-- A row carries its own insets, the same the capsule has, so its frame is the whole pane.
-				call(slot.frame, "SetSize", width, space.control)
+				call(slot.frame, "SetSize", width, self.options.row_height or space.control)
 				call(slot.frame, "ClearAllPoints")
 				call(slot.frame, "SetPoint", "TOPLEFT", self.parent, "TOPLEFT", 0, -y)
 				local reserve = 0
@@ -334,7 +348,7 @@ function View:paint(sections, top, width, title_in_band)
 				call(slot.link, block.action and "Show" or "Hide")
 				call(slot.frame, "Show")
 				slot.row:set({ icon = block.row.icon, title = block.row.title, ring = block.row.ring, labels = block.row.labels, badge = block.row.badge }, reserve)
-				y = y + space.control
+				y = y + (self.options.row_height or space.control)
 			end
 			previous = kind
 		end

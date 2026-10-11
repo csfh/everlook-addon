@@ -598,29 +598,32 @@ return function(root, check, island_world, quest_world, secret_stat)
 				end
 			end
 		end
-		local function cell(text) local found = label(text); return found and found.parent and found.parent.parent end
+		local measure = dofile(root .. "/tests/layout.lua").new()
+		local function cell(text) local found = label(text); return found and measure.rectangle(found.parent) end
 		check("the open summary has a Status heading", label("STATUS") ~= nil)
 		local money, gear, bags = cell("Money"), cell("Gear"), cell("Bags")
-		-- Worked from the scale by hand: edge 12, a 14 high level line, 16 to
-		-- Status, 14 high Status, 8 to the cells.
-		local status = label("STATUS")
-		check("the Status heading is a section gap below the level line",
-			-status.point[5] == 12 + 14 + 16)
+		local status = measure.rectangle(label("STATUS"))
+		local island
+		for _, frame in ipairs(frames) do if frame.name == "EverlookSmartIsland" then island = measure.rectangle(frame) end end
+		-- Worked from the scale by hand: edge 12, a 20 high level row, 16 to Status, 14 high Status, 8 to the cells.
+		check("the Status heading is a section gap below the level row", status.top - island.top == 12 + 20 + 16)
 		-- With no quest the island is 432 wide and stacked: 408 inside the edges,
-		-- one gutter of 24, so two columns of 192. Money has the first row, and gear
-		-- and bags share the second.
+		-- one gutter of 24, so two columns of 192. Cells fill a row left to right, so money and gear
+		-- share the first row and bags start the second.
 		check("the island is narrow with no quest, and its cells share one width and the summary's left edge",
 			addon.smart_island.view().width == 432 and money.width == 192 and gear.width == 192 and bags.width == 192
-			and money.point[4] == 12 and gear.point[4] == 12)
-		check("gear and bags share the row below money, gear on the left",
-			gear.point[5] == bags.point[5] and gear.point[5] == money.point[5] - 32 - 8 and bags.point[4] == 12 + 192 + 24)
-		check("the cells begin one step below the Status heading", -money.point[5] == -status.point[5] + 14 + 8)
-		local name, figure = label("Gear"), label("50%")
-		check("a value sits under its name on the cell's left edge",
-			name.point[4] == figure.point[4] and name.point[5] == 0 and figure.point[5] == -(14 + 4))
+			and money.left - island.left == 12 and bags.left - island.left == 12)
+		check("gear shares money's row, to its right, and bags start the row below",
+			gear.top == money.top and gear.left - island.left == 12 + 192 + 24 and bags.top == money.top + 32 + 8)
+		check("the cells begin one step below the Status heading", money.top == status.top + 14 + 8)
+		local name, figure = measure.rectangle(label("Gear")), measure.rectangle(label("50%"))
+		check("a value sits under its name on the cell's left edge", name.left == figure.left and figure.top - name.top == 14 + 4)
 		check("the summary ends one edge below the last row",
-			addon.smart_island.view().summary_height == -money.point[5] + 32 + 8 + 32 + 12)
-		check("the clock moved to the header beside the percent, which is purple as on the pill", label("14:05    |cffad76ef45%|r") ~= nil and cell("Time") == nil)
+			addon.smart_island.view().summary_height == (bags.top - island.top) + 32 + 12)
+		local clock, percent = label("14:05"), label("45%")
+		check("the clock moved to the header beside the percent, which is purple as on the pill",
+			clock ~= nil and percent ~= nil and cell("Time") == nil and math.abs(percent.color[1] - 173 / 255) < 0.01
+			and measure.rectangle(clock).right < measure.rectangle(percent).left)
 	end
 	do
 		local addon, env, _, state, _, _, frames = quest_world()
@@ -864,18 +867,26 @@ return function(root, check, island_world, quest_world, secret_stat)
 		end
 		check("a healthy figure is plain white, not green: colour is for attention",
 			text_of("50%") == "50%" and not text_of("|cff80e6a6"))
-		check("bags read as free of the total, with the total set back in the dimmer grey",
-			text_of("8 free") == "8 free |cff8891a0of 40|r")
+		check("bags read as free of the total", text_of("8 free") == "8 free of 40")
 		for _, color in ipairs(swipes()) do check("a healthy ring is the quiet grey, dimmer than the caption beside it", color[1] < 0.6) end
 		state.slots[1] = { 10, 50 }
 		event("UPDATE_INVENTORY_DURABILITY")
-		check("a low figure takes the warning amber", text_of("|cffff9e4020%|r") ~= nil)
+		local function tone_of(text)
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if region.text == text and region.shown ~= false then return region.color end
+				end
+			end
+		end
+		local amber = tone_of("20%")
+		check("a low figure takes the warning amber", amber ~= nil and amber[1] == 1 and math.abs(amber[2] - 0.62) < 0.01)
 		local warned = false
-		for _, color in ipairs(swipes()) do if color[1] == 1 and color[2] == 0.62 and color[3] == 0.25 then warned = true end end
+		for _, color in ipairs(swipes()) do if color[1] == 1 and math.abs(color[2] - 0.62) < 0.01 and math.abs(color[3] - 0.25) < 0.01 then warned = true end end
 		check("and so does its ring", warned)
 		state.slots[1] = { 2, 50 }
 		event("UPDATE_INVENTORY_DURABILITY")
-		check("a dire one takes the error red", text_of("|cffff80804%|r") ~= nil)
+		local red = tone_of("4%")
+		check("a dire one takes the error red", red ~= nil and red[1] == 1 and math.abs(red[2] - 0.5) < 0.01)
 	end
 	do
 		local addon, env, _, _, _, _, frames = island_world()
@@ -989,7 +1000,7 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local cell
 		for _, frame in ipairs(frames) do
 			for _, region in ipairs(frame.regions or {}) do
-				if region.text == "Money" then cell = region.parent and region.parent.parent end
+				if region.text == "Money" then cell = region.parent end
 			end
 		end
 		state.time = state.time + 1

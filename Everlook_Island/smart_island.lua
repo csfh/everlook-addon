@@ -7,6 +7,7 @@ local island_section = Everlook.island_section
 local island_blocks = Everlook.island_blocks
 local island_reaction = Everlook.island_reaction
 local island_capsule = Everlook.island_capsule
+local island_summary = Everlook.island_summary
 
 BINDING_HEADER_EVERLOOK = BINDING_HEADER_EVERLOOK or "Everlook"
 BINDING_NAME_EVERLOOK_SMART_ISLAND = "Open smart island"
@@ -49,7 +50,7 @@ local EMPTY_HINT = "Loot, mail, quests and warnings from Everlook and other addo
 local island = {}
 Everlook.smart_island = island
 
-local frame, summary, closed_text, left_text, right_text, surface
+local frame, summary, closed_text, surface
 local inbox, inbox_content, footer, empty_text, unread_text
 local quest_scroll, quest_content
 local clear_button, undo_button, new_button
@@ -57,7 +58,7 @@ local scroll_offset, scroll_height, content_height = 0, 0, 0
 local undo_state, close_token
 local scroll_anchor, follow_end
 local inspect_rows
-local metric_nodes, history_nodes = {}, {}
+local history_nodes = {}
 local summary_height = 0
 local ticker
 -- What the last paint showed, so the once-a-second tick repaints only when it changed.
@@ -581,15 +582,6 @@ local function animate_preview(is_open)
 	call(preview_group, "Play")
 end
 
--- The open island's top right: the game time, then the experience percent.
-function island.header_figures()
-	local parts = {}
-	if readout.clock_text and readout.clock_text ~= "" then parts[#parts + 1] = readout.clock_text end
-	-- The percent is the purple of experience, as on the pill.
-	if readout.xp_text and readout.xp_text ~= "" then parts[#parts + 1] = shell.tone(COLORS.accent) .. readout.xp_text .. "|r" end
-	return #parts > 0 and table.concat(parts, "    ") or nil
-end
-
 function island.format_clock(hour, minute)
 	if not usable(hour) or not usable(minute) or type(hour) ~= "number" or type(minute) ~= "number" then return "" end
 	return string.format("%d:%02d", hour, minute)
@@ -605,8 +597,32 @@ local function opened()
 end
 
 -- A section changed. The panes redraw only while the island is open; closed, nothing shows them.
+-- Inside a batch the redraw waits until the batch ends, so several changes draw once.
+local batch_depth, batch_changed = 0, false
+
 local function sections_changed()
-	if opened() then paint("section") end
+	if batch_depth > 0 then
+		batch_changed = true
+	elseif opened() then
+		paint("section")
+	end
+end
+
+local function in_batch(work)
+	batch_depth = batch_depth + 1
+	local ok, result = pcall(work)
+	batch_depth = batch_depth - 1
+	if not ok then error(result, 0) end
+	if batch_depth == 0 and batch_changed then
+		batch_changed = false
+		sections_changed()
+	end
+	return result
+end
+
+-- The header and the status cells, pushed as sections in one batch.
+local function push_summary()
+	return in_batch(function() return island_summary.push(readout, module.get(id, "low_slots")) end)
 end
 
 local function mode()
@@ -685,6 +701,7 @@ function island.pull()
 	readout.bags_text = snap.bags_text
 	read_clock()
 	read_coords()
+	push_summary()
 end
 
 -- Activity warnings ask whether a condition notice is still on screen.
@@ -703,121 +720,26 @@ end
 local function take_bar(snap)
 	if not snap then return end
 	readout.xp, readout.xp_max, readout.level, readout.xp_text = snap.xp, snap.xp_max, snap.level, snap.xp_text
+	push_summary()
 end
 
 local function refresh_readouts()
 	vitals.follow("refresh")
 end
 
--- The open summary is a header, an Experience table and a Status heading over
--- a grid of cells. Each cell has a mark, a small name over its value and, for a
--- figure with a fraction, a ring around the mark that fills to it.
--- The open island is two columns that the summary and the panes share: the
--- left one runs to `left_w`, the right one begins there. With no left column
--- (`left_w` is 0) the summary stacks: the table, then the status cells under it.
+-- The open summary is the header and the status cells under it, both sections that
+-- island_summary.lua pushes. The open island is two columns that the summary and the panes share:
+-- the left one runs to `left_w`, the right one begins there. With no left column (`left_w` is 0)
+-- the cells stack, two across.
 local function layout_summary(width, left_w)
 	local space = shell.space
 	local edge = space.edge
-	local durability, free, total = readout.durability, readout.bags, readout.bags_total
-	-- Colour is for attention: a figure is plain until it needs you.
-	local function stated(value, state)
-		return state and shell.tone(COLORS[state]) .. value .. "|r" or value
-	end
-	local gear_state = durability and (durability <= 10 and "error" or durability <= 30 and "warning") or nil
-	local bags_state = free and (free == 0 and "error" or free <= module.get(id, "low_slots") and "warning") or nil
-	local values = {
-		{ name = "Money", value = readout.money_text and vitals.rich(readout.money), plain = readout.money_text, icon = "money" },
-		{ name = "Position", value = readout.coords_text, tip = "Coordinates" },
-		{ name = "Gear", value = readout.durability_text and stated(readout.durability_text, gear_state), plain = readout.durability_text,
-			icon = "repair", fraction = durability and durability / 100, state = gear_state, tip = "Lowest durability" },
-		{ name = "Bags", value = free and stated(free .. " free", bags_state) .. (total and " " .. shell.tone(COLORS.muted) .. "of " .. total .. "|r" or ""),
-			plain = free and (free .. " free" .. (total and " of " .. total or "")), icon = "bags",
-			fraction = free and total and total > 0 and free / total or nil, state = bags_state, tip = "Free slots" },
-	}
-	local heading_height = math.max(call(left_text, "GetStringHeight") or 0, call(right_text, "GetStringHeight") or 0,
-		call(left_text, "GetLineHeight") or 14, call(right_text, "GetLineHeight") or 14)
-	-- The figures on the right are smaller than the level, so their last lines meet.
-	local left_line, right_line = call(left_text, "GetLineHeight") or 14, call(right_text, "GetLineHeight") or 14
-	call(right_text, "ClearAllPoints")
-	call(right_text, "SetPoint", "TOPRIGHT", shell.header_visual, "TOPRIGHT", -edge, -(edge + math.max(0, left_line - right_line - 1)))
-	local block_top = edge + heading_height + space.section
-	-- Status takes the whole width: four cells across, or two when the island is one pane.
-	local stacked = left_w == 0
-	local status_left = edge
-	local status_width = width - 2 * edge
-	local per_row = stacked and 2 or 4
-	-- Money and position share a row, and gear and bags share the next, so the
-	-- rings line up whichever readouts are missing.
-	local rows_of, shown = per_row == 2 and { {}, {} } or { {} }, {}
-	for index, metric in ipairs(values) do
-		if metric.value and metric.value ~= "" and metric_nodes[index] then
-			shown[#shown + 1] = index
-			local group = rows_of[per_row == 2 and (index <= 2 and 1 or 2) or 1]
-			group[#group + 1] = index
-		end
-	end
-	local cell_rows = {}
-	for _, group in ipairs(rows_of) do
-		if #group > 0 then cell_rows[#cell_rows + 1] = group end
-	end
-	local y = block_top
-	call(shell.status_heading, #shown > 0 and "Show" or "Hide")
-	if #shown > 0 then
-		call(shell.status_heading, "ClearAllPoints")
-		call(shell.status_heading, "SetPoint", "TOPLEFT", summary, "TOPLEFT", status_left, -y)
-		shell.heading(shell.status_heading, "Status")
-		y = y + (call(shell.status_heading, "GetLineHeight") or 14) + space.near
-	end
-	-- Equal columns of cells. A cell is a mark in a box the size of a ring, then a
-	-- small name over its value, so the text of every cell starts on one edge.
-	local column_width = math.floor((status_width - (per_row - 1) * grid.gutter) / per_row)
-	local label_height = call(metric_nodes[1].label, "GetLineHeight") or 12
-	local value_height = call(metric_nodes[1].value, "GetLineHeight") or 14
-	local text_height = math.max(label_height + space.within + value_height, space.ring)
-	local lead = space.ring + space.near
-	local row_tops, grid_height = {}, 0
-	local placed = {}
-	for row, group in ipairs(cell_rows) do
-		for column, index in ipairs(group) do placed[index] = { row = row, column = column - 1 } end
-		row_tops[row] = grid_height
-		grid_height = grid_height + text_height + (row < #cell_rows and space.near or 0)
-	end
-	local box_top = math.floor((text_height - space.ring) / 2)
-	local text_top = math.floor((text_height - (label_height + space.within + value_height)) / 2)
-	for index, metric in ipairs(values) do
-		local node = metric_nodes[index]
-		if node and placed[index] then
-			local column, row = placed[index].column, placed[index].row
-			node.tooltip = (metric.tip or metric.name) .. ": " .. (metric.plain or metric.value)
-			if metric.icon then paint_icon(node.icon, metric.icon) end
-			call(node.icon, metric.icon and "Show" or "Hide")
-			call(node.icon, "ClearAllPoints")
-			call(node.icon, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", (space.ring - space.icon) / 2, -(box_top + (space.ring - space.icon) / 2))
-			-- A figure with no fraction still gets the empty ring, so every mark stands in the same box on the edge.
-			shell.place_ring(node.ring, node.label_parent, 0, box_top)
-			if metric.fraction then
-				shell.set_ring(node.ring, metric.fraction, metric.state and COLORS[metric.state] or COLORS.muted)
-			else
-				shell.track_ring(node.ring)
-			end
-			call(node.label, "SetText", metric.name)
-			call(node.label, "ClearAllPoints")
-			call(node.label, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", lead, -text_top)
-			call(node.label, "SetWidth", math.max(1, column_width - lead))
-			call(node.value, "SetText", metric.value)
-			call(node.value, "ClearAllPoints")
-			call(node.value, "SetPoint", "TOPLEFT", node.label_parent, "TOPLEFT", lead, -(text_top + label_height + space.within))
-			call(node.value, "SetWidth", math.max(1, column_width - lead))
-			call(node.frame, "ClearAllPoints")
-			call(node.frame, "SetPoint", "TOPLEFT", summary, "TOPLEFT", status_left + column * (column_width + grid.gutter), -(y + row_tops[row]))
-			call(node.frame, "SetSize", column_width, text_height)
-			call(node.frame, "Show")
-		elseif node then
-			shell.hide_ring(node.ring)
-			call(node.frame, "Hide")
-		end
-	end
-	summary_height = y + grid_height + edge
+	local header, metrics = sections.list("header"), sections.list("metrics")
+	local y = shell.blocks_header:paint(header, edge, width)
+	if #header > 0 then y = y + space.section end
+	shell.blocks_metrics.options.across = left_w == 0 and 2 or 4
+	local metrics_end = shell.blocks_metrics:paint(metrics, y, width)
+	summary_height = (#metrics > 0 and metrics_end or (#header > 0 and y - space.section or y)) + edge
 	call(summary, "SetSize", width, summary_height)
 	call(shell.divider, "ClearAllPoints")
 	call(shell.divider, "SetPoint", "BOTTOMLEFT", summary, "BOTTOMLEFT", edge, 0)
@@ -1465,8 +1387,9 @@ shell.sample = function()
 	if not motion.quest and not motion.capsule then
 		local from_x = width / 2 + (motion.nudge or -4)
 		local from_y = -((motion.closed_h or CLOSED_H) / 2)
-		local to_x = 12 + ((call(left_text, "GetStringWidth") or 0) / 2)
-		local to_y = -12 - ((call(left_text, "GetLineHeight") or 14) / 2)
+		local title = shell.blocks_header and shell.blocks_header:first_title()
+		local to_x = shell.space.edge + ((call(title, "GetStringWidth") or 0) / 2)
+		local to_y = -shell.space.edge - ((call(title, "GetLineHeight") or 14) / 2)
 		call(closed_text, "ClearAllPoints")
 		call(closed_text, "SetPoint", "CENTER", resting, "TOPLEFT", from_x + (to_x - from_x) * travel, from_y + (to_y - from_y) * travel)
 	end
@@ -1626,8 +1549,6 @@ paint = function(reason)
 	end
 	call(unread_text, "SetTextColor", unpack(unread_warning and COLORS.warning or COLORS.accent))
 	show_label(closed_text, (now == "closed" or morphing) and not quest and not layout, closed_line or island.format_level(readout.level))
-	show_label(left_text, visual_open, "Level " .. island.format_level(readout.level))
-	show_label(right_text, visual_open, island.header_figures())
 	for index = 1, LIST_MAX do
 		local entry = list[index]
 		local node = history_nodes[index]
@@ -2184,6 +2105,7 @@ local function hide()
 	end
 	painted = {}
 	sections.clear()
+	island_summary.reset()
 	stop_reaction()
 	local kept = {}
 	for _, entry in ipairs(notices) do
@@ -2474,30 +2396,8 @@ local function ensure_frame()
 	preview_controls[#preview_controls + 1] = activity
 	local header_visual = make_visual(summary, true)
 	shell.header_visual = header_visual
-	left_text = make_label(header_visual, "LEFT", "display")
-	call(left_text, "SetPoint", "TOPLEFT", header_visual, "TOPLEFT", shell.space.edge, -shell.space.edge)
-	right_text = make_label(header_visual, "RIGHT", true)
-	call(right_text, "SetPoint", "TOPRIGHT", header_visual, "TOPRIGHT", -shell.space.edge, -shell.space.edge)
-	shell.status_heading = make_label(header_visual, "LEFT", "heading")
-	call(shell.status_heading, "Hide")
 	shell.divider = call(header_visual, "CreateTexture", nil, "ARTWORK")
 	call(shell.divider, "SetColorTexture", 1, 1, 1, 0.1)
-	for index = 1, 5 do
-		local target = CreateFrame("Button", nil, summary)
-		local visual = make_visual(target, true)
-		local node = { frame = target, label = make_label(visual, "LEFT", "caption"), label_parent = visual }
-		node.icon = call(visual, "CreateTexture", nil, "OVERLAY")
-		call(node.icon, "SetSize", shell.space.icon, shell.space.icon)
-		call(node.icon, "Hide")
-		node.value = make_label(visual, "LEFT")
-		call(node.value, "SetWordWrap", false)
-		node.ring = shell.make_ring(visual, shell.space.ring)
-		metric_nodes[index] = node
-		hover_target(target, node)
-		-- A gauge cell is part of the background, so a click on it does what a click beside it does.
-		call(target, "SetScript", "OnClick", on_click)
-		preview_controls[#preview_controls + 1] = target
-	end
 	-- The two lists and what frames them: a heading row and a rule over each, and
 	-- a divider between. They sit in one layer so the open motion moves them together.
 	local panes_visual = make_visual(expanded, true)
@@ -2565,7 +2465,10 @@ local function ensure_frame()
 			preview_controls[#preview_controls + 1] = target
 		end,
 		heading = shell.heading, space = shell.space, ring_size = shell.space.capsule_ring, primary = COLORS.primary,
+		money = vitals.rich, click = on_click,
 		rings = { make = shell.make_ring, place = shell.place_ring, chain = shell.chain_ring, set = shell.set_ring, hide = shell.hide_ring, track = shell.track_ring } }
+	shell.blocks_header = island_blocks.new(shell.header_visual, block_host, { title_role = "display", row_height = 20 })
+	shell.blocks_metrics = island_blocks.new(shell.header_visual, block_host, { across = 4 })
 	shell.blocks_a = island_blocks.new(quest_content, block_host)
 	shell.blocks_b = island_blocks.new(inbox_content, block_host)
 	preview_group = call(expanded, "CreateAnimationGroup")
@@ -2671,9 +2574,11 @@ local function apply(enabled)
 			paint("section")
 			return
 		end
+		local pushed = false
 		if open then
 			read_clock()
 			read_coords()
+			pushed = push_summary()
 		end
 		refresh_quests(false)
 		local minutes = open and notice_minutes(clock_now()) or painted.minutes
@@ -2685,9 +2590,11 @@ local function apply(enabled)
 			and minutes == painted.minutes and quest_mark == painted.quest then
 			return
 		end
+		-- A summary push already redrew the open island for the clock and the coordinates.
+		local changed_elsewhere = minutes ~= painted.minutes or quest_mark ~= painted.quest
 		painted.clock, painted.coords = readout.clock_text, readout.coords_text
 		painted.minutes, painted.quest = minutes, quest_mark
-		paint()
+		if not pushed or changed_elsewhere then paint() end
 	end)
 end
 

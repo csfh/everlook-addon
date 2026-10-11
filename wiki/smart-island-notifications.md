@@ -165,7 +165,7 @@ if api and type(api.section) == "function" then
     local handle = api.section({
         source = "MyAddon",
         key = "bosses",
-        region = "pane_b",          -- pane_a (beside the quests) or pane_b (above the notifications)
+        region = "pane_b",          -- header, metrics, pane_a (beside the quests) or pane_b (above the notifications)
         title = "Bosses",
         order = 500,                -- optional, 100 to 999, lower is higher in the pane
         blocks = {
@@ -187,7 +187,7 @@ end
 
 `section` returns a handle, or `nil` and a reason. A second `section` call with the same `source` and `key` replaces that section and returns the same handle, so it is safe to push your sections again at login. Sections are never saved: they are gone after a reload, and your addon pushes them again. `update(handle, changes)` takes `title`, `order`, `blocks` and `expires`. `blocks` replaces the whole list; leave a field out to keep it. A section cannot change its `source`, `key` or `region`. `dismiss(handle)` removes it and returns `true`. A handle from `section` and a handle from `notify` are both numbers from one counter and work in the same `update` and `dismiss`.
 
-**Regions.** `pane_a` and `pane_b`. The header and the metrics may be added later. A section that names a region that is not listed is rejected with `invalid_region`. A pane with no quest shows the first section's title as its heading. When pane A holds a section and there is no quest, the island opens with two panes anyway.
+**Regions.** `header` (rows along the top of the open island, the first the level line), `metrics` (cells under it, four across, two when the island is one pane), `pane_a` and `pane_b`. A header row is set a size larger than a pane row. A section that names another region is rejected with `invalid_region`. A pane with no quest shows the first section's title as its heading. When pane A holds a section and there is no quest, the island opens with two panes anyway.
 
 **Order.** Sections sort by `order`, then by when they were first made. Everlook's own sources take 0 to 99. Yours is 100 to 999, 500 if you leave it out, and the notification history always comes last.
 
@@ -200,10 +200,10 @@ end
 | `heading` | `text`, up to 48 bytes |
 | `gap` | `size` of `within` (4), `near` (8) or `section` (16) |
 | `meter` | `label` (32 bytes), `value` (24 bytes), `fraction` from 0 to 1 and an optional `tone`: a name over a value with a thin bar under them |
-| `cells` | `cells`, one to six of `{ icon, label, value, ring = { fraction, tone } }`: the island's own metric cell, two across. `icon` is a mark, `label` and `value` are 24 bytes each, and a cell with no `ring` shows the empty one |
+| `cells` | `cells`, one to six of `{ icon, label, value, tone, tooltip, ring = { fraction, tone } }`: the island's own metric cell, two across in a pane. `icon` is a mark, `label` is 24 bytes, `value` is 24 bytes of text or `{ money = copper }`, which is drawn with the game's coin marks, `tone` colors the value, `tooltip` is 96 bytes of plain text, and a cell with no `ring` shows the empty one. A click on a cell does what a click beside it does |
 | `table` | `title` (32 bytes), `columns` (one to three names of 12 bytes), `rows` (one to eight, each a name and one value for every column, 24 bytes each), optional `footer` (160 bytes), optional `open` and an optional `action` (an `id`, a `label` and `on_click`). The heading line is a button when there is an action, and shows a fold marker from `open`; the figures sit right-aligned in 84 wide columns |
 
-A row has any of `icon` (a mark, as for a capsule), `title` (64 bytes), `ring = { fraction, tone }` with `fraction` from 0 to 1, up to three `labels` (24 bytes each, or `{ text, tone }`) and a `badge` (16 bytes). A tone is `primary`, `secondary`, `accent`, `success`, `warning` or `error`. An action has an `id`, a `label` (24 bytes) and `on_click(handle, action_id)`. It is a plain button: a section never carries an item or a spell. Errors in `on_click` go to the addon error handler. A tooltip is a `title` and up to six `lines` of plain text.
+A row has any of `icon` (a mark, as for a capsule), `title` (64 bytes), `ring = { fraction, tone }` with `fraction` from 0 to 1, up to three `labels` (24 bytes each, or `{ text, tone }`) and a `badge` (16 bytes). A tone is `primary`, `secondary`, `muted`, `accent`, `gold`, `success`, `warning` or `error`. An action has an `id`, a `label` (24 bytes) and `on_click(handle, action_id)`. It is a plain button: a section never carries an item or a spell. Errors in `on_click` go to the addon error handler. A tooltip is a `title` and up to six `lines` of plain text.
 
 All text is plain: a pipe, which starts a colour code, a link or a texture, is rejected.
 

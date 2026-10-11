@@ -19,6 +19,11 @@ return function(root, check, island_world, quest_world)
 		return island_frame
 	end
 
+	-- The island's own header and status cells are sections too, so a count is of what a test added.
+	local function added(addon, base)
+		return addon.smart_island.view().sections - (base or 0)
+	end
+
 	local function find_text(frames, text)
 		for _, frame in ipairs(frames) do
 			for _, region in ipairs(frame.regions or {}) do
@@ -43,7 +48,7 @@ return function(root, check, island_world, quest_world)
 		local handle = api.section(spec())
 		check("a section returns a number handle", type(handle) == "number")
 		check("the same source and key updates the section and keeps its handle", api.section(spec({ title = "Raid" })) == handle
-			and addon.smart_island.view().sections == 1)
+			and addon.smart_island.view().sections == 3)
 
 		local function rejected(label, bad, reason)
 			local result, why = api.section(bad)
@@ -51,7 +56,7 @@ return function(root, check, island_world, quest_world)
 		end
 		rejected("no source", spec({ source = false }), "invalid_source")
 		rejected("no key", spec({ key = "" }), "invalid_key")
-		rejected("a region that does not draw yet", spec({ region = "header" }), "invalid_region")
+		rejected("a region that does not exist", spec({ region = "footer" }), "invalid_region")
 		rejected("an unknown field", spec({ colour = "red" }), "invalid_section")
 		rejected("a title with a colour code", spec({ title = "|cffff0000Red|r" }), "invalid_title")
 		rejected("an order below the built-in slots", spec({ order = 50 }), "invalid_order")
@@ -89,13 +94,13 @@ return function(root, check, island_world, quest_world)
 		-- Updating and dismissing use the same two functions as a notice.
 		check("update replaces a section's blocks and keeps its handle",
 			api.update(handle, { blocks = { { kind = "text", text = "Phase two" } } }) == handle)
-		check("update keeps what it was not given", addon.island_section ~= nil and addon.smart_island.view().sections == 5)
+		check("update keeps what it was not given", addon.island_section ~= nil and addon.smart_island.view().sections == 7)
 		local _, no_region = api.update(handle, { region = "pane_a" })
 		local _, no_source = api.update(handle, { source = "Else" })
 		local _, bad_field = api.update(handle, { blocks = { { kind = "chart" } } })
 		check("update refuses to move a section or rename its source, and checks the blocks",
 			no_region == "invalid_update" and no_source == "invalid_update" and bad_field == "invalid_block")
-		check("dismiss removes a section once", api.dismiss(handle) == true and api.dismiss(handle) == false and addon.smart_island.view().sections == 4)
+		check("dismiss removes a section once", api.dismiss(handle) == true and api.dismiss(handle) == false and addon.smart_island.view().sections == 6)
 		local _, unknown = api.update(handle, { title = "Gone" })
 		check("a dismissed section's handle is unknown to update", unknown == "unknown_handle")
 
@@ -120,7 +125,7 @@ return function(root, check, island_world, quest_world)
 		local more, why = other.section(spec({ key = "b", blocks = blocks }))
 		check("text past 8 KB for one source is refused, and another source is not held to it",
 			more == nil and why == "limit" and other.section(spec({ source = "Else", key = "b", blocks = blocks })) ~= nil)
-		check("limits are counted per world", other_world.smart_island.view().sections == 2 and addon.smart_island.view().sections == 12)
+		check("limits are counted per world", added(other_world, 2) == 2 and added(addon, 2) == 12)
 	end
 
 	do
@@ -128,15 +133,15 @@ return function(root, check, island_world, quest_world)
 		local api = env.Everlook.island
 		local mine = api.section(spec({ source = "One" }))
 		local yours = api.section(spec({ source = "Two" }))
-		check("two sources using one key get their own sections", mine ~= yours and addon.smart_island.view().sections == 2)
+		check("two sources using one key get their own sections", mine ~= yours and added(addon, 2) == 2)
 		api.dismiss(mine)
-		check("dismissing one leaves the other", addon.smart_island.view().sections == 1 and api.update(yours, { title = "Still" }) == yours)
+		check("dismissing one leaves the other", added(addon, 2) == 1 and api.update(yours, { title = "Still" }) == yours)
 
 		addon.module.set("smart_island", "enabled", false)
 		local blocked, reason = api.section(spec({ key = "off" }))
 		check("a disabled island refuses sections", blocked == nil and reason == "disabled")
 		addon.module.set("smart_island", "enabled", true)
-		check("turning the island off cleared the sections that were there", addon.smart_island.view().sections == 0)
+		check("turning the island off cleared the sections that were there", added(addon, 2) == 0)
 	end
 
 	-- A section expires only when its source asked for it.
