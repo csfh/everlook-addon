@@ -155,6 +155,13 @@ local function call(object, method, ...)
 end
 
 -- Headings are set in capitals, which a font cannot do for us.
+-- Sets a label to a font role: its font and its tone.
+shell.role = function(label, role)
+	local font, tone = unpack(ROLES[role] or ROLES.text)
+	call(label, "SetFontObject", font)
+	call(label, "SetTextColor", unpack(tone))
+end
+
 shell.heading = function(label, text, marker)
 	call(label, "SetText", (marker or "") .. string.upper(text))
 end
@@ -2478,12 +2485,23 @@ local function ensure_frame()
 			preview_controls[#preview_controls + 1] = target
 		end,
 		heading = shell.heading, space = shell.space, ring_size = shell.space.capsule_ring, primary = COLORS.primary,
-		money = vitals.rich, click = on_click,
+		money = vitals.rich, click = on_click, role = shell.role,
 		rings = { make = shell.make_ring, place = shell.place_ring, chain = shell.chain_ring, set = shell.set_ring, hide = shell.hide_ring, track = shell.track_ring } }
 	shell.blocks_header = island_blocks.new(shell.header_visual, block_host, { title_role = "display", row_height = 20 })
 	shell.blocks_metrics = island_blocks.new(shell.header_visual, block_host, { across = 4 })
 	shell.blocks_a = island_blocks.new(quest_content, block_host)
 	shell.blocks_b = island_blocks.new(inbox_content, block_host)
+	-- A row's arrow that asks for its angle is turned ten times a second, while the panes show.
+	shell.aim_frame = CreateFrame("Frame", nil, expanded)
+	local aim_wait = 0
+	call(shell.aim_frame, "SetScript", "OnUpdate", function(_, elapsed)
+		if type(elapsed) ~= "number" then return end
+		aim_wait = aim_wait + elapsed
+		if aim_wait < 0.1 then return end
+		aim_wait = 0
+		shell.blocks_a:tick()
+		shell.blocks_b:tick()
+	end)
 	preview_group = call(expanded, "CreateAnimationGroup")
 	if preview_group then
 		preview_fade = call(preview_group, "CreateAnimation", "Alpha")

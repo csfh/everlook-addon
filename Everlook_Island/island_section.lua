@@ -12,8 +12,8 @@ local capsule = Everlook.island_capsule
 local REGIONS = { header = true, metrics = true, pane_a = true, pane_b = true }
 local SPEC_KEYS = { source = true, key = true, region = true, title = true, order = true, blocks = true, expires = true }
 local BLOCK_KEYS = {
-	row = { kind = true, row = true, action = true, tooltip = true },
-	text = { kind = true, text = true },
+	row = { kind = true, row = true, action = true, tooltip = true, role = true },
+	text = { kind = true, text = true, runs = true },
 	heading = { kind = true, text = true },
 	gap = { kind = true, size = true },
 	meter = { kind = true, label = true, value = true, fraction = true, tone = true },
@@ -99,6 +99,15 @@ local function read_block(block)
 	if kind == "gap" then
 		if not GAPS[block.size or "near"] then return nil, "invalid_block" end
 		return { kind = "gap", size = block.size or "near" }, 0
+	end
+	if kind == "text" and block.runs ~= nil then
+		-- A text in more than one tone: up to six runs, each plain text and a tone name.
+		if block.text ~= nil then return nil, "invalid_block" end
+		local runs = capsule.read_text_runs(block.runs)
+		if not runs then return nil, "invalid_block" end
+		local bytes = 0
+		for _, run in ipairs(runs) do bytes = bytes + #run.text end
+		return { kind = "text", runs = runs }, bytes
 	end
 	if kind == "text" then
 		-- Up to four lines, so a line break is the one control character that is allowed.
@@ -220,6 +229,11 @@ local function read_block(block)
 	local row, reason = capsule.read_row(block.row)
 	if not row then return nil, reason end
 	local copy = { kind = "row", row = row }
+	-- A row's title is in the text size, or the larger one.
+	if block.role ~= nil then
+		if block.role ~= "title" and block.role ~= "text" then return nil, "invalid_block" end
+		copy.role = block.role
+	end
 	local bytes = #(row.title or "") + #(row.badge or "")
 	for _, label in ipairs(row.labels or {}) do bytes = bytes + #(type(label) == "table" and label.text or label) end
 	if block.action ~= nil then

@@ -119,7 +119,7 @@ return function(root, check)
 					font = font, parent = self,
 					SetPoint = function(self, ...) self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end,
 					ClearAllPoints = function(self) self.point, self.points = nil, {} end,
-					SetJustifyH = function(self, justify) self.justify = justify end, SetWordWrap = function(self, enabled) self.wrap = enabled end,
+					SetJustifyH = function(self, justify) self.justify = justify end, SetFontObject = function(self, font) self.font = font end, SetWordWrap = function(self, enabled) self.wrap = enabled end,
 					SetText = function(self, text) self.text = text end,
 					SetWidth = function(self, width) self.width = width end, SetHeight = function(self, height) self.height = height end,
 					SetTextColor = function(self, ...) self.color = { ... } end, SetSpacing = function(self, spacing) self.spacing = spacing end,

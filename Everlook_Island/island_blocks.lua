@@ -113,6 +113,32 @@ local function cell_slot(self, index)
 	return slot
 end
 
+-- The angle of a row's arrow function: a finite number, or nil. The function runs under pcall, at most
+-- every tenth of a second and only while the row shows. One that throws is reported once and left alone
+-- until the section is pushed again.
+local function ask_arrow(slot)
+	local function usable(value)
+		return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge and not (issecretvalue and issecretvalue(value))
+	end
+	if not slot.arrow_function or slot.arrow_failed then return nil end
+	local ok, value = pcall(slot.arrow_function)
+	if not ok then
+		slot.arrow_failed = true
+		local handler = geterrorhandler and geterrorhandler()
+		if handler then handler("Everlook Smart Island (section arrow): " .. tostring(value)) end
+		return nil
+	end
+	return usable(value) and value or nil
+end
+
+-- Turns every arrow that asks for its angle. Cheap: it moves no frame and lays nothing out.
+function View:tick()
+	for index = 1, self.used_rows or 0 do
+		local slot = self.rows[index]
+		if slot.arrow_function and not slot.arrow_failed then slot.row:aim(ask_arrow(slot)) end
+	end
+end
+
 local function row_slot(self, index)
 	local slot = self.rows[index]
 	if slot then return slot end
@@ -121,6 +147,12 @@ local function row_slot(self, index)
 	call(frame, "RegisterForClicks", "LeftButtonUp")
 	local visual = host.visual(frame, true)
 	slot = { frame = frame, node = { tooltip = nil } }
+	-- A row that does something, or says something on hover, lights under the pointer.
+	local wash = call(visual, "CreateTexture", nil, "BACKGROUND")
+	call(wash, "SetAllPoints", visual)
+	call(wash, "SetColorTexture", 1, 1, 1, 0.06)
+	call(wash, "Hide")
+	slot.node.on_hover = function(inside) call(wash, (inside and slot.interactive) and "Show" or "Hide") end
 	slot.row = island_row.new(visual, { label = host.label, rings = host.rings, ring_size = host.ring_size, title_role = self.options.title_role or "text" })
 	slot.link = host.link(frame, nil, "Action", function()
 		if slot.action then run(slot.action, slot.handle) end
@@ -178,7 +210,8 @@ function View:paint(sections, top, width, title_in_band)
 		for _, block in ipairs(record.blocks) do
 			local kind = block.kind
 			if previous and previous ~= "gap" and kind ~= "gap" then
-				y = y + ((previous == "row" and kind == "row") and space.within or space.near)
+				-- A row after a row is a list, and a text after a row is that row's detail: both sit close.
+				y = y + ((previous == "row" and (kind == "row" or kind == "text")) and space.within or space.near)
 			end
 			if kind == "gap" then
 				y = y + space[block.size]
@@ -333,7 +366,7 @@ function View:paint(sections, top, width, title_in_band)
 				used.texts = used.texts + 1
 				local label = label_slot(self, self.texts, used.texts, "text")
 				call(label, "SetWidth", inner)
-				call(label, "SetText", block.text)
+				call(label, "SetText", block.runs and Everlook.island_capsule.compile(block.runs) or block.text)
 				place(label, call(label, "GetStringHeight") or 14)
 				call(label, "Show")
 			else
@@ -341,6 +374,15 @@ function View:paint(sections, top, width, title_in_band)
 				local slot = row_slot(self, used.rows)
 				slot.handle, slot.action = record.handle, block.action
 				slot.node.tooltip = tooltip_text(block.tooltip)
+				slot.interactive = block.action ~= nil or slot.node.tooltip ~= nil
+				if host.role then host.role(slot.row.title, block.role or self.options.title_role or "text") end
+				local spec_arrow = block.row.arrow
+				slot.arrow_function = type(spec_arrow) == "function" and spec_arrow or nil
+				-- A function that failed is left alone until its section is pushed again, which is a new record.
+				if slot.arrow_record ~= record then slot.arrow_failed = false end
+				slot.arrow_record = record
+				-- A function's first angle is asked for now, and kept up to date by tick().
+				if slot.arrow_function then spec_arrow = ask_arrow(slot) or 0 end
 				-- A row carries its own insets, the same the capsule has, so its frame is the whole pane.
 				call(slot.frame, "SetSize", width, self.options.row_height or space.control)
 				call(slot.frame, "ClearAllPoints")
@@ -352,12 +394,14 @@ function View:paint(sections, top, width, title_in_band)
 				end
 				call(slot.link, block.action and "Show" or "Hide")
 				call(slot.frame, "Show")
-				slot.row:set({ icon = block.row.icon, title = block.row.title, ring = block.row.ring, labels = block.row.labels, badge = block.row.badge }, reserve)
+				slot.row:set({ icon = block.row.icon, arrow = spec_arrow, title = block.row.title, ring = block.row.ring, labels = block.row.labels, badge = block.row.badge }, reserve)
+				if slot.arrow_function then slot.row:aim(ask_arrow(slot)) end
 				y = y + (self.options.row_height or space.control)
 			end
 			previous = kind
 		end
 	end
+	self.used_rows = used.rows
 	for index = used.rows + 1, #self.rows do call(self.rows[index].frame, "Hide") end
 	for index = used.meters + 1, #self.meters do
 		local slot = self.meters[index]

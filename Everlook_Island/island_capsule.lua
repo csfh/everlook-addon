@@ -144,7 +144,7 @@ function capsule.tone_color(name)
 	return { tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255, tonumber(hex:sub(7, 8), 16) / 255, 1 }
 end
 
-local ROW_KEYS = { icon = true, title = true, ring = true, labels = true, badge = true }
+local ROW_KEYS = { icon = true, arrow = true, title = true, ring = true, labels = true, badge = true }
 local RING_KEYS = { fraction = true, tone = true }
 local LABEL_KEYS = { text = true, tone = true }
 local MAX_LABELS = 3
@@ -166,6 +166,17 @@ function capsule.read_row(value)
 		if reason then return nil, reason end
 		if not icon then return nil, "invalid_row" end
 		row.icon = icon
+	end
+	-- An arrow turns to an angle in radians. A function gives the angle each time it is asked, for a
+	-- direction that changes as you move; the island asks it only while the row shows.
+	if value.arrow ~= nil then
+		local arrow = value.arrow
+		if type(arrow) == "number" then
+			if arrow ~= arrow or arrow == math.huge or arrow == -math.huge then return nil, "invalid_row" end
+		elseif type(arrow) ~= "function" then
+			return nil, "invalid_row"
+		end
+		row.arrow = arrow
 	end
 	if value.title ~= nil then
 		if not plain_line(value.title, 64) then return nil, "invalid_row" end
@@ -204,7 +215,7 @@ function capsule.read_row(value)
 		if not plain_line(value.badge, 16) then return nil, "invalid_row" end
 		row.badge = value.badge
 	end
-	if row.title == nil and row.labels == nil and row.badge == nil and row.icon == nil and row.ring == nil then return nil, "invalid_row" end
+	if row.title == nil and row.labels == nil and row.badge == nil and row.icon == nil and row.ring == nil and row.arrow == nil then return nil, "invalid_row" end
 	return row
 end
 
@@ -301,6 +312,16 @@ local function escape_mark(mark)
 	local resolved = capsule.resolve(mark)
 	if resolved.atlas then return "|A:" .. resolved.atlas .. ":16:16|a" end
 	return "|T" .. tostring(resolved.texture or QUESTION) .. ":16|t"
+end
+
+-- The runs of a text, read: each one text in a tone. Money and marks are not allowed in a section's text.
+function capsule.read_text_runs(value)
+	local runs, reason = read_runs(value)
+	if not runs then return nil, reason end
+	for _, run in ipairs(runs) do
+		if not run.text then return nil, "invalid_runs" end
+	end
+	return runs
 end
 
 function capsule.compile(runs, money)

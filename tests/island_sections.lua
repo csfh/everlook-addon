@@ -88,19 +88,29 @@ return function(root, check, island_world, quest_world)
 		check("a table with columns, rows, a footer, an action and a state is accepted", api.section(spec({ key = "table", blocks = {
 			{ kind = "table", title = "Experience", columns = { "Hour", "Day" }, rows = { { "Total", "1,200", "20,000" }, { "Quests", "800", "9,000" } },
 				footer = "Rested 20%", action = { id = "fold", label = "Show sources", on_click = function() end } } } })) ~= nil)
+		rejected("a row arrow that is a string", spec({ blocks = { { kind = "row", row = { title = "x", arrow = "north" } } } }), "invalid_row")
+		rejected("a row arrow that is not a number", spec({ blocks = { { kind = "row", row = { title = "x", arrow = 0 / 0 } } } }), "invalid_row")
+		rejected("a text with both text and runs", spec({ blocks = { { kind = "text", text = "a", runs = { { text = "b" } } } } }), "invalid_block")
+		rejected("a run with money in it", spec({ blocks = { { kind = "text", runs = { { money = 100 } } } } }), "invalid_block")
+		rejected("a run in a color that does not exist", spec({ blocks = { { kind = "text", runs = { { text = "b", tone = "pink" } } } } }), "invalid_block")
+		rejected("a row role that is not offered", spec({ blocks = { { kind = "row", row = { title = "x" }, role = "huge" } } }), "invalid_block")
+		check("an arrow that is a number or a function, runs in tones and the title role are accepted", api.section(spec({ key = "arrows", blocks = {
+			{ kind = "row", row = { title = "Fixed", arrow = 1.5 } },
+			{ kind = "row", row = { title = "Live", arrow = function() return 0.5 end }, role = "title" },
+			{ kind = "text", runs = { { text = "Suggested, ", tone = "secondary" }, { text = "ready to turn in", tone = "success" } } } } })) ~= nil)
 		local builtin = api.section(spec({ source = "everlook_quests", key = "first", order = 10 }))
 		check("one of our own sources may take a slot below 100", type(builtin) == "number")
 
 		-- Updating and dismissing use the same two functions as a notice.
 		check("update replaces a section's blocks and keeps its handle",
 			api.update(handle, { blocks = { { kind = "text", text = "Phase two" } } }) == handle)
-		check("update keeps what it was not given", addon.island_section ~= nil and addon.smart_island.view().sections == 7)
+		check("update keeps what it was not given", addon.island_section ~= nil and addon.smart_island.view().sections == 8)
 		local _, no_region = api.update(handle, { region = "pane_a" })
 		local _, no_source = api.update(handle, { source = "Else" })
 		local _, bad_field = api.update(handle, { blocks = { { kind = "chart" } } })
 		check("update refuses to move a section or rename its source, and checks the blocks",
 			no_region == "invalid_update" and no_source == "invalid_update" and bad_field == "invalid_block")
-		check("dismiss removes a section once", api.dismiss(handle) == true and api.dismiss(handle) == false and addon.smart_island.view().sections == 6)
+		check("dismiss removes a section once", api.dismiss(handle) == true and api.dismiss(handle) == false and addon.smart_island.view().sections == 7)
 		local _, unknown = api.update(handle, { title = "Gone" })
 		check("a dismissed section's handle is unknown to update", unknown == "unknown_handle")
 
@@ -393,5 +403,80 @@ return function(root, check, island_world, quest_world)
 			end
 		end
 		check("each row of the plan has its own Pin button", pins >= 1)
+	end
+
+	-- Rows that turn an arrow, say things in tones and light under the pointer.
+	do
+		local addon, env, _, _, _, _, frames = world()
+		local api = env.Everlook.island
+		local angle, calls, errors = 0.25, 0, {}
+		env.geterrorhandler = function() return function(message) errors[#errors + 1] = message end end
+		api.section(spec({ blocks = {
+			{ kind = "row", row = { title = "Live", arrow = function() calls = calls + 1; return angle end }, role = "title",
+				action = { id = "pin", label = "Pin", on_click = function() end } },
+			{ kind = "text", runs = { { text = "Suggested, ", tone = "secondary" }, { text = "ready to turn in", tone = "success" } } },
+			{ kind = "row", row = { title = "Broken", arrow = function() error("no angle") end } },
+		} }))
+		open(addon, frames)
+		local function arrows()
+			local list = {}
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if region.rotation ~= nil and region.shown == true and (region.path or ""):find("island_arrow", 1, true) then list[#list + 1] = region end
+				end
+			end
+			return list
+		end
+		local function driver()
+			for _, frame in ipairs(frames) do
+				if frame.scripts and frame.scripts.OnUpdate and frame.parent and frame.parent.name == "EverlookIslandExpanded" then return frame end
+			end
+		end
+		local live = arrows()
+		check("a row's arrow function is asked once when the row is drawn, and its arrow shows at that angle",
+			#live == 1 and live[1].rotation == 0.25 and calls >= 1)
+		local asked = calls
+		driver().scripts.OnUpdate(driver(), 0.05)
+		check("it is not asked again inside a tenth of a second", calls == asked)
+		angle = 1.0
+		driver().scripts.OnUpdate(driver(), 0.06)
+		check("then it is, and the arrow turns", calls == asked + 1 and arrows()[1].rotation == 1.0)
+		angle = nil
+		driver().scripts.OnUpdate(driver(), 0.1)
+		check("a function that gives no angle hides the arrow", #arrows() == 0)
+		check("a function that throws is reported once and left alone", #errors == 1 and errors[1]:find("no angle", 1, true) ~= nil)
+		driver().scripts.OnUpdate(driver(), 0.1)
+		driver().scripts.OnUpdate(driver(), 0.1)
+		check("and not reported again", #errors == 1)
+		local title_font
+		for _, frame in ipairs(frames) do
+			for _, region in ipairs(frame.regions or {}) do
+				if region.text == "Live" and region.shown ~= false then title_font = region.font end
+			end
+		end
+		check("a row with the title role is set in the larger type", title_font == "GameFontHighlightMedium")
+		local function washes()
+			local count = 0
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if region.color and region.color[4] == 0.06 and region.shown == true and region.color[1] == 1 and region.color[2] == 1 then count = count + 1 end
+				end
+			end
+			return count
+		end
+		local row_frame
+		for _, frame in ipairs(frames) do
+			for _, region in ipairs(frame.regions or {}) do
+				if region.text == "Live" then row_frame = frame.parent end
+			end
+		end
+		local before = washes()
+		row_frame.scripts.OnEnter(row_frame)
+		local lit_up = washes()
+		row_frame.scripts.OnLeave(row_frame)
+		check("a row that has an action lights under the pointer and rests when it leaves", lit_up == before + 1 and washes() == before)
+		local ready = find_text(frames, "|cffaeb6c3Suggested, |r |cff80e6a6ready to turn in|r")
+		check("a text in tones is drawn in them, with the same green as the capsule's ring",
+			ready ~= nil or find_text(frames, "|cffaeb6c3Suggested, |r|cff80e6a6ready to turn in|r") ~= nil)
 	end
 end
