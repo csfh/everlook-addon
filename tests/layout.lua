@@ -154,8 +154,38 @@ function layout.hits(frames, x, y)
 			if not cut then found[#found + 1] = frame end
 		end
 	end
+	-- A frame that clips has everything under it ordered as one unit, at its own strata and level. Inside the unit
+	-- the frames keep their own levels. Against a frame outside it at the same level, an ancestor wins. (Read in
+	-- the client: the island and its clipping panel were both level 50, and the island took the mouse from every
+	-- button in the panel until the panel was raised one level.)
+	local function group_of(frame)
+		local group = frame.clips and frame or nil
+		local walker = frame.parent
+		while walker do
+			if walker.clips then group = walker end
+			walker = walker.parent
+		end
+		return group
+	end
+	local function ancestor(first, second)
+		local walker = second.parent
+		while walker do
+			if walker == first then return true end
+			walker = walker.parent
+		end
+		return false
+	end
 	table.sort(found, function(a, b)
 		if a.strata ~= b.strata then return (STRATA[a.strata] or 3) > (STRATA[b.strata] or 3) end
+		local group_a, group_b = group_of(a), group_of(b)
+		local level_a, level_b = group_a and group_a.level or a.level, group_b and group_b.level or b.level
+		if level_a ~= level_b then return level_a > level_b end
+		if group_a and group_a == group_b then
+			if a.level ~= b.level then return a.level > b.level end
+			return (a.order or 0) > (b.order or 0)
+		end
+		if ancestor(a, b) then return true end
+		if ancestor(b, a) then return false end
 		if a.level ~= b.level then return a.level > b.level end
 		return (a.order or 0) > (b.order or 0)
 	end)

@@ -74,7 +74,20 @@ return function(root, check)
 			function frame:GetPoint(index) local point = self.points and self.points[index or 1]; if point then return unpack(point) end end
 			function frame:ClearAllPoints() self.point, self.points = nil, {} end
 			function frame:SetFrameStrata(strata) self.strata = strata end
-			function frame:SetFrameLevel(level) self.level = level end
+			-- A frame's level moves the levels of everything under it by the same amount, as the client does
+			-- (read in the client: raising the island's panel one level raised its buttons one level).
+			function frame:SetFrameLevel(level)
+				local delta = level - self.level
+				self.level = level
+				if delta == 0 then return end
+				for _, other in ipairs(frames) do
+					local walker = other.parent
+					while walker do
+						if walker == self then other.level = other.level + delta; break end
+						walker = walker.parent
+					end
+				end
+			end
 			function frame:GetFrameLevel() return self.level end
 			function frame:GetFrameStrata() return self.strata end
 			function frame:SetClampedToScreen() end

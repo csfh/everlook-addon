@@ -2380,7 +2380,9 @@ local function ensure_frame()
 	call(shell.face, "SetSize", CLOSED_W, CLOSED_H)
 	expanded = CreateFrame("Frame", "EverlookIslandExpanded", frame)
 	call(expanded, "EnableMouse", false)
-	call(expanded, "SetFrameLevel", 50)
+	-- The panel clips, and the game orders everything under a clipping frame as one unit at that frame's own level.
+	-- At the island's own level 50 every button in the panel tied with the island, which won the mouse from all of
+	-- them. It keeps the level a child starts with, one above the island, and so every button outranks it.
 	call(expanded, "SetClipsChildren", true)
 	call(expanded, "SetPoint", "TOP", frame, "TOP", 0, 0)
 	local background = make_visual(expanded, true)
@@ -2454,6 +2456,8 @@ local function ensure_frame()
 		if usable(delta) and type(delta) == "number" then island.scroll_quests(shell.quest_offset - delta * shell.space.step) end
 	end)
 	hover_target(quest_scroll, {})
+	-- With the buttons above the island at last, a pane that takes the mouse must do what a click beside it does.
+	call(quest_scroll, "SetScript", "OnMouseUp", function(_, button) if button == "LeftButton" then on_click() end end)
 	inbox = CreateFrame("ScrollFrame", nil, expanded)
 	call(inbox, "EnableMouseWheel", true)
 	preview_controls[#preview_controls + 1] = inbox
@@ -2465,6 +2469,7 @@ local function ensure_frame()
 		if usable(delta) and type(delta) == "number" then island.scroll_to(scroll_offset - delta * shell.space.step) end
 	end)
 	hover_target(inbox, {})
+	call(inbox, "SetScript", "OnMouseUp", function(_, button) if button == "LeftButton" then on_click() end end)
 	local empty_visual = make_visual(inbox_content, true)
 	empty_text = make_label(empty_visual, "LEFT", "text")
 	call(empty_text, "SetPoint", "TOPLEFT", empty_visual, "TOPLEFT", shell.space.edge, -shell.space.edge)
@@ -2756,12 +2761,13 @@ SlashCmdList.EVERLOOKISLANDMOUSE = function(argument)
 	-- "noroot" takes the mouse from the island's own frame. What each does to what gets the mouse tells which
 	-- of them is in the way.
 	local named = (argument or ""):lower():match("^%s*(%a*)") or ""
+	local was_level
 	local experiments = {
 		noclip = { apply = function() call(expanded, "SetClipsChildren", false) end, restore = function() call(expanded, "SetClipsChildren", true) end },
 		mouse = { apply = function() call(expanded, "EnableMouse", true) end, restore = function() call(expanded, "EnableMouse", false) end },
 		noroot = { apply = function() call(frame, "EnableMouse", false) end, restore = function() call(frame, "EnableMouse", true) end },
 		-- The panel and the island's own frame are both level 50. "raise" puts the panel one level above it.
-		raise = { apply = function() call(expanded, "SetFrameLevel", 51) end, restore = function() call(expanded, "SetFrameLevel", 50) end },
+		raise = { apply = function() was_level = call(expanded, "GetFrameLevel") or 51; call(expanded, "SetFrameLevel", was_level + 1) end, restore = function() call(expanded, "SetFrameLevel", was_level or 51) end },
 	}
 	local experiment = experiments[named]
 	local label = experiment and named or "plain"

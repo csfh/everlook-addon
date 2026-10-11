@@ -80,6 +80,24 @@ return function(root, check, island_world, quest_world)
 		check("every button that takes the mouse on the open island does something with a click" .. (#idle > 0 and (": " .. table.concat(idle, ", ")) or ""), #idle == 0)
 	end
 
+	do
+		-- The buttons now outrank the island, so a pane that takes the mouse has to do what the island would have.
+		local addon, _, frames = open_world({ reduced = true, click = true })
+		local tested = 0
+		local all_do = true
+		for _, frame in ipairs(frames) do
+			if frame.scroll_child and frame.mouse == true and shown(frame) then
+				tested = tested + 1
+				local before = addon.smart_island.view().pinned
+				local script = frame.scripts.OnMouseUp
+				if script then script(frame, "LeftButton") end
+				if addon.smart_island.view().pinned == before then all_do = false end
+				if script then script(frame, "LeftButton") end
+			end
+		end
+		check("a click on empty space in a pane that takes the mouse toggles the pin, as the island does (" .. tested .. " panes)", tested >= 2 and all_do)
+	end
+
 	for _, how in ipairs({ { name = "by key", reduced = true }, { name = "by key, with motion", reduced = false },
 		{ name = "by clicking", reduced = true, click = true }, { name = "by clicking, with motion", reduced = false, click = true },
 		{ name = "by hovering", reduced = true, pointer = true }, { name = "by hovering, with motion", reduced = false, pointer = true } }) do
