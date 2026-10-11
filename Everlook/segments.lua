@@ -33,7 +33,6 @@ end
 local GROUPING = 1
 
 local WORK_MS = 1.5
-local SLOW_WORK_MS = 0.75
 local PACK_MS = 0.5
 local HASH_BLOCKS = 6
 local QUIET = 15
@@ -50,11 +49,10 @@ local committing
 local pads, pads_secret
 local last_commit = 0
 local last_check = 0
-local next_poll = 0
 local index_turn = false
 local total_bytes = 0
 local stats = {}
-local frame
+local task
 
 local function now()
 	return type(GetTime) == "function" and GetTime() or 0
@@ -69,8 +67,8 @@ function S.enabled()
 end
 
 local function wake()
-	if frame and not frame:IsShown() then
-		frame:Show()
+	if task then
+		task.wake()
 	end
 end
 
@@ -622,8 +620,10 @@ function S.pending()
 	return #queue, next(staged) ~= nil, job ~= nil, committing ~= nil
 end
 
--- One pass of the scheduler. Called by the frame, and by tests.
-function S.tick()
+-- One pass of work, in the time the scheduler gives it. True while there is
+-- more to do now, a number of seconds to wait for pages that are still quiet
+-- for a while, and false when nothing is left. The scheduler keeps it out of combat.
+local function step(limit_ms)
 	local t = now()
 	if t - last_check >= CHECK_EVERY then
 		last_check = t
@@ -631,34 +631,31 @@ function S.tick()
 			wake()
 		end
 	end
-	if type(InCombatLockdown) == "function" and InCombatLockdown() then
-		return
-	end
-	if t < next_poll then
-		return
-	end
-	local slow = type(GetFramerate) == "function" and (GetFramerate() or 60) < 30
-	local budget = slow and SLOW_WORK_MS or WORK_MS
 	-- An index still being built and the saving of pages take the frames in turn,
 	-- so the pages it changes are saved as it goes and not all held until it ends.
 	index_turn = not index_turn
 	if index_turn and Everlook.world.index_pending() then
-		Everlook.world.index_step(budget)
-		return
+		Everlook.world.index_step(limit_ms)
+		return true
 	end
-	if not work(budget, false) then
-		if P.over() then
-			-- Pages left in memory once moving in was done go a few at a time.
-			P.trim()
-		elseif #queue == 0 and next(staged) == nil and not Everlook.world.index_pending() then
-			if frame then
-				frame:Hide()
-			end
-		else
-			-- Pages are waiting out their quiet time. Looking again each frame would be wasted.
-			next_poll = t + 0.5
-		end
+	if work(limit_ms, false) then
+		return true
 	end
+	if P.over() then
+		-- Pages left in memory once moving in was done go a few at a time.
+		P.trim()
+		return true
+	end
+	if #queue == 0 and next(staged) == nil and not Everlook.world.index_pending() then
+		return false
+	end
+	-- Pages are waiting out their quiet time. Looking again each frame would be wasted.
+	return 0.5
+end
+
+-- One pass, for tests.
+function S.tick()
+	step(Everlook.sched.budget())
 end
 
 local function has_raw_work()
@@ -724,6 +721,7 @@ function S.finish()
 	stats.decodes, stats.decodeMs, stats.worstDecodeMs = page_stats.decodes, floor(page_stats.decodeMs * 10 + 0.5) / 10, floor(page_stats.worstDecodeMs * 10 + 0.5) / 10
 	stats.splits, stats.evictions = page_stats.splits, page_stats.evictions
 	stats.memKB = Everlook.world.memory_kb()
+	stats.work = Everlook.sched.stats()
 	db.flushStats = stats
 	return true
 end
@@ -732,8 +730,4 @@ function S.bytes()
 	return total_bytes
 end
 
-frame = CreateFrame("Frame")
-frame:Hide()
-frame:SetScript("OnUpdate", function()
-	S.tick()
-end)
+task = Everlook.sched.task("segments", { step = step })

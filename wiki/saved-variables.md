@@ -56,7 +56,7 @@ A page and its segment are both saved in the background once the page has been q
 
 An older `raw` is moved into pages in the background. Its tables stay the saved copy, and stay in memory as the rows, until every page is saved, and then it is dropped in the same step. A row stored meanwhile goes into both. A logout before that leaves `raw` as it was, and the next session starts the move again. Before the first full set of segments is signed, an older `world` and its `signature` stay where they are, and the commit that writes `manifest` removes `world`. A client that cannot encode keeps writing `world` as before, and the site reads either. If a `world` and a `manifest` are both present, an older addon ran in between and the manifest is dropped.
 
-`EverlookDB.flushStats` holds how many pages and segments were saved, how long each stage took in total (`stageMs`), how long logout took, how many segments it left, and how many pages were decoded and how slowly.
+`EverlookDB.flushStats` holds how many pages and segments were saved, how long each stage took in total (`stageMs`), how long logout took, how many segments it left, and how many pages were decoded and how slowly. `work` lists, for each task that waits for a free moment in a frame (saving pages, reading items, the collected search), how often it ran, its total and worst time in milliseconds, and how many steps failed.
 
 `minimap.angle` is written when the button is dragged. The button texture is always `assets/logo.tga`.
 

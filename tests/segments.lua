@@ -73,7 +73,7 @@ return function(root, check)
 		if setup then
 			setup(env)
 		end
-		local files = { "world.lua", "location.lua", "sightings.lua", "npcs.lua", "items.lua", "drops.lua", "hash.lua", "config.lua", "pages.lua", "segments.lua" }
+		local files = { "world.lua", "location.lua", "sightings.lua", "npcs.lua", "items.lua", "drops.lua", "sched.lua", "hash.lua", "config.lua", "pages.lua", "segments.lua" }
 		for index = 1, #files do
 			local chunk = assert(loadfile(source(files[index])))
 			setfenv(chunk, env)
@@ -452,7 +452,7 @@ return function(root, check)
 			return serialize(value, options)
 		end
 		next_addon.world.flush(true)
-		check("a page that cannot be saved does not stop logout or the others", db.flushStats.failed == 1 and next_env.EverlookDB.pages["items.0"] ~= nil)
+		check("a page that cannot be saved does not stop logout or the others", db.flushStats.failed == 1 and type(db.flushStats.work) == "table" and db.flushStats.work.segments ~= nil and next_env.EverlookDB.pages["items.0"] ~= nil)
 		check("the failure is recorded and the page keeps its changes in memory", next_addon.world.row("npcs", 1).minLevel == 4)
 		local third = open(db)
 		check("the other page's change was saved", third.world.row("items", 5).quality == 2)
