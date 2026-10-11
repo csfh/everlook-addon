@@ -98,11 +98,15 @@ end
 
 local function show(unit)
 	hide(unit)
-	if not module.enabled(id) or not on_a_quest(unit) then return end
+	if not module.enabled(id) then return end
 	local plate = plate_of(unit)
 	local frame = plate and plate.UnitFrame
-	if not frame or not frame.CreateTexture then return end
+	if not frame then return end
 	local name = frame.name
+	-- Every nameplate has its name at the left end of its health bar, marked or not, so they all read alike.
+	if module.get(id, "align_name") then left_align(plate, name) end
+	by_unit[unit] = plate
+	if not frame.CreateTexture or not on_a_quest(unit) then return end
 	local bar = frame.HealthBarsContainer or frame.healthBar
 	local layout = module.get(id, "layout")
 	local width = module.get(id, "width")
@@ -135,8 +139,6 @@ local function show(unit)
 	end
 	art(icon)
 	icon:Show()
-	by_unit[unit] = plate
-	if module.get(id, "align_name") then left_align(plate, name) end
 end
 
 local function refresh_all()
@@ -169,7 +171,7 @@ module.register({
 	options = {
 		layout = { name = "Where the mark goes", default = "rows", choices = { { "rows", "Left of the name and the health bar" }, { "name_left", "Left of the name" }, { "name_right", "Right of the name" }, { "bar_left", "Left of the health bar" } }, description = "Puts the mark to the left of both the name and the health bar, as tall as the two together, or beside only the name or only the health bar." },
 		width = { name = "Mark width", default = 26, min = 12, max = 48, step = 2, description = "Sets how wide the mark is, from 12 to 48, in steps of 2. Beside both the name and the health bar it is as tall as the two together, and beside only one it is square." },
-		align_name = { name = "Left-align the name of a marked unit", default = true, description = "Moves the name of a unit that has a mark to the left end of its health bar, beside the mark, and puts it back as the game had it when the mark goes. Other nameplates keep their names where they are." },
+		align_name = { name = "Left-align every nameplate's name", default = true, description = "Moves the name on every nameplate to the left end of its health bar, so that a marked plate and an unmarked one read alike, and puts each back as the game had it when this is turned off or the plate goes." },
 	},
 	apply = refresh_all,
 	events = { "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "PLAYER_ENTERING_WORLD", "QUEST_LOG_UPDATE", "UNIT_QUEST_LOG_CHANGED", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN" },

@@ -52,11 +52,11 @@ return function(root, check, island_world)
 	check("it is the quest boss badge's atlas or, without it, the badge's file", mark.path == "Interface\\TargetingFrame\\PortraitQuestBadge")
 	check("the name is left-aligned beside it", frame_of("nameplate1").name.justify == "LEFT")
 	event("NAME_PLATE_UNIT_ADDED", "nameplate2")
-	check("a player gets none, quest or not, and keeps its name where it was", #made.nameplate2 == 0 and frame_of("nameplate2").name.justify == "CENTER")
+	check("a player gets no mark, quest or not, and its name is left-aligned like every other", #made.nameplate2 == 0 and frame_of("nameplate2").name.justify == "LEFT")
 	event("NAME_PLATE_UNIT_ADDED", "nameplate3")
 	check("a quest boss gets one", made.nameplate3[1] and made.nameplate3[1].shown)
 	event("NAME_PLATE_UNIT_ADDED", "nameplate4")
-	check("a unit that is not part of a quest gets none, and its name stays centred", #made.nameplate4 == 0 and frame_of("nameplate4").name.justify == "CENTER")
+	check("a unit that is not part of a quest gets no mark, and its name is left-aligned too", #made.nameplate4 == 0 and frame_of("nameplate4").name.justify == "LEFT")
 
 	addon.module.set("quest_nameplates", "layout", "name_right")
 	check("the place can be the right of the name, square", #mark.points == 1 and mark.points[1][1] == "LEFT" and mark.points[1][2] == frame_of("nameplate1").name and mark.points[1][3] == "RIGHT" and mark.width == 26 and mark.height == 26)
@@ -69,9 +69,9 @@ return function(root, check, island_world)
 	check("a wider mark is applied at once, and the two rows are back", mark.width == 34 and #mark.points == 2)
 
 	addon.module.set("quest_nameplates", "align_name", false)
-	check("with left-aligning off the name goes back to how the game had it", frame_of("nameplate1").name.justify == "CENTER")
+	check("with left-aligning off every name goes back to how the game had it", frame_of("nameplate1").name.justify == "CENTER" and frame_of("nameplate2").name.justify == "CENTER" and frame_of("nameplate4").name.justify == "CENTER")
 	addon.module.set("quest_nameplates", "align_name", true)
-	check("and on, it is left again", frame_of("nameplate1").name.justify == "LEFT")
+	check("and on, they are left again", frame_of("nameplate1").name.justify == "LEFT" and frame_of("nameplate2").name.justify == "LEFT")
 
 	event("NAME_PLATE_UNIT_REMOVED", "nameplate1")
 	check("the mark goes when the plate does", mark.shown == false)
@@ -90,7 +90,7 @@ return function(root, check, island_world)
 	related.nameplate4 = false
 	event("QUEST_LOG_UPDATE")
 	settle()
-	check("and clears one that no longer is, with its name back", made.nameplate4[1].shown == false and frame_of("nameplate4").name.justify == "CENTER")
+	check("and clears one that no longer is, its name staying left like the rest", made.nameplate4[1].shown == false and frame_of("nameplate4").name.justify == "LEFT")
 
 	local secret = {}
 	env.issecretvalue = function(value) return rawequal(value, secret) end
@@ -128,5 +128,5 @@ return function(root, check, island_world)
 	check("with no tooltip to read, only the game's own answer is used", made.nameplate4[1].shown == false)
 
 	addon.module.set("quest_nameplates", "enabled", false)
-	check("turning the module off takes every mark down and every name back", mark.shown == false and frame_of("nameplate1").name.justify == "CENTER" and made.nameplate3[1].shown == false)
+	check("turning the module off takes every mark down and every name back", mark.shown == false and frame_of("nameplate1").name.justify == "CENTER" and frame_of("nameplate2").name.justify == "CENTER" and frame_of("nameplate4").name.justify == "CENTER" and made.nameplate3[1].shown == false)
 end
