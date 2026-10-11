@@ -51,14 +51,34 @@ function vitals.money(copper)
 	return sign .. table.concat(parts, " ")
 end
 
+-- The game draws each coin with a vertical offset of 0, and the coin art sits
+-- high in its square, so the coins ride above the digits. This moves every coin
+-- mark down, whatever size and offsets the client wrote.
+local COIN_DROP = -3
+
+local function seat_coins(text)
+	local function seat(mark)
+		local path, fields = mark:match("^(|TInterface\\MoneyFrame\\[^:|]+)(.*)|t$")
+		if not path then return mark end
+		local width, height, across = fields:match("^:(%-?%d+):(%-?%d+):(%-?%d+):%-?%d+$")
+		if not width then
+			width, height = fields:match("^:(%-?%d+):(%-?%d+)$")
+			across = "2"
+		end
+		if not width then return mark end
+		return path .. ":" .. width .. ":" .. height .. ":" .. across .. ":" .. COIN_DROP .. "|t"
+	end
+	return (text:gsub("|TInterface\\MoneyFrame\\[^|]*|t", seat))
+end
+
 function vitals.rich(copper)
 	local sign, gold, silver, coins = split_copper(copper)
 	if not sign then return "" end
 	if not GetMoneyString then return vitals.money(copper) end
 	local parts = {}
-	if gold > 0 then parts[#parts + 1] = "|cffffd166" .. GetMoneyString(gold * 10000, true, false) .. "|r" end
-	if silver > 0 then parts[#parts + 1] = "|cffc6cbd4" .. GetMoneyString(silver * 100, false, false) .. "|r" end
-	if coins > 0 or #parts == 0 then parts[#parts + 1] = "|cffdfaa7a" .. GetMoneyString(coins, false, false) .. "|r" end
+	if gold > 0 then parts[#parts + 1] = "|cffffd166" .. seat_coins(GetMoneyString(gold * 10000, true, false)) .. "|r" end
+	if silver > 0 then parts[#parts + 1] = "|cffc6cbd4" .. seat_coins(GetMoneyString(silver * 100, false, false)) .. "|r" end
+	if coins > 0 or #parts == 0 then parts[#parts + 1] = "|cffdfaa7a" .. seat_coins(GetMoneyString(coins, false, false)) .. "|r" end
 	return sign .. table.concat(parts, " ")
 end
 

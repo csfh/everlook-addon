@@ -4084,6 +4084,19 @@ return function(root, check)
 			and island.island_vitals.delta(10000) == "+1g"
 			and island.island_vitals.delta(-45) == "-45c"
 			and island.island_vitals.rich(10000) == "1g")
+		do
+			local original = island_env.GetMoneyString
+			island_env.GetMoneyString = function(amount)
+				if amount >= 10000 then return math.floor(amount / 10000) .. "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t" end
+				if amount >= 100 then return math.floor(amount / 100) .. "|TInterface\\MoneyFrame\\UI-SilverIcon:14:14|t" end
+				return amount .. "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t"
+			end
+			local rich = island.island_vitals.rich(30000 + 6000 + 83)
+			island_env.GetMoneyString = original
+			check("coins are seated on the text's baseline, whichever offsets the client wrote",
+				rich:find("UI-GoldIcon:0:0:2:-3|t", 1, true) and rich:find("UI-SilverIcon:14:14:2:-3|t", 1, true)
+				and rich:find("UI-CopperIcon:0:0:2:-3|t", 1, true) and not rich:find(":2:0|t", 1, true))
+		end
 		check("durability and bags format as a glance",
 			island.island_vitals.percent(50, 70) == "71%"
 			and island.island_vitals.bags(1) == "1 free slot"
