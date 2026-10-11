@@ -36,13 +36,17 @@ return function(root, check, island_world)
 	env.C_NamePlate = { GetNamePlateForUnit = function(unit) return plates[unit] end,
 		GetNamePlates = function() return { plates.nameplate1, plates.nameplate2, plates.nameplate3, plates.nameplate4 } end }
 	env.UnitExists = function() return true end
+	env.UnitCanAttack = function() return false end
+	env.UnitIsUnit = function() return false end
 	env.UnitIsPlayer = function(unit) return unit == "nameplate2" end
 	env.C_QuestLog = env.C_QuestLog or {}
 	env.C_QuestLog.UnitIsRelatedToActiveQuest = function(unit) return related[unit] == true end
 	env.UnitIsQuestBoss = function(unit) return unit == "nameplate3" end
 	local function frame_of(unit) return plates[unit].UnitFrame end
 
+	addon.module.set("nameplates", "enabled", true)
 	addon.module.set("quest_nameplates", "enabled", true)
+	settle()
 	event("NAME_PLATE_UNIT_ADDED", "nameplate1")
 	local mark = made.nameplate1[1]
 	check("a unit that is part of a quest you are on gets a mark", mark and mark.shown)
@@ -59,19 +63,19 @@ return function(root, check, island_world)
 	event("NAME_PLATE_UNIT_ADDED", "nameplate4")
 	check("a unit that is not part of a quest gets no mark, and its name is left-aligned too", #made.nameplate4 == 0 and frame_of("nameplate4").name.justify == "LEFT")
 
-	addon.module.set("quest_nameplates", "layout", "name_right")
+	addon.module.set("nameplates", "layout", "name_right")
 	check("the place can be the right of the name, square", #mark.points == 1 and mark.points[1][1] == "LEFT" and mark.points[1][2] == frame_of("nameplate1").name and mark.points[1][3] == "RIGHT" and mark.width == 26 and mark.height == 26)
-	addon.module.set("quest_nameplates", "layout", "bar_left")
+	addon.module.set("nameplates", "layout", "bar_left")
 	check("or the left of the health bar", mark.points[1][1] == "RIGHT" and mark.points[1][2] == frame_of("nameplate1").HealthBarsContainer and mark.points[1][3] == "LEFT")
-	addon.module.set("quest_nameplates", "layout", "name_left")
+	addon.module.set("nameplates", "layout", "name_left")
 	check("or the left of the name", mark.points[1][1] == "RIGHT" and mark.points[1][2] == frame_of("nameplate1").name and mark.points[1][3] == "LEFT")
-	addon.module.set("quest_nameplates", "layout", "rows")
-	addon.module.set("quest_nameplates", "width", 34)
+	addon.module.set("nameplates", "layout", "rows")
+	addon.module.set("nameplates", "width", 34)
 	check("a wider mark is applied at once, and the two rows are back", mark.width == 34 and #mark.points == 2)
 
-	addon.module.set("quest_nameplates", "align_name", false)
+	addon.module.set("nameplates", "align_name", false)
 	check("with left-aligning off every name goes back to how the game had it", frame_of("nameplate1").name.justify == "CENTER" and frame_of("nameplate2").name.justify == "CENTER" and frame_of("nameplate4").name.justify == "CENTER")
-	addon.module.set("quest_nameplates", "align_name", true)
+	addon.module.set("nameplates", "align_name", true)
 	check("and on, they are left again", frame_of("nameplate1").name.justify == "LEFT" and frame_of("nameplate2").name.justify == "LEFT")
 
 	event("NAME_PLATE_UNIT_REMOVED", "nameplate1")
@@ -129,5 +133,8 @@ return function(root, check, island_world)
 	check("with no tooltip to read, only the game's own answer is used", made.nameplate4[1].shown == false)
 
 	addon.module.set("quest_nameplates", "enabled", false)
-	check("turning the module off takes every mark down and every name back", mark.shown == false and frame_of("nameplate1").name.justify == "CENTER" and frame_of("nameplate2").name.justify == "CENTER" and frame_of("nameplate4").name.justify == "CENTER" and made.nameplate3[1].shown == false)
+	settle()
+	check("turning the quest marks off takes every mark down, and the names stay left", mark.shown == false and made.nameplate3[1].shown == false and frame_of("nameplate1").name.justify == "LEFT")
+	addon.module.set("nameplates", "enabled", false)
+	check("turning the nameplates off takes every name back", mark.shown == false and frame_of("nameplate1").name.justify == "CENTER" and frame_of("nameplate2").name.justify == "CENTER" and frame_of("nameplate4").name.justify == "CENTER" and made.nameplate3[1].shown == false)
 end

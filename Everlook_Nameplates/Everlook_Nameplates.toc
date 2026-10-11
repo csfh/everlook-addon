@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffNameplates|r
+## Notes: One layout for every kind of nameplate, with a place for other addons' marks and subtitles.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+nameplate_kinds.lua
+nameplate_view.lua
+nameplate_probe.lua

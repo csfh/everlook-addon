@@ -240,6 +240,8 @@ class LayoutTest(unittest.TestCase):
                 color = self.ISLAND if self.is_island(name) else self.MODULE
                 self.assertEqual(fields.get("Title"), f"{prefix} |cff{color}{name}|r")
 
+    NAMEPLATE_PROVIDERS = {"QuestNameplates"}
+
     def test_modules_depend_on_everlook_and_sit_in_its_group(self):
         core, _ = self.fields(ADDON / "Everlook" / "Everlook.toc")
         names = {folder.name for folder in self.folders()}
@@ -251,7 +253,9 @@ class LayoutTest(unittest.TestCase):
                 name = folder.name.removeprefix("Everlook_")
                 island_module = self.is_island(name) and name != "Island"
                 dependencies = [part.strip() for part in fields.get("Dependencies", "").split(",")]
-                self.assertEqual(dependencies, ["Everlook", "Everlook_Island"] if island_module else ["Everlook"])
+                # A module that gives marks or lines to the island, or to the nameplate view, needs the one it gives to.
+                expected = ["Everlook", "Everlook_Island"] if island_module else ["Everlook", "Everlook_Nameplates"] if name in self.NAMEPLATE_PROVIDERS else ["Everlook"]
+                self.assertEqual(dependencies, expected)
                 for dependency in dependencies:
                     self.assertIn(dependency, names)
                 self.assertEqual(fields.get("Interface"), core["Interface"])

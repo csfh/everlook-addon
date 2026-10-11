@@ -192,7 +192,7 @@ return function(root, check)
 			frames[#frames + 1] = frame
 			return frame
 		end
-		for _, file in ipairs({ "links", "module", "quest_interface", "flight_time", "friend_conveniences", "useful_tooltips", "faster_loot", "quest_automation", "auto_repair", "sell_junk", "open_containers", "fonts", "site_links", "hide_clutter", "auto_responses", "chat_tweaks", "map_pins", "coordinates", "quest_levels", "cinematic_skip", "camera", "swing_timers", "unit_names", "npc_titles", "quest_nameplates", "quest_tracker", "mail", "gossip_continue", "tooltip_cursor", "chat_format", "radial_wheel", "radial_menu", "island_capsule", "island_row", "island_grid", "island_section", "island_blocks", "island_reaction", "island_summary", "island_quests", "island_actions", "island_vitals", "island_history", "island_surface", "island_scroll", "island_notice", "island_inbox", "island_toasts", "smart_island", "island_feed_kit", "island_share", "island_quest_notices", "island_loot", "island_hearth", "island_reputation", "island_professions", "island_mail", "island_invites", "island_buffs", "island_recap", "island_experience", "island_react", "island_warnings", "action_shortcuts" }) do
+		for _, file in ipairs({ "links", "module", "quest_interface", "flight_time", "friend_conveniences", "useful_tooltips", "faster_loot", "quest_automation", "auto_repair", "sell_junk", "open_containers", "fonts", "site_links", "hide_clutter", "auto_responses", "chat_tweaks", "map_pins", "coordinates", "quest_levels", "cinematic_skip", "camera", "swing_timers", "unit_names", "npc_titles", "nameplate_kinds", "nameplate_view", "nameplate_probe", "quest_nameplates", "quest_tracker", "mail", "gossip_continue", "tooltip_cursor", "chat_format", "radial_wheel", "radial_menu", "island_capsule", "island_row", "island_grid", "island_section", "island_blocks", "island_reaction", "island_summary", "island_quests", "island_actions", "island_vitals", "island_history", "island_surface", "island_scroll", "island_notice", "island_inbox", "island_toasts", "smart_island", "island_feed_kit", "island_share", "island_quest_notices", "island_loot", "island_hearth", "island_reputation", "island_professions", "island_mail", "island_invites", "island_buffs", "island_recap", "island_experience", "island_react", "island_warnings", "action_shortcuts" }) do
 			if not left_out[file] then
 				local chunk = assert(loadfile(source(file)))
 				setfenv(chunk, env)
@@ -208,7 +208,7 @@ return function(root, check)
 		return addon, env, event, hooks, tickers, frames
 	end
 	local addon, env, event = load_qol()
-	check("QoL has thirty-one independent modules", #addon.module.modules == 31)
+	check("QoL has thirty-two independent modules", #addon.module.modules == 32)
 	for _, module in ipairs(addon.module.modules) do
 		check(module.id .. " starts disabled", not addon.module.enabled(module.id))
 	end
@@ -6123,6 +6123,7 @@ return function(root, check)
 	assert(loadfile(root .. "/tests/island_resting.lua"))()(root, check, island_world)
 	assert(loadfile(root .. "/tests/island_realclient.lua"))()(root, check, island_world)
 	assert(loadfile(root .. "/tests/island_mouse.lua"))()(root, check, island_world, quest_world)
+	assert(loadfile(root .. "/tests/nameplates.lua"))()(root, check, island_world)
 	assert(loadfile(root .. "/tests/quest_nameplates.lua"))()(root, check, island_world)
 	assert(loadfile(root .. "/tests/island_react_addon.lua"))()(root, check, island_world)
 	assert(loadfile(root .. "/tests/island_share.lua"))()(root, check, load_qol)
