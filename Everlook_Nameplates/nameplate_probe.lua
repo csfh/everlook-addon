@@ -47,7 +47,7 @@ SlashCmdList.EVERLOOKPLATES = function()
 	end
 	local lines = {}
 	local function say(line) lines[#lines + 1] = line end
-	for _, cvar in ipairs({ "nameplateShowFriends", "nameplateShowFriendlyNpcs", "nameplateShowEnemies", "nameplateShowAll", "nameplateStyle", "nameplateSize", "nameplateSimplifiedTypes", "nameplateShowOnlyNameForFriendlyPlayerUnits", "UnitNameNPC", "UnitNameFriendlySpecialNPCName" }) do
+	for _, cvar in ipairs({ "nameplateShowFriends", "nameplateShowFriendlyNpcs", "nameplateShowEnemies", "nameplateShowAll", "nameplateStyle", "nameplateSize", "nameplateSimplifiedTypes", "nameplateShowOnlyNameForFriendlyPlayerUnits", "UnitNameNPC", "UnitNameFriendlySpecialNPCName", "nameplateMotion", "nameplateMotionSpeed", "nameplateOverlapH", "nameplateOverlapV" }) do
 		local ok, value = pcall(GetCVar, cvar)
 		say("cvar " .. cvar .. " = " .. (ok and text(value) or "none"))
 	end

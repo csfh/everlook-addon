@@ -182,6 +182,21 @@ return function(root, check, island_world)
 	addon.module.set("nameplates", "player_bars", false)
 	env.InCombatLockdown = function() return false end
 
+	-- Stacking: the game is told to push plates apart with the spacing chosen, and gets its own settings back.
+	cvars.nameplateMotion, cvars.nameplateOverlapH, cvars.nameplateOverlapV = "0", "0.8", "1.1"
+	addon.module.set("nameplates", "spacing_v", 1.5)
+	check("stacking is on by default and sets motion and both spacings", cvars.nameplateMotion == "1" and cvars.nameplateOverlapH == "0.8" and cvars.nameplateOverlapV == "1.5" or false)
+	addon.module.set("nameplates", "spacing_h", 0.4)
+	check("a changed spacing is applied at once", cvars.nameplateOverlapH == "0.4")
+	addon.module.set("nameplates", "stacking", false)
+	check("turning stacking off puts motion and both spacings back as the game had them", cvars.nameplateMotion == "0" and cvars.nameplateOverlapH == "0.8" and cvars.nameplateOverlapV == "1.1")
+	check("and nothing is kept for them", env.EverlookDB.nameplates_cvars == nil)
+	addon.module.set("nameplates", "stacking", true)
+	cvars.nameplateOverlapV = nil
+	addon.module.set("nameplates", "spacing_v", 2)
+	check("a setting this client does not have is left alone, and the others still apply", cvars.nameplateOverlapV == nil and cvars.nameplateMotion == "1" and cvars.nameplateOverlapH == "0.4")
+	addon.module.set("nameplates", "stacking", false)
+
 	-- Off puts everything back.
 	addon.module.set("nameplates", "enabled", false)
 	check("turning the view off puts every name back and hides every mark", made.a1.UnitFrame.name.justify == "CENTER" and made.a3.UnitFrame.textures[1].shown == false and made.a1.UnitFrame.lines[1].shown == false)

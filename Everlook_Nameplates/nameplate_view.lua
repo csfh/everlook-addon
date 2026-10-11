@@ -322,25 +322,46 @@ function plates.migrate_saved()
 end
 EventUtil.ContinueOnAddOnLoaded(addon_name, plates.migrate_saved)
 
--- A friendly player is drawn with only a name when the game's setting says so, which leaves no health bar to lay
--- anything out against. Turning it off gives friendly players a bar like everyone else's. What the setting was
--- is kept, and put back when this goes off.
+-- Game settings this view changes: a friendly player is drawn with only a name when the game's setting says so,
+-- which leaves no health bar to lay anything out against, and plates overlap in a crowd unless the game is told
+-- to stack them. What each setting was is kept, and put back when it is no longer wanted, so turning an option or
+-- the view off leaves the game as it was. A setting this client does not have is left alone.
 local PLAYER_NAMES_CVAR = "nameplateShowOnlyNameForFriendlyPlayerUnits"
-local function switch_player_bars(enabled)
+
+local function wanted_cvars()
+	local wanted = {}
+	if module.get(id, "player_bars") then wanted[PLAYER_NAMES_CVAR] = "0" end
+	if module.get(id, "stacking") then
+		wanted.nameplateMotion = "1"
+		wanted.nameplateOverlapH = tostring(module.get(id, "spacing_h"))
+		wanted.nameplateOverlapV = tostring(module.get(id, "spacing_v"))
+	end
+	return wanted
+end
+
+local function switch_cvars(enabled)
 	if type(InCombatLockdown) ~= "function" or InCombatLockdown() or not GetCVar or not SetCVar then return end
 	EverlookDB = EverlookDB or {}
-	if enabled and module.get(id, "player_bars") then
-		if type(EverlookDB.nameplates_cvars) ~= "table" then EverlookDB.nameplates_cvars = { [PLAYER_NAMES_CVAR] = GetCVar(PLAYER_NAMES_CVAR) } end
-		SetCVar(PLAYER_NAMES_CVAR, "0")
-	elseif type(EverlookDB.nameplates_cvars) == "table" then
-		local value = EverlookDB.nameplates_cvars[PLAYER_NAMES_CVAR]
-		if type(value) == "string" then SetCVar(PLAYER_NAMES_CVAR, value) end
-		EverlookDB.nameplates_cvars = nil
+	local saved = type(EverlookDB.nameplates_cvars) == "table" and EverlookDB.nameplates_cvars or {}
+	local wanted = enabled and wanted_cvars() or {}
+	for name, original in pairs(saved) do
+		if wanted[name] == nil then
+			if type(original) == "string" then SetCVar(name, original) end
+			saved[name] = nil
+		end
 	end
+	for name, value in pairs(wanted) do
+		local ok, current = pcall(GetCVar, name)
+		if ok and current ~= nil then
+			if saved[name] == nil then saved[name] = current end
+			SetCVar(name, value)
+		end
+	end
+	EverlookDB.nameplates_cvars = next(saved) ~= nil and saved or nil
 end
 
 local function apply_module(enabled)
-	switch_player_bars(enabled)
+	switch_cvars(enabled)
 	refresh_all()
 end
 
@@ -353,6 +374,9 @@ module.register({
 		layout = { name = "Where the mark goes", default = "rows", choices = { { "rows", "Left of the name and the health bar" }, { "name_left", "Left of the name" }, { "name_right", "Right of the name" }, { "bar_left", "Left of the health bar" } }, description = "Puts a mark to the left of both the name and the health bar, as tall as the two together, or beside only the name or only the health bar." },
 		width = { name = "Mark width", default = 26, min = 12, max = 48, step = 2, description = "Sets how wide a mark is, from 12 to 48, in steps of 2. Beside both the name and the health bar it is as tall as the two together, and beside only one it is square." },
 		align_name = { name = "Left-align every nameplate's name", default = true, description = "Moves the name on every nameplate that has a health bar to the left end of that bar, so that those plates read alike, and puts each back as the game had it when this is turned off or the plate goes. A plate with only a name has no bar to line up with and keeps its name centred." },
+		stacking = { name = "Stack overlapping nameplates", default = true, description = "Tells the game to push nameplates apart so they do not sit on top of each other in a crowd. Turning this off, or Nameplates off, puts the game's setting back as it was." },
+		spacing_h = { name = "Space between stacked plates, sideways", default = 0.8, min = 0.2, max = 2, step = 0.1, description = "Sets how much of a plate's width another may overlap before the game moves it, from 0.2 to 2, in steps of 0.1. A smaller number keeps plates farther apart. This does nothing until Stack overlapping nameplates is on, and the game may keep it inside its own limits." },
+		spacing_v = { name = "Space between stacked plates, up and down", default = 1.1, min = 0.5, max = 3, step = 0.1, description = "Sets how far apart stacked plates are pushed up and down, as a multiple of a plate's height, from 0.5 to 3, in steps of 0.1. A larger number keeps plates farther apart. This does nothing until Stack overlapping nameplates is on, and the game may keep it inside its own limits." },
 		player_bars = { name = "Health bars on friendly players", default = false, description = "Turns off the game's setting that shows a friendly player with only a name, so a friendly player has a health bar like every other plate and the name lines up with it. Turning this off, or Nameplates off, puts the setting back as it was." },
 	},
 	apply = apply_module,
