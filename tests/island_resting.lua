@@ -162,4 +162,22 @@ return function(root, check, island_world)
 		end
 		check("a resting status of someone else's does not hand its title to the level", copies == 0 and title and title.alpha ~= 0)
 	end
+
+	-- Only a capsule centers a lone title. A title on its own in a section's row stays at the left.
+	do
+		local addon, env, _, frames = world()
+		env.Everlook.island.section({ source = "Other", key = "lone", region = "pane_b", order = 100,
+			blocks = { { kind = "row", row = { title = "Alone in a row" } } } })
+		local pill
+		for _, frame in ipairs(frames) do if frame.name == "EverlookSmartIsland" then pill = frame end end
+		pill.scripts.OnEnter(pill)
+		layout.settle(frames)
+		local title
+		for _, frame in ipairs(frames) do
+			for _, region in ipairs(frame.regions or {}) do
+				if region.text == "Alone in a row" then title = region end
+			end
+		end
+		check("a section row's lone title is left aligned", title and title.justify == "LEFT")
+	end
 end

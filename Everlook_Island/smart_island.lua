@@ -2391,7 +2391,7 @@ local function ensure_frame()
 		call(slot_frame, "SetAllPoints", shell.face)
 		call(slot_frame, "EnableMouse", false)
 		call(slot_frame, "Hide")
-		resting_slots[index] = { frame = slot_frame, row = island_row.new(slot_frame, { label = make_label, ring_size = shell.space.capsule_ring,
+		resting_slots[index] = { frame = slot_frame, row = island_row.new(slot_frame, { label = make_label, ring_size = shell.space.capsule_ring, center_alone = true,
 			rings = { make = shell.make_ring, place = shell.place_ring, chain = shell.chain_ring, set = shell.set_ring, hide = shell.hide_ring } }) }
 	end
 	-- A capsule's arrow that asks for its angle is turned ten times a second, while a capsule shows.

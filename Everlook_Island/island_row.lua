@@ -86,7 +86,7 @@ Row.__index = Row
 
 -- host brings the island's own pieces: label(parent, justify, role), the rings
 -- table (make, chain, set, hide), ring_size and, optionally, the font role of the
--- title (the capsule's is the large one; a list row's is the text size).
+-- title (the capsule's is the large one; a list row's is the text size) and, for the capsule, center_alone.
 function row.new(parent, host)
 	local self = setmetatable({ parent = parent, host = host, labels = {}, label_count = 0 }, Row)
 	self.icon = call(parent, "CreateTexture", nil, "OVERLAY")
@@ -255,8 +255,8 @@ function Row:layout(reserve)
 		stop = self.ring.track
 	end
 	call(self.title, "ClearAllPoints")
-	-- A title with nothing beside it sits in the middle of the row.
-	call(self.title, "SetJustifyH", (self.has_lead or stop) and "LEFT" or "CENTER")
+	-- On a host that asks for it, a title with nothing beside it sits in the middle of the row.
+	call(self.title, "SetJustifyH", (self.host.center_alone and not self.has_lead and not stop) and "CENTER" or "LEFT")
 	call(self.title, "SetPoint", "LEFT", parent, "LEFT", self.has_lead and SPACE.title or SPACE.edge, 0)
 	if stop then
 		call(self.title, "SetPoint", "RIGHT", stop, "LEFT", -SPACE.gap, 0)
