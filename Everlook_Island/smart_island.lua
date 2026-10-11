@@ -2413,7 +2413,7 @@ local function ensure_frame()
 		if capsule_wait < 0.1 then return end
 		capsule_wait = 0
 		for _, slot in ipairs(resting_slots) do
-			if slot.frame.shown ~= false then slot.row:tick() end
+			if call(slot.frame, "IsShown") then slot.row:tick() end
 		end
 	end)
 	shell.group = call(resting, "CreateAnimationGroup")

@@ -54,4 +54,23 @@ return function(root, check, island_world)
 		end
 		check("and the right click dismisses it", dismissed == true)
 	end
+
+	do
+		-- A frame has no `shown` field. The pill's arrows turn only while their capsule is on screen.
+		local addon, env, _, _, _, _, frames = island_world()
+		addon.module.set("smart_island", "enabled", true)
+		addon.module.set("smart_island", "reduced_motion", true)
+		local calls = 0
+		env.Everlook.island.notify({ source = "A", key = "a", presentation = "status", text = "x", capsule = { arrow = function() calls = calls + 1; return 0 end } })
+		layout.settle(frames)
+		env.Everlook.island.notify({ source = "B", key = "b", presentation = "status", text = "y", capsule = { text = "y" } })
+		layout.settle(frames)
+		local driver
+		for _, frame in ipairs(frames) do
+			if frame.scripts and frame.scripts.OnUpdate and frame.parent and frame.parent.name == "EverlookIslandFace" then driver = frame end
+		end
+		calls = 0
+		driver.scripts.OnUpdate(driver, 0.2)
+		check("a capsule that has left the pill is not asked for its arrow", driver ~= nil and calls == 0)
+	end
 end

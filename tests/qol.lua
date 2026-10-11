@@ -85,6 +85,7 @@ return function(root, check)
 			function frame:SetStatusBarColor(...) self.bar_color = { ... } end
 			function frame:SetStatusBarTexture(texture) self.status_texture = texture end
 			function frame:Hide() self.shown = false end
+			function frame:IsShown() return self.shown ~= false end
 			function frame:Show() self.shown = true end
 			function frame:CreateTexture(_, layer)
 				local texture = {
