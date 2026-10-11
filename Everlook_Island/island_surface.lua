@@ -139,6 +139,39 @@ function surface.size(layers, width, height, radius)
 	for index, layer in ipairs(layers) do size_layer(layer, width, height, radius, index == 1 and 3 or 0) end
 end
 
+-- A quiet button's surface: a thin outline around a fill a shade off the panel's, so it reads as
+-- a control without shouting. It rests, lights a little under the pointer and darkens when pressed.
+local BUTTON_RADIUS = 6
+local BUTTON_STATES = {
+	rest = { edge = { 1, 1, 1, 0.2 }, fill = { 22 / 255, 25 / 255, 32 / 255, 1 } },
+	hover = { edge = { 1, 1, 1, 0.45 }, fill = { 38 / 255, 43 / 255, 55 / 255, 1 } },
+	press = { edge = { 1, 1, 1, 0.45 }, fill = { 14 / 255, 16 / 255, 21 / 255, 1 } },
+}
+
+function surface.make_button(parent)
+	local rest = BUTTON_STATES.rest
+	return {
+		edge = rounded_layer(parent, { unpack(rest.edge) }, 0, -3),
+		fill = rounded_layer(parent, { unpack(rest.fill) }, 1, -2),
+	}
+end
+
+function surface.size_button(button, width, height)
+	size_layer(button.edge, width, height, BUTTON_RADIUS, 0)
+	size_layer(button.fill, width, height, BUTTON_RADIUS, 0)
+end
+
+-- state is "rest", "hover" or "press".
+function surface.tint_button(button, state)
+	local colors = BUTTON_STATES[state] or BUTTON_STATES.rest
+	for name, layer in pairs(button) do
+		local color = colors[name]
+		for index, texture in ipairs(layer.pieces) do
+			tint_piece(texture, layer.corners[index], color)
+		end
+	end
+end
+
 -- A reaction's colour on a surface: a tint over the body that follows its rounded shape, and
 -- a line along each straight edge. Both sit above the fill and below the text, start
 -- invisible, and take no art but the corner piece the surface already uses.

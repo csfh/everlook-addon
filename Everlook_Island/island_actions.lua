@@ -188,26 +188,38 @@ function actions.invoke(entry, snapshot, generation)
 	return ok
 end
 
--- The game's own button template brings its art, hover and press states and its
--- own label. Where the template is missing (the test world) a plain font string
--- stands in. Either way button.label takes SetText.
-local BUTTON_TEMPLATE = "UIPanelButtonTemplate"
+-- An action button is a quiet outlined button in the island's own style: a thin border and a fill a
+-- shade off the panel's, lighter under the pointer, with its words turning white. Nothing in it is
+-- the game's red button art, which is louder than anything else on the island. Either way
+-- button.label takes SetText.
+local LABEL_REST = { 174 / 255, 182 / 255, 195 / 255, 1 }
+local LABEL_HOVER = { 245 / 255, 247 / 255, 250 / 255, 1 }
+
+local function tint(button, state)
+	if button.quiet then Everlook.island_surface.tint_button(button.quiet, state) end
+	local words = state == "rest" and LABEL_REST or LABEL_HOVER
+	call(button.label, "SetTextColor", words[1], words[2], words[3], words[4])
+end
 
 local function skin(button)
-	if type(button.SetText) == "function" then
-		button.label = { SetText = function(_, text) button:SetText(text) end }
-	else
-		local label = call(button, "CreateFontString", nil, "OVERLAY", "GameFontHighlightSmall")
-		call(label, "SetPoint", "CENTER")
-		button.label = label
+	local surface = Everlook.island_surface
+	if surface and surface.make_button then
+		button.quiet = surface.make_button(button)
+		surface.size_button(button.quiet, 120, 22)
 	end
+	local label = call(button, "CreateFontString", nil, "OVERLAY", "GameFontHighlightSmall")
+	call(label, "SetPoint", "CENTER")
+	button.label = label
+	tint(button, "rest")
+	button.tint = tint
+	call(button, "SetScript", "OnMouseDown", function() tint(button, "press") end)
 end
 
 local function ensure_button(node, index)
 	node.action_buttons = node.action_buttons or {}
 	local button = node.action_buttons[index]
 	if button then return button end
-	button = CreateFrame("Button", nil, node.frame, BUTTON_TEMPLATE)
+	button = CreateFrame("Button", nil, node.frame)
 	call(button, "SetSize", 120, 22)
 	-- Above everything else on the card, so nothing drawn there takes the click.
 	call(button, "SetFrameLevel", (call(node.frame, "GetFrameLevel") or 51) + 4)
@@ -223,11 +235,13 @@ end
 
 local function bind_hover(target, entry, generation)
 	call(target, "SetScript", "OnEnter", function()
+		if target.tint then target.tint(target, "hover") end
 		if target.bound_entry == entry and entry.action_generation == generation and not entry.removed and hooks.hover then
 			hooks.hover(entry, true)
 		end
 	end)
 	call(target, "SetScript", "OnLeave", function()
+		if target.tint then target.tint(target, "rest") end
 		if target.bound_entry == entry and hooks.hover then hooks.hover(entry, false) end
 	end)
 end
@@ -285,6 +299,7 @@ function actions.paint(node, entry, compact)
 		call(button, "SetAlpha", action.enabled ~= false and 1 or 0.5)
 		call(button, "Show")
 		call(button, "SetScript", "OnClick", function(_, button_name)
+			tint(button, "hover")
 			if button_name == "RightButton" then
 				if hooks.dismiss and not entry.removed then hooks.dismiss(entry.id) end
 				return
@@ -324,10 +339,13 @@ local function acquire_card()
 	call(frame, "Hide")
 	local buttons = {}
 	for index = 1, 2 do
-		local button = CreateFrame("Button", nil, frame, "SecureActionButtonTemplate, " .. BUTTON_TEMPLATE)
+		local button = CreateFrame("Button", nil, frame, "SecureActionButtonTemplate")
 		call(button, "SetSize", 120, 22)
 		call(button, "RegisterForClicks", "LeftButtonUp")
 		skin(button)
+		call(button, "SetScript", "PostClick", function() tint(button, "hover") end)
+		call(button, "SetScript", "OnEnter", function() tint(button, "hover") end)
+		call(button, "SetScript", "OnLeave", function() tint(button, "rest") end)
 		buttons[index] = button
 	end
 	local card = { frame = frame, buttons = buttons }
