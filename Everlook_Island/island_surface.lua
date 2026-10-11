@@ -139,9 +139,10 @@ function surface.size(layers, width, height, radius)
 	for index, layer in ipairs(layers) do size_layer(layer, width, height, radius, index == 1 and 3 or 0) end
 end
 
--- A button's surface: a thin outline round a fill, in one of two styles. "quiet" is a shade off the
--- panel's, for the island's own controls. "accent" is blue, for the actions a notice offers, so they
--- read as the thing to press. Either rests, lights a little under the pointer and darkens when pressed.
+-- A button's surface: a thin outline round a fill, in one of three styles. "quiet" is a shade off the
+-- panel's, for the island's own controls. "accent" is Stormwind blue, the action a notice wants pressed,
+-- and "silver" is bright silver, for the others beside it. Each rests, lights under the pointer and
+-- darkens when pressed.
 local BUTTON_RADIUS = 6
 local BUTTON_STATES = {
 	quiet = {
@@ -152,15 +153,21 @@ local BUTTON_STATES = {
 	-- The accent button has a gold border, the game's own where it can be drawn and a thin gold line where
 	-- not, so the outline here is that line.
 	accent = {
-		rest = { edge = { 0.78, 0.64, 0.33, 0.9 }, fill = { 30 / 255, 52 / 255, 92 / 255, 1 } },
-		hover = { edge = { 0.95, 0.8, 0.45, 1 }, fill = { 44 / 255, 76 / 255, 130 / 255, 1 } },
-		press = { edge = { 0.95, 0.8, 0.45, 1 }, fill = { 22 / 255, 38 / 255, 70 / 255, 1 } },
+		rest = { edge = { 0.78, 0.64, 0.33, 0.9 }, fill = { 44 / 255, 108 / 255, 214 / 255, 1 } },
+		hover = { edge = { 0.95, 0.8, 0.45, 1 }, fill = { 52 / 255, 118 / 255, 224 / 255, 1 } },
+		press = { edge = { 0.95, 0.8, 0.45, 1 }, fill = { 32 / 255, 84 / 255, 172 / 255, 1 } },
+	},
+	silver = {
+		rest = { edge = { 0.94, 0.95, 0.97, 0.9 }, fill = { 196 / 255, 202 / 255, 212 / 255, 1 } },
+		hover = { edge = { 1, 1, 1, 1 }, fill = { 218 / 255, 223 / 255, 231 / 255, 1 } },
+		press = { edge = { 1, 1, 1, 1 }, fill = { 164 / 255, 170 / 255, 181 / 255, 1 } },
 	},
 }
--- The words on a button, at rest and when lit.
+-- The words on a button, at rest and when lit. Silver has dark words, blue and the quiet button light ones.
 surface.button_words = {
 	quiet = { rest = { 174 / 255, 182 / 255, 195 / 255, 1 }, lit = { 245 / 255, 247 / 255, 250 / 255, 1 } },
-	accent = { rest = { 205 / 255, 222 / 255, 250 / 255, 1 }, lit = { 1, 1, 1, 1 } },
+	accent = { rest = { 235 / 255, 243 / 255, 1, 1 }, lit = { 1, 1, 1, 1 } },
+	silver = { rest = { 22 / 255, 27 / 255, 36 / 255, 1 }, lit = { 8 / 255, 11 / 255, 16 / 255, 1 } },
 }
 
 -- The game's gold tooltip border round a button, drawn on a frame of its own over the button's
@@ -180,7 +187,7 @@ local function native_border(parent, height)
 	return frame
 end
 
--- style is "quiet" or "accent". An accent button gets the game's gold border where it can; the
+-- style is "quiet", "accent" or "silver". An accent button gets the game's gold border where it can; the
 -- layers a button always has are an outline, thin and gold for an accent button when the game's
 -- border draws, and the fill under it.
 function surface.make_button(parent, style, height)
@@ -196,7 +203,7 @@ function surface.make_button(parent, style, height)
 	return button
 end
 
--- Changes a button between "quiet" and "accent": its colors, and whether it has the gold border.
+-- Changes a button between its styles: its colors, and whether it has the gold border.
 function surface.set_button_style(button, style)
 	button.style = BUTTON_STATES[style] and style or "quiet"
 	call(button.border, button.style == "accent" and "Show" or "Hide")

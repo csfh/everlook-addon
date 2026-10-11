@@ -188,10 +188,10 @@ function actions.invoke(entry, snapshot, generation)
 	return ok
 end
 
--- The first action on a notice is the one to press, and it is blue: a thin lighter-blue outline round
--- a deep blue fill, lighter under the pointer with its words turning white, and darker while
--- pressed. The others are quiet, the island's own grey outline, so there is one color on a card.
--- Nothing in them is the game's red button art, which is louder than anything else on the island.
+-- The first action on a notice is the one to press, and it is Stormwind blue with the game's gold border
+-- round it. The others are bright silver with dark words, so a card has two colors and the blue leads.
+-- Both light under the pointer and darken while pressed. Nothing in them is the game's red button art,
+-- which is louder than anything else on the island.
 -- Either way button.label takes SetText.
 local function tint(button, state)
 	if button.quiet then Everlook.island_surface.tint_button(button.quiet, state) end
@@ -202,14 +202,14 @@ end
 
 -- The first action of a notice is primary. A pooled button is restyled each time it is given an action.
 local function set_primary(button, primary)
-	if button.quiet then Everlook.island_surface.set_button_style(button.quiet, primary and "accent" or "quiet") end
+	if button.quiet then Everlook.island_surface.set_button_style(button.quiet, primary and "accent" or "silver") end
 	tint(button, "rest")
 end
 
 local function skin(button, primary)
 	local surface = Everlook.island_surface
 	if surface and surface.make_button then
-		button.quiet = surface.make_button(button, primary and "accent" or "quiet", 22)
+		button.quiet = surface.make_button(button, primary and "accent" or "silver", 22)
 		surface.size_button(button.quiet, 120, 22)
 	end
 	local label = call(button, "CreateFontString", nil, "OVERLAY", "GameFontHighlightSmall")

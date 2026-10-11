@@ -870,16 +870,16 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local quiet
 		for _, frame in ipairs(frames) do if frame.action_id == "go" and frame.quiet then quiet = frame end end
 		local function fill_red() return quiet.quiet.fill.pieces[5].color[1] end
-		check("an action button is blue: a thin gold outline over a deep blue fill, with pale blue words",
-			quiet and math.abs(quiet.label.color[1] - 205 / 255) < 0.01 and math.abs(fill_red() - 30 / 255) < 0.01
+		check("an action button is Stormwind blue: a thin gold outline over a bright blue fill, with near white words",
+			quiet and math.abs(quiet.label.color[1] - 235 / 255) < 0.01 and math.abs(fill_red() - 44 / 255) < 0.01
 			and quiet.quiet.edge.pieces[5].color[4] == 0.9 and quiet.quiet.edge.pieces[5].color[1] > quiet.quiet.edge.pieces[5].color[3]
-			and quiet.quiet.fill.pieces[5].color[3] > quiet.quiet.fill.pieces[5].color[1] * 2)
+			and quiet.quiet.fill.pieces[5].color[3] > quiet.quiet.fill.pieces[5].color[1] * 2 and quiet.quiet.fill.pieces[5].color[3] > 0.8)
 		quiet.scripts.OnEnter(quiet)
-		check("it lights under the pointer and its words turn white", quiet.label.color[1] == 1 and math.abs(fill_red() - 44 / 255) < 0.01)
+		check("it lights under the pointer and its words turn white", quiet.label.color[1] == 1 and math.abs(fill_red() - 52 / 255) < 0.01)
 		quiet.scripts.OnMouseDown(quiet)
-		check("and darkens while pressed", math.abs(fill_red() - 22 / 255) < 0.01)
+		check("and darkens while pressed", math.abs(fill_red() - 32 / 255) < 0.01)
 		quiet.scripts.OnLeave(quiet)
-		check("and rests again when the pointer leaves", math.abs(quiet.label.color[1] - 205 / 255) < 0.01 and math.abs(fill_red() - 30 / 255) < 0.01)
+		check("and rests again when the pointer leaves", math.abs(quiet.label.color[1] - 235 / 255) < 0.01 and math.abs(fill_red() - 44 / 255) < 0.01)
 		state.time = state.time + 3
 		card.scripts.OnEnter(card)
 		for _, after in ipairs(afters) do if not after.done then after.done = true; after.callback() end end
@@ -1188,9 +1188,9 @@ return function(root, check, island_world, quest_world, secret_stat)
 			if frame.action_id == "yes" and frame.quiet then yes = frame end
 			if frame.action_id == "later" and frame.quiet then later = frame end
 		end
-		check("the first of two actions is the blue one to press, and the other is the quiet grey",
-			yes and later and yes.quiet.style == "accent" and later.quiet.style == "quiet"
-			and math.abs(yes.quiet.fill.pieces[5].color[1] - 30 / 255) < 0.01 and math.abs(later.quiet.fill.pieces[5].color[1] - 22 / 255) < 0.01)
+		check("the first of two actions is the blue one to press, and the other is bright silver",
+			yes and later and yes.quiet.style == "accent" and later.quiet.style == "silver"
+			and math.abs(yes.quiet.fill.pieces[5].color[1] - 44 / 255) < 0.01 and math.abs(later.quiet.fill.pieces[5].color[1] - 196 / 255) < 0.01)
 	end
 	-- Where the game can draw its gold tooltip border, the first button has it, scaled to fit.
 	do
@@ -1215,8 +1215,8 @@ return function(root, check, island_world, quest_world, secret_stat)
 		check("the first button has the game's border over its fill, scaled to fit the button, and its middle left out",
 			yes and border_of(yes) and border_of(yes).shown ~= false and border_of(yes).Center.hidden == true
 			and math.abs(border_of(yes).scale - 22 / (33 * 2 + 2)) < 1e-9)
-		check("the quiet one has none, and its own thin line is kept", later and border_of(later).shown == false)
+		check("the silver one has none, and its own thin line is kept", later and border_of(later).shown == false)
 		check("the thin gold line steps aside under the game's border",
-			yes.quiet.edge.pieces[5].color[4] == 0 and later.quiet.edge.pieces[5].color[4] == 0.2)
+			yes.quiet.edge.pieces[5].color[4] == 0 and later.quiet.edge.pieces[5].color[4] == 0.9)
 	end
 end
