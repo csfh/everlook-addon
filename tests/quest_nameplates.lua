@@ -1,7 +1,13 @@
 -- The quest mark beside a nameplate: whom it marks, where it goes, that the name is left-aligned beside it and put
 -- back, and that it all comes and goes with the plate.
 return function(root, check, island_world)
-	local addon, env, event = island_world()
+	local addon, env, event, _, afters = island_world()
+	-- A burst of quest log events is looked at once, a moment after the last.
+	local function settle()
+		for _, after in ipairs(afters) do
+			if after.delay == 0.25 and not after.done then after.done = true; after.callback() end
+		end
+	end
 	local function texture()
 		local mark = { points = {}, shown = false }
 		function mark:SetAtlas(atlas) self.atlas, self.path = atlas, nil end
@@ -75,9 +81,15 @@ return function(root, check, island_world)
 
 	related.nameplate4 = true
 	event("QUEST_LOG_UPDATE")
+	event("QUEST_LOG_UPDATE")
+	local waiting = 0
+	for _, after in ipairs(afters) do if after.delay == 0.25 and not after.done then waiting = waiting + 1 end end
+	check("two quest log updates in a burst wait for one look, not two", waiting == 1)
+	settle()
 	check("a change to your quests marks a unit that has become part of one", made.nameplate4[1] and made.nameplate4[1].shown and frame_of("nameplate4").name.justify == "LEFT")
 	related.nameplate4 = false
 	event("QUEST_LOG_UPDATE")
+	settle()
 	check("and clears one that no longer is, with its name back", made.nameplate4[1].shown == false and frame_of("nameplate4").name.justify == "CENTER")
 
 	local secret = {}
@@ -85,12 +97,36 @@ return function(root, check, island_world)
 	env.C_QuestLog.UnitIsRelatedToActiveQuest = function() return secret end
 	env.UnitIsQuestBoss = function() return secret end
 	event("QUEST_LOG_UPDATE")
+	settle()
 	check("a value the game keeps secret marks nothing, and does not fail", mark.shown == false)
 	env.issecretvalue = nil
 
 	env.C_QuestLog.UnitIsRelatedToActiveQuest = function(unit) return related[unit] == true end
 	env.UnitIsQuestBoss = function() return false end
 	event("QUEST_LOG_UPDATE")
+	settle()
+
+	-- A creature to kill or loot: the game's own answer says nothing, and its tooltip lists the quest and an objective.
+	local lines = {}
+	env.C_TooltipInfo = { GetUnit = function(unit) return lines[unit] end }
+	lines.nameplate4 = { lines = { { type = 2, leftText = "Defias Bandit" }, { type = 17, leftText = "Collecting Memories" }, { type = 8, leftText = "Bandits slain: 3/8" } } }
+	event("NAME_PLATE_UNIT_ADDED", "nameplate4")
+	check("a creature whose tooltip lists a quest of yours is marked, though the game says nothing of it", made.nameplate4[1].shown == true and frame_of("nameplate4").name.justify == "LEFT")
+	lines.nameplate4 = { lines = { { type = 2, leftText = "Defias Bandit" }, { type = 7, leftText = "Threat" } } }
+	event("NAME_PLATE_UNIT_ADDED", "nameplate4")
+	check("one whose tooltip has no quest line is not", made.nameplate4[1].shown == false)
+	lines.nameplate4 = { lines = { { type = 8, leftText = secret } } }
+	env.issecretvalue = function(value) return rawequal(value, secret) end
+	event("NAME_PLATE_UNIT_ADDED", "nameplate4")
+	check("a tooltip the game keeps secret is read without failing", made.nameplate4[1].shown == true)
+	lines.nameplate4 = { lines = { { type = secret } } }
+	event("NAME_PLATE_UNIT_ADDED", "nameplate4")
+	check("and a secret kind of line is skipped", made.nameplate4[1].shown == false)
+	env.issecretvalue = nil
+	env.C_TooltipInfo = nil
+	event("NAME_PLATE_UNIT_ADDED", "nameplate4")
+	check("with no tooltip to read, only the game's own answer is used", made.nameplate4[1].shown == false)
+
 	addon.module.set("quest_nameplates", "enabled", false)
 	check("turning the module off takes every mark down and every name back", mark.shown == false and frame_of("nameplate1").name.justify == "CENTER" and made.nameplate3[1].shown == false)
 end

@@ -22,8 +22,30 @@ local function plate_of(unit)
 	return plate
 end
 
+-- The kinds of line a unit's tooltip has for a quest of yours: its title, and an objective such as "Defias Bandit
+-- slain: 3/8". The game puts them there for a unit that is something to kill, loot, use or talk to for a quest.
+local function quest_line_types()
+	local kinds = Enum and Enum.TooltipDataLineType
+	return (kinds and kinds.QuestTitle) or 17, (kinds and kinds.QuestObjective) or 8
+end
+
+local function tooltip_has_quest(unit)
+	if not (C_TooltipInfo and C_TooltipInfo.GetUnit) then return false end
+	local data = C_TooltipInfo.GetUnit(unit)
+	if not plain(data) or type(data) ~= "table" or type(data.lines) ~= "table" then return false end
+	local title, objective = quest_line_types()
+	for _, line in ipairs(data.lines) do
+		if plain(line) and type(line) == "table" then
+			local kind = line.type
+			if plain(kind) and (kind == title or kind == objective) then return true end
+		end
+	end
+	return false
+end
+
 -- A unit that belongs to a quest in your log: a target, an item to use, someone to talk to or hand in to, or a
--- quest boss. A player never is.
+-- quest boss. The game's own answer comes first and covers the quests it ties to the unit; the unit's tooltip
+-- covers the rest, such as a creature you have to kill or loot. A player never is.
 local function on_a_quest(unit)
 	if not (UnitExists and UnitExists(unit)) then return false end
 	local player = UnitIsPlayer and UnitIsPlayer(unit)
@@ -31,7 +53,9 @@ local function on_a_quest(unit)
 	local related = C_QuestLog and C_QuestLog.UnitIsRelatedToActiveQuest and C_QuestLog.UnitIsRelatedToActiveQuest(unit)
 	if plain(related) and related then return true end
 	local boss = UnitIsQuestBoss and UnitIsQuestBoss(unit)
-	return plain(boss) and boss and true or false
+	if plain(boss) and boss then return true end
+	local ok, found = pcall(tooltip_has_quest, unit)
+	return ok and found == true
 end
 
 -- A name left as the game had it, kept so a plate that loses its mark gets its own alignment back.
@@ -70,33 +94,6 @@ local function left_align(plate, name)
 		if plain(justify) then aligned[plate] = { fontstring = name, justify = justify } end
 	end
 	name:SetJustifyH("LEFT")
-end
-
--- Temporary: what the game did with the last few marks, kept in the saved variables to read after a reload, because
--- a nameplate is restricted and cannot be measured by eye from here. Removed once the layout is settled.
-local function trace(unit, layout, name, bar, icon)
-	local function measure(region)
-		if not region then return "none" end
-		local ok, left, bottom, width, height = pcall(region.GetRect, region)
-		if not ok then return "error: " .. tostring(left) end
-		return tostring(left) .. "," .. tostring(bottom) .. " " .. tostring(width) .. "x" .. tostring(height)
-	end
-	local function kind(region)
-		if not region then return "none" end
-		local ok, value = pcall(region.GetObjectType, region)
-		return ok and tostring(value) or "error"
-	end
-	EverlookDB = EverlookDB or {}
-	local log = EverlookDB.quest_nameplates_trace
-	if type(log) ~= "table" then log = {}; EverlookDB.quest_nameplates_trace = log end
-	local ok, justify = pcall(function() return name and name:GetJustifyH() end)
-	local ok_points, points = pcall(function() return icon:GetNumPoints() end)
-	log[#log + 1] = table.concat({
-		tostring(unit), "layout=" .. tostring(layout), "name=" .. kind(name), "bar=" .. kind(bar),
-		"icon " .. measure(icon), "points=" .. (ok_points and tostring(points) or "error"), "shown=" .. tostring(icon:IsShown()),
-		"name " .. measure(name), "bar " .. measure(bar), "justify=" .. (ok and tostring(justify) or "error"),
-	}, " | ")
-	while #log > 8 do table.remove(log, 1) end
 end
 
 local function show(unit)
@@ -140,7 +137,6 @@ local function show(unit)
 	icon:Show()
 	by_unit[unit] = plate
 	if module.get(id, "align_name") then left_align(plate, name) end
-	pcall(trace, unit, layout, name, bar, icon)
 end
 
 local function refresh_all()
@@ -152,11 +148,24 @@ local function refresh_all()
 	end
 end
 
+-- A quest log update comes in bursts, and each plate costs a tooltip to read, so the plates are looked at once, a
+-- moment after the last of a burst.
+local queued = false
+local function refresh_soon()
+	if queued then return end
+	if not (C_Timer and C_Timer.After) then refresh_all() return end
+	queued = true
+	C_Timer.After(0.25, function()
+		queued = false
+		refresh_all()
+	end)
+end
+
 module.register({
 	addon = addon_name, page = "interface", order = 45,
 	id = id,
 	name = "Quest marks on nameplates",
-	description = "Puts a quest mark beside the nameplate of a unit that is part of a quest you are on: a target, someone to talk to or hand in to, or a quest boss. The game's own quest mark above the unit stays, because an addon cannot move or hide it. Who offers a quest you have not taken is not something the game tells an addon about a unit, so those get no mark.",
+	description = "Puts a quest mark beside the nameplate of a unit that is part of a quest you are on: a creature to kill or loot, an object or item to use, someone to talk to or hand in to, or a quest boss. The game's own quest mark above the unit stays, because an addon cannot move or hide it. Who offers a quest you have not taken is not something the game tells an addon about a unit, so those get no mark.",
 	options = {
 		layout = { name = "Where the mark goes", default = "rows", choices = { { "rows", "Left of the name and the health bar" }, { "name_left", "Left of the name" }, { "name_right", "Right of the name" }, { "bar_left", "Left of the health bar" } }, description = "Puts the mark to the left of both the name and the health bar, as tall as the two together, or beside only the name or only the health bar." },
 		width = { name = "Mark width", default = 26, min = 12, max = 48, step = 2, description = "Sets how wide the mark is, from 12 to 48, in steps of 2. Beside both the name and the health bar it is as tall as the two together, and beside only one it is square." },
@@ -169,8 +178,10 @@ module.register({
 			if plain(unit) and type(unit) == "string" then show(unit) end
 		elseif event == "NAME_PLATE_UNIT_REMOVED" then
 			if plain(unit) and type(unit) == "string" then hide(unit) end
-		else
+		elseif event == "PLAYER_ENTERING_WORLD" then
 			refresh_all()
+		else
+			refresh_soon()
 		end
 	end,
 })
