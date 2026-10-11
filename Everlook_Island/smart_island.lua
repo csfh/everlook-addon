@@ -1466,8 +1466,8 @@ paint = function(reason)
 	-- The capsule is held by the first of: a status, a background status, the resting display. A status
 	-- with no capsule of its own keeps its icon beside the level.
 	local background = not status and shell.backgrounds[#shell.backgrounds] or nil
-	local resting = not status and not background and shell.resting[#shell.resting] or nil
-	local holder = status or background or resting
+	local rested = not status and not background and shell.resting[#shell.resting] or nil
+	local holder = status or background or rested
 	local compact = holder and holder.capsule
 	local level_text = island.format_level(readout.level)
 	if status and not compact then
@@ -1535,7 +1535,7 @@ paint = function(reason)
 	call(unread_text, "SetTextColor", unpack(unread_warning and COLORS.warning or COLORS.accent))
 	-- Opening the island, the level slides from the resting display to the header's title, when the
 	-- resting display's own title is the level. The copy that slides stands in for that title meanwhile.
-	local travels = resting ~= nil and layout ~= nil and level_text ~= "" and layout.row.title == level_text and morphing
+	local travels = rested ~= nil and layout ~= nil and level_text ~= "" and layout.row.title == level_text and morphing
 	show_label(closed_text, travels, level_text)
 	for _, slot in ipairs(resting_slots) do slot.row:lend_title(travels) end
 	for index = 1, LIST_MAX do

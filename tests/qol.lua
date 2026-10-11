@@ -33,6 +33,12 @@ return function(root, check)
 			end
 		end
 		env.CreateFrame = function(_, name, parent, template)
+			-- The game refuses an anchor that is a table and not a frame or a region, as "Wrong object type for function".
+			local function check_anchor(_, relative)
+				if type(relative) == "table" and relative.regions == nil and relative.parent == nil and relative.GetObjectType == nil then
+					error("SetPoint(): Wrong object type for function", 3)
+				end
+			end
 			local frame = { events = {}, scripts = {}, shown = true, name = name, parent = parent, template = template, attributes = {}, regions = {} }
 			function frame:SetAttribute(key, value) self.attributes[key] = value end
 			function frame:GetAttribute(key) return self.attributes[key] end
@@ -59,7 +65,7 @@ return function(root, check)
 			function frame:GetHeight() return self.height end
 			function frame:SetHitRectInsets(...) self.hit_insets = { ... } end
 			-- point keeps the last anchor, points all of them since the last clear.
-			function frame:SetPoint(...) self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end
+			function frame:SetPoint(...) check_anchor(...); self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end
 			function frame:ClearAllPoints() self.point, self.points = nil, {} end
 			function frame:SetFrameStrata() end
 			function frame:SetFrameLevel() end
@@ -80,7 +86,7 @@ return function(root, check)
 					SetAtlas = function(self, atlas) self.atlas = atlas end,
 					SetVertexColor = function(self, ...) self.color = { ... } end,
 					SetGradient = function(self, orientation, low, high) self.gradient = { orientation = orientation, low = low, high = high } end,
-					SetPoint = function(self, ...) self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end,
+					SetPoint = function(self, ...) check_anchor(...); self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end,
 					ClearAllPoints = function(self) self.point, self.points = nil, {} end,
 					SetSize = function(self, width, height) self.width, self.height = width, height end,
 					SetRotation = function(self, radians) self.rotation = radians end,
@@ -117,7 +123,7 @@ return function(root, check)
 			function frame:CreateFontString(_, _, font)
 				local label = {
 					font = font, parent = self,
-					SetPoint = function(self, ...) self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end,
+					SetPoint = function(self, ...) check_anchor(...); self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end,
 					ClearAllPoints = function(self) self.point, self.points = nil, {} end,
 					SetJustifyH = function(self, justify) self.justify = justify end, SetFontObject = function(self, font) self.font = font end, SetWordWrap = function(self, enabled) self.wrap = enabled end,
 					SetText = function(self, text) self.text = text end,
@@ -2491,7 +2497,7 @@ return function(root, check)
 		env.C_Timer.After = function(delay, callback)
 			afters[#afters + 1] = { delay = delay, callback = callback }
 		end
-		env.UIParent = {}
+		env.UIParent = { regions = {} }
 		env.BACKPACK_CONTAINER = 0
 		env.NUM_BAG_SLOTS = 1
 		env.INVSLOT_FIRST_EQUIPPED = 1
