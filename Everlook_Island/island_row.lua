@@ -142,6 +142,28 @@ end
 
 -- Turns the arrow, and shows the icon in its place when there is none. This is
 -- cheap, so it can run every tick.
+-- The angle an arrow function gives: a finite number, or nil. The function runs under pcall. One that throws is
+-- reported once and left alone until a different function is set, so a broken producer cannot flood the error handler.
+local function ask(self)
+	local source = self.arrow_function
+	if not source or self.arrow_failed then return nil end
+	local ok, value = pcall(source)
+	if not ok then
+		self.arrow_failed = true
+		local handler = geterrorhandler and geterrorhandler()
+		if handler then handler("Everlook Smart Island (arrow): " .. tostring(value)) end
+		return nil
+	end
+	if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then return nil end
+	if issecretvalue and issecretvalue(value) then return nil end
+	return value
+end
+
+-- Turns an arrow that asks for its angle. It moves no frame and lays nothing out, so it can run ten times a second.
+function Row:tick()
+	if self.arrow_function and not self.arrow_failed then self:aim(ask(self)) end
+end
+
 function Row:aim(angle)
 	self.angle = angle
 	row.show_arrow(self.arrow, angle)
@@ -156,8 +178,17 @@ function Row:set(spec, reserve)
 	reserve = reserve or 0
 	self.has_icon = spec.icon ~= nil
 	if self.has_icon then Everlook.island_capsule.apply(self.icon, spec.icon) end
-	self:aim(spec.arrow)
-	self.has_lead = self.has_icon or spec.arrow ~= nil
+	-- An arrow may be an angle or a function that gives one; the function's first angle is asked for now.
+	local arrow = spec.arrow
+	if type(arrow) == "function" then
+		if self.arrow_function ~= arrow then self.arrow_failed = false end
+		self.arrow_function = arrow
+		self:aim(ask(self))
+	else
+		self.arrow_function = nil
+		self:aim(arrow)
+	end
+	self.has_lead = self.has_icon or arrow ~= nil
 
 	local title = spec.title
 	call(self.title, "SetText", title or "")

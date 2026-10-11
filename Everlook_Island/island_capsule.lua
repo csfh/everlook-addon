@@ -35,7 +35,8 @@ local TONES = {
 	gold = "ffffd24a",
 	muted = "ff8891a0",
 }
-local CAPSULE_KEYS = { text = true, icon = true, trailing = true, progress = true }
+local MAX_LABELS = 3
+local CAPSULE_KEYS = { text = true, icon = true, trailing = true, progress = true, arrow = true, ring = true, labels = true, badge = true, min_width = true }
 local MARK_KEYS = { atlas = true, item_id = true, spell_id = true }
 local RUN_KEYS = { text = true, tone = true, icon = true, atlas = true, item_id = true, spell_id = true, money = true }
 local PAD, GAP, MARK = 8, 4, 16
@@ -108,7 +109,9 @@ local function read_capsule(value, presentation)
 	if secret(value) or presentation ~= "status" or not plain_table(value) or not known_keys(value, CAPSULE_KEYS) then
 		return nil, "invalid_capsule"
 	end
-	if any_secret(value) or not plain_line(value.text, 24) then return nil, "invalid_capsule" end
+	if any_secret(value) then return nil, "invalid_capsule" end
+	-- The title is optional now that a capsule can be an arrow and a distance, but a capsule has to have something to show.
+	if value.text ~= nil and not plain_line(value.text, 64) then return nil, "invalid_capsule" end
 	local icon, icon_reason
 	if value.icon ~= nil then
 		icon, icon_reason = copy_mark(value.icon)
@@ -131,7 +134,41 @@ local function read_capsule(value, presentation)
 		or value.progress == math.huge or value.progress == -math.huge) then
 		return nil, "invalid_capsule"
 	end
-	return { text = value.text, icon = icon, trailing = trailing, progress = value.progress }
+	local capsule_spec = { text = value.text, icon = icon, trailing = trailing, progress = value.progress }
+	-- The parts a row has are read by the row's own reader, with tones kept as names.
+	local shared = { arrow = value.arrow, ring = value.ring, labels = value.labels, badge = value.badge }
+	if next(shared) ~= nil then
+		local row, reason = capsule.read_row(shared, true)
+		if not row then return nil, reason == "invalid_row" and "invalid_capsule" or reason end
+		capsule_spec.arrow, capsule_spec.ring, capsule_spec.labels, capsule_spec.badge = row.arrow, row.ring, row.labels, row.badge
+	end
+	-- A trailing string or mark counts as one of the three labels.
+	if (trailing ~= nil and 1 or 0) + #(capsule_spec.labels or {}) > MAX_LABELS then return nil, "invalid_capsule" end
+	local width = value.min_width
+	if width ~= nil then
+		if secret(width) or type(width) ~= "number" or width ~= width or width % 1 ~= 0 or width < 64 or width > 360 then return nil, "invalid_capsule" end
+		capsule_spec.min_width = width
+	end
+	if capsule_spec.text == nil and icon == nil and trailing == nil and capsule_spec.arrow == nil and capsule_spec.ring == nil
+		and capsule_spec.labels == nil and capsule_spec.badge == nil and value.progress == nil then
+		return nil, "invalid_capsule"
+	end
+	return capsule_spec
+end
+
+-- A copy of a capsule as the island keeps it, so a producer that changes its own table changes nothing here.
+function capsule.copy(spec)
+	if type(spec) ~= "table" then return nil end
+	local copy = {}
+	for name, value in pairs(spec) do copy[name] = value end
+	if spec.ring then copy.ring = { fraction = spec.ring.fraction, tone = spec.ring.tone } end
+	if spec.labels then
+		copy.labels = {}
+		for index, label in ipairs(spec.labels) do
+			copy.labels[index] = type(label) == "table" and { text = label.text, tone = label.tone } or label
+		end
+	end
+	return copy
 end
 
 -- A mark read from a producer: a name, an atlas, an item or a spell. Returns it copied, or nil and a reason.
@@ -147,18 +184,18 @@ end
 local ROW_KEYS = { icon = true, arrow = true, title = true, ring = true, labels = true, badge = true }
 local RING_KEYS = { fraction = true, tone = true }
 local LABEL_KEYS = { text = true, tone = true }
-local MAX_LABELS = 3
 
-local function read_tone(value, default)
-	if value == nil then return capsule.tone_color(default) end
-	if type(value) ~= "string" then return nil end
-	return capsule.tone_color(value)
+-- A tone as a colour table, or as its name when `names` is set (a notice keeps names, so an update can read it again).
+local function read_tone(value, default, names)
+	local name = value == nil and default or value
+	if type(name) ~= "string" or not TONES[name] then return nil end
+	return names and name or capsule.tone_color(name)
 end
 
 -- Reads one row: the same parts the capsule has, each optional but at least one,
 -- as { icon, title, ring = { fraction, tone }, labels = { text or { text, tone } }, badge }.
 -- Returns a copy with tones turned into colour tables, or nil and a reason.
-function capsule.read_row(value)
+function capsule.read_row(value, names)
 	if secret(value) or not plain_table(value) or not known_keys(value, ROW_KEYS) or any_secret(value) then return nil, "invalid_row" end
 	local row = {}
 	if value.icon ~= nil then
@@ -187,7 +224,7 @@ function capsule.read_row(value)
 		if not plain_table(ring) or not known_keys(ring, RING_KEYS) then return nil, "invalid_row" end
 		local fraction = ring.fraction
 		if type(fraction) ~= "number" or fraction ~= fraction or fraction < 0 or fraction > 1 then return nil, "invalid_row" end
-		local tone = read_tone(ring.tone, "accent")
+		local tone = read_tone(ring.tone, "accent", names)
 		if not tone then return nil, "invalid_row" end
 		row.ring = { fraction = fraction, tone = tone }
 	end
@@ -205,7 +242,7 @@ function capsule.read_row(value)
 				row.labels[index] = label
 			else
 				if not plain_table(label) or not known_keys(label, LABEL_KEYS) or not plain_line(label.text, 24) then return nil, "invalid_row" end
-				local tone = read_tone(label.tone, "secondary")
+				local tone = read_tone(label.tone, "secondary", names)
 				if not tone then return nil, "invalid_row" end
 				row.labels[index] = { text = label.text, tone = tone }
 			end
@@ -367,7 +404,11 @@ end
 -- the badge when the spec has no trailing, labels or badge of its own.
 function capsule.row_spec(spec)
 	local labels = {}
-	for index, label in ipairs(spec.labels or {}) do labels[index] = label end
+	for index, label in ipairs(spec.labels or {}) do
+		-- A tone is kept as a name and turned into a colour here, where it is drawn.
+		labels[index] = type(label) == "table" and { text = label.text, tone = capsule.tone_color(label.tone or "secondary") } or label
+	end
+	local ring = spec.ring and { fraction = spec.ring.fraction, tone = capsule.tone_color(spec.ring.tone or "accent") } or nil
 	local trailing = spec.trailing
 	if type(trailing) == "string" then
 		labels[#labels + 1] = trailing
@@ -378,7 +419,7 @@ function capsule.row_spec(spec)
 	if badge == nil and trailing == nil and #labels == 0 and type(spec.progress) == "number" then
 		badge = math.floor(math.max(0, math.min(1, spec.progress)) * 100 + 0.5) .. "%"
 	end
-	return { icon = spec.icon, arrow = spec.arrow, title = spec.text, ring = spec.ring, labels = labels, badge = badge }
+	return { icon = spec.icon, arrow = spec.arrow, title = spec.text, ring = ring, labels = labels, badge = badge }
 end
 
 -- The widest a capsule goes unless it asks for more with min_width, and the narrowest.
@@ -387,7 +428,7 @@ local WIDEST, NARROWEST, HEIGHT = 280, 64, 36
 -- Lays a capsule out: the parts of its row and the width they ask for. `measure(text, role)` gives the width
 -- of text in a font role, `ceiling` is the room there is, and `reserve` is room kept at the right edge.
 function capsule.layout(spec, measure, ceiling, reserve)
-	if type(spec) ~= "table" or type(spec.text) ~= "string" then return nil end
+	if type(spec) ~= "table" then return nil end
 	-- A capsule that asks for a width holds it, so it does not resize as its words change, and it may be wider than the usual limit.
 	local limit = spec.min_width and math.huge or WIDEST
 	if type(ceiling) == "number" and ceiling == ceiling and ceiling > 0 then limit = math.min(limit, ceiling) end

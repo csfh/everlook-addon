@@ -113,30 +113,9 @@ local function cell_slot(self, index)
 	return slot
 end
 
--- The angle of a row's arrow function: a finite number, or nil. The function runs under pcall, at most
--- every tenth of a second and only while the row shows. One that throws is reported once and left alone
--- until the section is pushed again.
-local function ask_arrow(slot)
-	local function usable(value)
-		return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge and not (issecretvalue and issecretvalue(value))
-	end
-	if not slot.arrow_function or slot.arrow_failed then return nil end
-	local ok, value = pcall(slot.arrow_function)
-	if not ok then
-		slot.arrow_failed = true
-		local handler = geterrorhandler and geterrorhandler()
-		if handler then handler("Everlook Smart Island (section arrow): " .. tostring(value)) end
-		return nil
-	end
-	return usable(value) and value or nil
-end
-
 -- Turns every arrow that asks for its angle. Cheap: it moves no frame and lays nothing out.
 function View:tick()
-	for index = 1, self.used_rows or 0 do
-		local slot = self.rows[index]
-		if slot.arrow_function and not slot.arrow_failed then slot.row:aim(ask_arrow(slot)) end
-	end
+	for index = 1, self.used_rows or 0 do self.rows[index].row:tick() end
 end
 
 local function row_slot(self, index)
@@ -376,13 +355,6 @@ function View:paint(sections, top, width, title_in_band)
 				slot.node.tooltip = tooltip_text(block.tooltip)
 				slot.interactive = block.action ~= nil or slot.node.tooltip ~= nil
 				if host.role then host.role(slot.row.title, block.role or self.options.title_role or "text") end
-				local spec_arrow = block.row.arrow
-				slot.arrow_function = type(spec_arrow) == "function" and spec_arrow or nil
-				-- A function that failed is left alone until its section is pushed again, which is a new record.
-				if slot.arrow_record ~= record then slot.arrow_failed = false end
-				slot.arrow_record = record
-				-- A function's first angle is asked for now, and kept up to date by tick().
-				if slot.arrow_function then spec_arrow = ask_arrow(slot) or 0 end
 				-- A row carries its own insets, the same the capsule has, so its frame is the whole pane.
 				-- A line of a list is `row` high, and `link` high when it carries a button.
 				local row_height = self.options.row_height or (block.action and space.link or space.row)
@@ -396,8 +368,7 @@ function View:paint(sections, top, width, title_in_band)
 				end
 				call(slot.link, block.action and "Show" or "Hide")
 				call(slot.frame, "Show")
-				slot.row:set({ icon = block.row.icon, arrow = spec_arrow, title = block.row.title, ring = block.row.ring, labels = block.row.labels, badge = block.row.badge }, reserve)
-				if slot.arrow_function then slot.row:aim(ask_arrow(slot)) end
+				slot.row:set({ icon = block.row.icon, arrow = block.row.arrow, title = block.row.title, ring = block.row.ring, labels = block.row.labels, badge = block.row.badge }, reserve)
 				y = y + row_height
 			end
 			previous = kind

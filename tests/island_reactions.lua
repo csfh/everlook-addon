@@ -97,7 +97,7 @@ return function(root, check, island_world, quest_world, secret_stat)
 	do
 		local addon, env, state, frames = world()
 		local api = env.Everlook.island
-		check("the island exposes react and a version that counts it", type(api.react) == "function" and api.api == 2)
+		check("the island exposes react and a version that counts it", type(api.react) == "function" and api.api == 3)
 		local resting
 		for _, frame in ipairs(frames) do if frame.name == "EverlookIslandResting" then resting = frame end end
 		local driver

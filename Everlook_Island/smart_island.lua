@@ -504,7 +504,7 @@ local function copy_notice(entry)
 	return { id = entry.id, source = entry.source, key = entry.key, kind = entry.kind, text = entry.text, duration = entry.duration,
 		severity = entry.severity, detail = entry.detail, icon = entry.icon, money = entry.money,
 		progress = entry.progress, presentation = entry.presentation, interaction = entry.interaction,
-		capsule = entry.capsule and { text = entry.capsule.text, icon = entry.capsule.icon, trailing = entry.capsule.trailing, progress = entry.capsule.progress } or nil,
+		capsule = entry.capsule and compact_api.copy(entry.capsule) or nil,
 		runs = entry.runs,
 		actions = actions.summary(entry), item_id = entry.item_id, spell_id = entry.spell_id,
 		deferred = entry.deferred or nil, frozen = entry.frozen or nil,
@@ -1491,7 +1491,8 @@ paint = function(reason)
 	local compact = status and status.capsule
 	-- A status can carry its progress outside its capsule. The capsule shows it as a percent.
 	if compact and compact.progress == nil and type(status.progress) == "number" then
-		compact = { text = compact.text, icon = compact.icon, trailing = compact.trailing, progress = status.progress }
+		compact = compact_api.copy(compact)
+		compact.progress = status.progress
 	end
 	local page_width, two = shell.panel(visual_open and #sections.list("pane_a") > 0)
 	local available = math.max(64, screen_size("GetWidth") - 32)
@@ -2108,7 +2109,7 @@ Everlook.island = {
 	section = island.section,
 	react = island.react,
 	-- Raised only when something is added, so an addon can test for what it needs.
-	api = 2,
+	api = 3,
 }
 
 local function hide()
@@ -2394,6 +2395,18 @@ local function ensure_frame()
 		resting_slots[index] = { frame = slot_frame, row = island_row.new(slot_frame, { label = make_label, ring_size = shell.space.capsule_ring,
 			rings = { make = shell.make_ring, place = shell.place_ring, chain = shell.chain_ring, set = shell.set_ring, hide = shell.hide_ring } }) }
 	end
+	-- A capsule's arrow that asks for its angle is turned ten times a second, while a capsule shows.
+	shell.capsule_aim = CreateFrame("Frame", nil, shell.face)
+	local capsule_wait = 0
+	call(shell.capsule_aim, "SetScript", "OnUpdate", function(_, elapsed)
+		if type(elapsed) ~= "number" then return end
+		capsule_wait = capsule_wait + elapsed
+		if capsule_wait < 0.1 then return end
+		capsule_wait = 0
+		for _, slot in ipairs(resting_slots) do
+			if slot.frame.shown ~= false then slot.row:tick() end
+		end
+	end)
 	shell.group = call(resting, "CreateAnimationGroup")
 	if shell.group then
 		shell.anim = call(shell.group, "CreateAnimation", "Alpha")

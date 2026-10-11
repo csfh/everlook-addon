@@ -38,7 +38,7 @@ end
 | `severity` | `"info"`, `"success"`, `"warning"` or `"error"`; default `"info"`. Explicit labels and colors accompany success, warning and error. Warning/error affect delivery priority. |
 | `detail` | Optional nonblank, nonsecret string, at most 512 bytes. Supporting text beneath the primary message. |
 | `icon` | Optional nonblank, nonsecret symbolic name, at most 64 bytes. Known names: `generic`, `money`, `bags`, `repair`, `level`, `quest`, `flight`, `mail`, `hearth`, `reputation`, `profession`, `loot`, `clock`. Unknown names use the generic icon. Omission chooses from kind; durability uses repair. Custom texture paths are deferred. |
-| `capsule` | Optional, and only when `presentation` is `"status"`. A compact resting readout. `text` is one plain line of 1 to 24 bytes, without `|` or a newline. `icon` is an optional leading mark. `trailing` is an optional plain line of 1 to 16 bytes, or one mark. `progress` is an optional number from 0 to 1; when omitted, the notice's own `progress` fills the resting rail. A clock update keeps the handle and does not mark the notice unread again. |
+| `capsule` | Optional, and only when `presentation` is `"status"`. The resting pill's one row; see **The capsule** below. `text` is one plain line of 1 to 64 bytes, without `|` or a newline; `icon`, `trailing` and `progress` are as before, and `arrow`, `ring`, `labels`, `badge` and `min_width` arrived with `api` 3. A clock update keeps the handle and does not mark the notice unread again. |
 | `runs` | Optional list of 1 to 6 copied runs, on any presentation. A run is `{ text = "...", tone = "primary" }`, one mark (`icon`, `atlas`, `item_id`, or `spell_id`), or `{ money = -21500 }`. `tone` is `primary`, `secondary`, `accent`, `success`, `warning`, or `error`. The notice `text` stays the tooltip and the plain sentence. Toasts and history draw the compiled runs as their primary line. |
 | `money` | Optional signed nonsecret integer in copper, from -9,007,199,254,740,991 to 9,007,199,254,740,991. Native denomination textures and colors include the sign. This exact-integer bound validates display arithmetic; it does not describe the game's currency cap. |
 | `progress` | Optional nonsecret finite number from 0 to 1. Omit when progress is unknown. |
@@ -124,6 +124,29 @@ The character says that name. An item says its item link when the link is only a
 
 A party member with Smart island on sees that message as a notice. The line is the sender's name, a colon, and the subject. The sender's realm is left off when it matches yours. Each sender keeps one notice, and a later point replaces it. A plain whole item id or spell id is shown as the native icon. A message that is not this version-1 text is ignored, so color codes and links from another player do not reach the island. Turning Share an Alt-right-click off stops your own sharing. Notices from other players still arrive.
 
+## The capsule
+
+A status can set the closed pill's one row, with the same parts as a row in the open island:
+
+```lua
+api.notify({
+    source = "MyAddon", key = "trip", text = "Flying to Ratchet", presentation = "status",
+    capsule = {
+        icon = "flight",                 -- a mark
+        text = "Ratchet",                -- the title, up to 64 bytes
+        arrow = function() return angle end,   -- an angle in radians, or a function that gives one
+        ring = { fraction = 0.4, tone = "accent" },
+        labels = { "~5 yd", { text = "20", tone = "primary" } },   -- up to three, a trailing counts as one
+        badge = "45%",                   -- up to 16 bytes
+        min_width = 300,                 -- hold this width instead of fitting the words, 64 to 360
+    },
+})
+```
+
+Every part is optional, but a capsule needs at least one. `text` is the title, and it gives way with an ellipsis before the parts after it do. A `trailing` string or mark is the last label, so `labels` and `trailing` together may not pass three. `progress` is shown as a purple percent badge only when the capsule has no `trailing`, `labels` or `badge`; a `badge` wins over it. The row is laid out as in the open island: a mark 9 from the left, the title 34 from the left (12 without a mark), the ring after the title, the labels and badge after it, a 12 gap, and a 12 inset at the right. A producer that updates the words of the capsule with `update` sets them in place: a new distance, a new fraction or a turn of the arrow never fades. Adding or removing a part does.
+
+An `arrow` function follows the same contract as in a row: it is asked when the capsule is drawn and then at most ten times a second while the capsule shows, only a finite number turns the arrow, and one that throws is reported once and not called again until another function is set. A capsule that sets `min_width` is that wide, plus the room for the unread count, and does not resize as its words change.
+
 ## Ongoing activity
 
 ```lua
@@ -183,7 +206,7 @@ if api and type(api.section) == "function" then
 end
 ```
 
-`Everlook.island.api` is a whole number that goes up only when something is added, so an addon can test for what it needs. `section` is there from version 1 and `react` from version 2.
+`Everlook.island.api` is a whole number that goes up only when something is added, so an addon can test for what it needs. `section` is there from version 1, `react` from version 2, and the capsule's `arrow`, `ring`, `labels`, `badge` and `min_width` from version 3.
 
 `section` returns a handle, or `nil` and a reason. A second `section` call with the same `source` and `key` replaces that section and returns the same handle, so it is safe to push your sections again at login. Sections are never saved: they are gone after a reload, and your addon pushes them again. `update(handle, changes)` takes `title`, `order`, `blocks` and `expires`. `blocks` replaces the whole list; leave a field out to keep it. A section cannot change its `source`, `key` or `region`. `dismiss(handle)` removes it and returns `true`. A handle from `section` and a handle from `notify` are both numbers from one counter and work in the same `update` and `dismiss`.
 
