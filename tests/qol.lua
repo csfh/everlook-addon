@@ -794,12 +794,14 @@ return function(root, check)
 			return { GetUnit = function() return unit end, UnitFrame = frame }, lines
 		end
 		local plates, lines = {}, {}
-		for _, unit in ipairs({ "nameplate1", "nameplate2", "nameplate3", "nameplate4" }) do plates[unit], lines[unit] = made_plate(unit) end
+		for _, unit in ipairs({ "nameplate1", "nameplate2", "nameplate3", "nameplate4", "nameplate5" }) do plates[unit], lines[unit] = made_plate(unit) end
+		plates.nameplate5.UnitFrame.IsShowOnlyName = function() return true end
 		local tooltips = {
 			nameplate1 = { lines = { { leftText = "Thorgrum Borrelson" }, { leftText = "<Gryphon Master>" } } },
 			nameplate2 = { lines = { { leftText = "A Player" }, { leftText = "<Some Guild>" } } },
 			nameplate3 = { lines = { { leftText = "A Guard" }, { leftText = "<Defender>" } } },
 			nameplate4 = { lines = { { leftText = "Plain Villager" }, { leftText = "Level 3 Human (NPC)" } } },
+			nameplate5 = { lines = { { leftText = "Innkeeper Palaena" }, { leftText = "<Drink Vendor>" } } },
 		}
 		title_env.C_NamePlate = { GetNamePlateForUnit = function(unit) return plates[unit] end, GetNamePlates = function() return {} end }
 		title_env.C_TooltipInfo = { GetUnit = function(unit) return tooltips[unit] end }
@@ -823,8 +825,11 @@ return function(root, check)
 		title_event("NAME_PLATE_UNIT_ADDED", "nameplate2")
 		title_event("NAME_PLATE_UNIT_ADDED", "nameplate3")
 		title_event("NAME_PLATE_UNIT_ADDED", "nameplate4")
-		check("players, hostile NPCs and NPCs without a title get no line",
-			#lines.nameplate2 == 0 and #lines.nameplate3 == 0 and #lines.nameplate4 == 0)
+		check("players and NPCs without a title get no line", #lines.nameplate2 == 0 and #lines.nameplate4 == 0)
+		check("a hostile NPC's title is shown too", lines.nameplate3[1] and lines.nameplate3[1].shown and lines.nameplate3[1].text == "<Defender>")
+		title_event("NAME_PLATE_UNIT_ADDED", "nameplate5")
+		local only_name = lines.nameplate5[1]
+		check("a plate with only a name gets its NPC's title, centred under it", only_name and only_name.shown and only_name.text == "<Drink Vendor>" and only_name.points[1][1] == "TOP")
 		title_event("NAME_PLATE_UNIT_REMOVED", "nameplate1")
 		check("the line goes when the nameplate does", line.shown == false)
 		title_event("NAME_PLATE_UNIT_ADDED", "nameplate1")

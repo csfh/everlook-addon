@@ -7,7 +7,7 @@ local SOURCE = "everlook_titles"
 
 -- The client draws an NPC's name and <title> in the world as engine text, which an addon cannot restyle. A friendly
 -- NPC's nameplate is a frame, so it takes the same name style as a player's. Nameplates carry no title, so this
--- gives the nameplate view a subtitle line for it, read from the second line of the unit's tooltip.
+-- gives the nameplate view a subtitle line for it, and for every other NPC with a title, read from the second line of the unit's tooltip.
 local CVARS = { "nameplateShowFriendlyNpcs", "UnitNameNPC", "UnitNameFriendlySpecialNPCName" }
 
 local function plain(value)
@@ -26,13 +26,15 @@ local function title_of(unit)
 	return text:match("^<.+>$") and text or nil
 end
 
-local function friendly_npc(unit)
-	return UnitExists and UnitExists(unit) and not UnitIsPlayer(unit) and not UnitCanAttack("player", unit)
+-- Any creature, friend or not: a neutral vendor or a guard has a title as much as a friendly one, and a plate with
+-- only a name is one the game makes for friendly NPCs. Players have a guild in that line, which is not a title.
+local function npc(unit)
+	return UnitExists and UnitExists(unit) and not UnitIsPlayer(unit)
 end
 
--- The line under a friendly NPC's name, in the name's colour.
+-- The line under an NPC's name, in the name's colour.
 local function subtitle(unit, _, plate)
-	if not friendly_npc(unit) then return nil end
+	if not npc(unit) then return nil end
 	local title = title_of(unit)
 	if not title then return nil end
 	local red, green, blue = 0.1, 1, 0.1
@@ -70,7 +72,7 @@ end
 local function apply(enabled)
 	switch_names(enabled)
 	if enabled then
-		plates.provide({ source = SOURCE, order = 20, kinds = { "friendly_npc" }, subtitle = subtitle })
+		plates.provide({ source = SOURCE, order = 20, kinds = { "friendly_npc", "enemy_npc", "name_only" }, subtitle = subtitle })
 	else
 		plates.remove(SOURCE)
 	end
@@ -80,7 +82,7 @@ module.register({
 	addon = addon_name, page = "interface", order = 40,
 	id = id,
 	name = "NPC names on nameplates",
-	description = "Friendly NPCs get the same name style as players, with their title under the name. The game draws an NPC's own name and title as engine text that an addon cannot restyle, so this uses friendly NPC nameplates instead. The title is a line on the Nameplates view, which does the placing and needs to be on for a title to show.",
+	description = "NPCs get the same name style as players, with their title under the name, such as Drink Vendor or Trade Supplies, whether they are friendly, neutral or hostile. The game draws an NPC's own name and title as engine text that an addon cannot restyle, so this uses friendly NPC nameplates instead. The title is a line on the Nameplates view, which does the placing and needs to be on for a title to show.",
 	options = {
 		use_nameplates = { name = "Switch the game's NPC names to nameplates", default = true, description = "Turns on friendly NPC nameplates and turns off the game's own NPC names for friendly special NPCs, such as trainers and flight masters. Turning this module off, or this option, puts those settings back as they were." },
 	},
