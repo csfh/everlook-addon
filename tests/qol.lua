@@ -1928,6 +1928,9 @@ return function(root, check)
 		end,
 	}
 	local before = #frames3
+	do
+		local scheduler = assert(loadfile(source("sched"))); setfenv(scheduler, env3); scheduler("Everlook", addon3)
+	end
 	local collected = assert(loadfile(source("collected"))); setfenv(collected, env3); collected("Everlook", addon3)
 	check("collected browser builds nothing until its page is asked for", #frames3 == before)
 	local browser = addon3.collected.page()
@@ -1964,14 +1967,28 @@ return function(root, check)
 		search_box.scripts.OnTextChanged(search_box)
 		check("a name on another page is not found by typing alone", #records_box.entries == 0)
 		search_box.scripts.OnEnterPressed(search_box)
-		local scanner = browser.scripts.OnUpdate
-		check("enter looks in every page, a few at a time", type(scanner) == "function" or #records_box.entries == 1)
-		while browser.scripts.OnUpdate do
-			browser.scripts.OnUpdate()
+		check("enter starts a search that has not finished", #records_box.entries == 0)
+		addon3.sched.tick()
+		check("the search reads a few pages at a time", #records_box.entries == 0)
+		for _ = 1, 3 do
+			addon3.sched.tick()
 		end
-		check("the search finds the row on any page and stops", #records_box.entries == 1 and records_box.entries[1].text == "Bear" and browser.scripts.OnUpdate == nil)
+		check("the search finds the row on any page", #records_box.entries == 1 and records_box.entries[1].text == "Bear")
 		browser.scripts.OnHide()
-		check("hiding the page ends a search", browser.scripts.OnUpdate == nil)
+		search_box.GetText = function() return "wolf" end
+		search_box.scripts.OnTextChanged(search_box)
+		search_box.scripts.OnEnterPressed(search_box)
+		browser.scripts.OnHide()
+		local reads, read_page = 0, addon3.world.page_records
+		addon3.world.page_records = function(...)
+			reads = reads + 1
+			return read_page(...)
+		end
+		for _ = 1, 4 do
+			addon3.sched.tick()
+		end
+		addon3.world.page_records = read_page
+		check("hiding the page ends a search", reads == 0)
 	end
 
 

@@ -233,11 +233,9 @@ local function refresh()
 	end
 end
 
+-- A search that is stopped leaves its task nothing to do, and the task ends.
 local function stop_scan()
 	scan = nil
-	if frame then
-		frame:SetScript("OnUpdate", nil)
-	end
 end
 
 local function choose(bucket)
@@ -258,13 +256,16 @@ local function go(step)
 end
 
 local MATCH_LIMIT = 500
-local SCAN_MS = 2
+-- What the search reads before the first frame, so a short bucket is shown at once.
+local FIRST_SCAN_MS = 2
+local scan_task
 
 -- Looks for a name in every page of the bucket, a few at a time, and shows what
--- it has found as it goes. A thousand pages are not read in one frame.
-local function scan_step()
+-- it has found as it goes. A thousand pages are not read in one frame, but in
+-- the time the scheduler gives it. True while pages are left.
+local function scan_step(limit_ms)
 	if not scan or scan.done then
-		return
+		return false
 	end
 	local began = type(debugprofilestop) == "function" and debugprofilestop() or nil
 	local grown = false
@@ -277,13 +278,12 @@ local function scan_step()
 				grown = true
 			end
 		end
-		if not began or debugprofilestop() - began >= SCAN_MS then
+		if not began or debugprofilestop() - began >= limit_ms then
 			break
 		end
 	end
 	if scan.index >= scan.total or #scan.results >= MATCH_LIMIT then
 		scan.done = true
-		frame:SetScript("OnUpdate", nil)
 		grown = true
 	end
 	if grown then
@@ -291,6 +291,7 @@ local function scan_step()
 	else
 		show_navigation(scan.bucket, current_page(scan.bucket))
 	end
+	return scan ~= nil and not scan.done
 end
 
 local function start_scan()
@@ -299,8 +300,15 @@ local function start_scan()
 	end
 	scan = { bucket = selected_bucket, needle = search_text, index = 0, total = page_total(selected_bucket), results = {}, done = false }
 	selected_record_id = nil
-	frame:SetScript("OnUpdate", scan_step)
-	scan_step()
+	if scan_step(FIRST_SCAN_MS) then
+		if Everlook.sched then
+			scan_task = scan_task or Everlook.sched.task("collected_scan", { step = scan_step, combat = "run" })
+			scan_task.wake()
+		else
+			while scan_step(1e9) do
+			end
+		end
+	end
 	refresh()
 end
 
