@@ -565,7 +565,16 @@ local function place_preview(y, alpha)
 	end
 end
 
+-- Opening or closing takes the size from a capsule's own ease. Left running, the ease would finish
+-- later and put the closed size back on the open island, which clips what is in it.
+local function stop_capsule_ease()
+	if not shell.playing then return end
+	shell.playing, shell.fading, shell.sizing = false, false, false
+	call(shell.group, "Stop")
+end
+
 local function settle_preview(is_open)
+	stop_capsule_ease()
 	call(preview_group, "Stop")
 	preview.motion, preview.phase, preview.open = nil, "settled", is_open
 	preview.land = true
@@ -574,6 +583,7 @@ end
 
 local function animate_preview(is_open)
 	if preview.motion and preview.motion.sized and shell.sample then shell.sample() end
+	stop_capsule_ease()
 	local from_y, from_alpha = preview_position()
 	call(preview_group, "Stop")
 	if is_open and from_alpha == 0 then from_y = -6 end
