@@ -30,10 +30,13 @@ end
 local View = {}
 View.__index = View
 
+-- A table's value columns are this wide, with the island's `near` gap between them.
+local COLUMN_WIDTH = 84
+
 local BAR_ART = "Interface\\AddOns\\Everlook_Island\\assets\\island_white.tga"
 
 function blocks.new(parent, host)
-	return setmetatable({ parent = parent, host = host, rows = {}, texts = {}, headings = {}, meters = {}, cells = {} }, View)
+	return setmetatable({ parent = parent, host = host, rows = {}, texts = {}, headings = {}, meters = {}, cells = {}, tables = {} }, View)
 end
 
 local function meter_slot(self, index)
@@ -51,6 +54,33 @@ local function meter_slot(self, index)
 	call(track, "SetColorTexture", 1, 1, 1, 0.12)
 	self.meters[index] = slot
 	return slot
+end
+
+local function table_slot(self, index)
+	local slot = self.tables[index]
+	if slot then return slot end
+	local host = self.host
+	slot = { heads = {}, names = {}, values = {}, node = { tooltip = nil } }
+	slot.toggle = CreateFrame("Button", nil, self.parent)
+	call(slot.toggle, "RegisterForClicks", "LeftButtonUp")
+	host.hover(slot.toggle, slot.node)
+	call(slot.toggle, "SetScript", "OnClick", function()
+		if slot.action then run(slot.action, slot.handle) end
+	end)
+	slot.title = host.label(self.parent, "LEFT", "heading")
+	slot.footer = host.label(self.parent, "LEFT", "caption")
+	self.tables[index] = slot
+	return slot
+end
+
+local function table_label(slot, list, index, host, parent, role)
+	local label = list[index]
+	if not label then
+		label = host.label(parent, "RIGHT", role)
+		call(label, "SetWordWrap", false)
+		list[index] = label
+	end
+	return label
 end
 
 -- A cell is a mark in a ring, and a small name over its value. It is the same part
@@ -113,7 +143,7 @@ function View:paint(sections, top, width, title_in_band)
 	local host, space = self.host, self.host.space
 	local inset = space.edge
 	local inner = width - 2 * inset
-	local used = { rows = 0, texts = 0, headings = 0, meters = 0, cells = 0 }
+	local used = { rows = 0, texts = 0, headings = 0, meters = 0, cells = 0, tables = 0 }
 	local y = top
 	local function place(region, height)
 		call(region, "ClearAllPoints")
@@ -213,6 +243,73 @@ function View:paint(sections, top, width, title_in_band)
 					call(slot.frame, "Show")
 				end
 				y = row_top + row_height
+			elseif kind == "table" then
+				used.tables = used.tables + 1
+				local slot = table_slot(self, used.tables)
+				slot.action, slot.handle = block.action, record.handle
+				slot.node.tooltip = block.action and block.action.label or nil
+				local columns = #block.columns
+				local names_width = math.max(40, inner - columns * COLUMN_WIDTH - columns * space.near)
+				local line = call(slot.title, "GetLineHeight") or 12
+				-- The heading line names the table and the columns, and folds the rows when it has an action.
+				host.heading(slot.title, block.title, block.action and (block.open and "v " or "> ") or "")
+				call(slot.title, "ClearAllPoints")
+				call(slot.title, "SetPoint", "TOPLEFT", self.parent, "TOPLEFT", inset, -y)
+				call(slot.title, "SetWidth", names_width)
+				call(slot.title, "Show")
+				call(slot.toggle, "ClearAllPoints")
+				call(slot.toggle, "SetPoint", "TOPLEFT", self.parent, "TOPLEFT", inset, -y)
+				call(slot.toggle, "SetSize", inner, line + space.near)
+				call(slot.toggle, block.action and "Show" or "Hide")
+				local function column_left(position)
+					return inset + names_width + space.near + (position - 1) * (COLUMN_WIDTH + space.near)
+				end
+				for position = 1, columns do
+					local head = table_label(slot, slot.heads, position, host, self.parent, "heading")
+					host.heading(head, block.columns[position])
+					call(head, "ClearAllPoints")
+					call(head, "SetPoint", "TOPLEFT", self.parent, "TOPLEFT", column_left(position), -y)
+					call(head, "SetWidth", COLUMN_WIDTH)
+					call(head, "Show")
+				end
+				local row_y = y + line + space.near
+				for row_index, cells in ipairs(block.rows) do
+					local name = table_label(slot, slot.names, row_index, host, self.parent, "text")
+					call(name, "SetJustifyH", "LEFT")
+					call(name, "SetText", cells[1])
+					call(name, "ClearAllPoints")
+					call(name, "SetPoint", "TOPLEFT", self.parent, "TOPLEFT", inset, -row_y)
+					call(name, "SetWidth", names_width)
+					call(name, "Show")
+					slot.values[row_index] = slot.values[row_index] or {}
+					for position = 1, columns do
+						local value = table_label(slot, slot.values[row_index], position, host, self.parent, "text")
+						call(value, "SetText", cells[position + 1])
+						call(value, "SetTextColor", unpack(host.primary))
+						call(value, "ClearAllPoints")
+						call(value, "SetPoint", "TOPLEFT", self.parent, "TOPLEFT", column_left(position), -row_y)
+						call(value, "SetWidth", COLUMN_WIDTH)
+						call(value, "Show")
+					end
+					for position = columns + 1, #slot.values[row_index] do call(slot.values[row_index][position], "Hide") end
+					row_y = row_y + (call(name, "GetLineHeight") or 14) + space.within
+				end
+				for position = columns + 1, #slot.heads do call(slot.heads[position], "Hide") end
+				for row_index = #block.rows + 1, #slot.names do
+					call(slot.names[row_index], "Hide")
+					for _, value in ipairs(slot.values[row_index] or {}) do call(value, "Hide") end
+				end
+				if block.footer then
+					call(slot.footer, "SetText", block.footer)
+					call(slot.footer, "ClearAllPoints")
+					call(slot.footer, "SetPoint", "TOPLEFT", self.parent, "TOPLEFT", inset, -row_y)
+					call(slot.footer, "SetWidth", inner)
+					call(slot.footer, "Show")
+					row_y = row_y + (call(slot.footer, "GetStringHeight") or 12)
+				else
+					call(slot.footer, "Hide")
+				end
+				y = row_y
 			elseif kind == "text" then
 				used.texts = used.texts + 1
 				local label = label_slot(self, self.texts, used.texts, "text")
@@ -248,6 +345,13 @@ function View:paint(sections, top, width, title_in_band)
 		for _, region in ipairs({ slot.label, slot.value, slot.bar }) do call(region, "Hide") end
 	end
 	for index = used.cells + 1, #self.cells do call(self.cells[index].frame, "Hide") end
+	for index = used.tables + 1, #self.tables do
+		local slot = self.tables[index]
+		for _, region in ipairs({ slot.toggle, slot.title, slot.footer }) do call(region, "Hide") end
+		for _, head in ipairs(slot.heads) do call(head, "Hide") end
+		for _, name in ipairs(slot.names) do call(name, "Hide") end
+		for _, values in pairs(slot.values) do for _, value in ipairs(values) do call(value, "Hide") end end
+	end
 	for index = used.texts + 1, #self.texts do call(self.texts[index], "Hide") end
 	for index = used.headings + 1, #self.headings do call(self.headings[index], "Hide") end
 	return #sections > 0 and y or top

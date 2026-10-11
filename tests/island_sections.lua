@@ -77,19 +77,25 @@ return function(root, check, island_world, quest_world)
 		check("a meter and cells with marks and rings are accepted", api.section(spec({ key = "figures", blocks = {
 			{ kind = "meter", label = "Raid", value = "3/8", fraction = 0.375, tone = "warning" },
 			{ kind = "cells", cells = { { icon = "money", label = "Gold", value = "12g" }, { icon = "repair", label = "Gear", value = "40%", ring = { fraction = 0.4, tone = "error" } } } } } })) ~= nil)
+		rejected("a table row with a missing value", spec({ blocks = { { kind = "table", title = "T", columns = { "Hour", "Day" }, rows = { { "Total", "1" } } } } }), "invalid_block")
+		rejected("a table with four columns", spec({ blocks = { { kind = "table", title = "T", columns = { "a", "b", "c", "d" }, rows = { { "x", "1", "2", "3", "4" } } } } }), "invalid_block")
+		rejected("a table with nine rows", spec({ blocks = { { kind = "table", title = "T", columns = { "a" }, rows = (function() local list = {} for index = 1, 9 do list[index] = { "r", "1" } end return list end)() } } }), "invalid_block")
+		check("a table with columns, rows, a footer, an action and a state is accepted", api.section(spec({ key = "table", blocks = {
+			{ kind = "table", title = "Experience", columns = { "Hour", "Day" }, rows = { { "Total", "1,200", "20,000" }, { "Quests", "800", "9,000" } },
+				footer = "Rested 20%", open = true, action = { id = "fold", label = "Show only the total", on_click = function() end } } } })) ~= nil)
 		local builtin = api.section(spec({ source = "everlook_quests", key = "first", order = 10 }))
 		check("one of our own sources may take a slot below 100", type(builtin) == "number")
 
 		-- Updating and dismissing use the same two functions as a notice.
 		check("update replaces a section's blocks and keeps its handle",
 			api.update(handle, { blocks = { { kind = "text", text = "Phase two" } } }) == handle)
-		check("update keeps what it was not given", addon.island_section ~= nil and addon.smart_island.view().sections == 4)
+		check("update keeps what it was not given", addon.island_section ~= nil and addon.smart_island.view().sections == 5)
 		local _, no_region = api.update(handle, { region = "pane_a" })
 		local _, no_source = api.update(handle, { source = "Else" })
 		local _, bad_field = api.update(handle, { blocks = { { kind = "chart" } } })
 		check("update refuses to move a section or rename its source, and checks the blocks",
 			no_region == "invalid_update" and no_source == "invalid_update" and bad_field == "invalid_block")
-		check("dismiss removes a section once", api.dismiss(handle) == true and api.dismiss(handle) == false and addon.smart_island.view().sections == 3)
+		check("dismiss removes a section once", api.dismiss(handle) == true and api.dismiss(handle) == false and addon.smart_island.view().sections == 4)
 		local _, unknown = api.update(handle, { title = "Gone" })
 		check("a dismissed section's handle is unknown to update", unknown == "unknown_handle")
 
@@ -272,5 +278,37 @@ return function(root, check, island_world, quest_world)
 		local problems = layout.lint(frames, { skip = function(frame) return frame.name == "EverlookIslandResting" end })
 		check("with a quest and a section in each pane, nothing sits outside its frame and no two lines of text overlap", #problems == 0)
 		if #problems > 0 then print(table.concat(problems, "\n")) end
+	end
+
+	-- A table: a heading line, columns of figures and a footer, with the heading folding it.
+	do
+		local addon, env, _, _, _, _, frames = world()
+		local api = env.Everlook.island
+		local folded
+		api.section(spec({ key = "experience", title = nil, blocks = { { kind = "table", title = "Experience", columns = { "Hour", "Day" },
+			rows = { { "Total", "1,200", "20,000" }, { "Quests", "800", "9,000" } }, footer = "Rested 20%", open = true,
+			action = { id = "fold", label = "Show only the total", on_click = function(_, id) folded = id end } } } }))
+		open(addon, frames)
+		local measure = layout.new()
+		local title, hour, day = find_text(frames, "v EXPERIENCE"), find_text(frames, "HOUR"), find_text(frames, "DAY")
+		check("a table shows its heading with its fold marker, its columns, its rows and its footer",
+			title and hour and day and find_text(frames, "Quests") and find_text(frames, "800") and find_text(frames, "Rested 20%"))
+		local total, total_hour, total_day = measure.rectangle(find_text(frames, "Total")), measure.rectangle(find_text(frames, "1,200")), measure.rectangle(find_text(frames, "20,000"))
+		local hour_head, day_head = measure.rectangle(hour), measure.rectangle(day)
+		check("figures sit under their column heads, 84 wide with 8 between", total_hour.left == hour_head.left and total_day.left == day_head.left
+			and day_head.left - hour_head.left == 84 + 8 and total_hour.top > hour_head.top and total.left < total_hour.left)
+		local right_edge = measure.rectangle(find_text(frames, "20,000")).right
+		local problems = layout.lint(frames, { skip = function(frame) return frame.name == "EverlookIslandResting" end })
+		local island
+		for _, frame in ipairs(frames) do if frame.name == "EverlookSmartIsland" then island = measure.rectangle(frame) end end
+		check("a table sits inside its pane, its last column ending on the 12 inset, and overlaps nothing", #problems == 0 and right_edge == island.right - 12)
+		if #problems > 0 then print(table.concat(problems, "\n")) end
+		local toggle
+		for _, frame in ipairs(frames) do if frame.scripts and frame.scripts.OnClick and frame.shown ~= false and frame.height == 14 + 8 then toggle = frame end end
+		check("the heading line is a button that calls the action", toggle ~= nil)
+		if toggle then
+			toggle.scripts.OnClick(toggle)
+			check("clicking the heading calls the producer with the action id", folded == "fold")
+		end
 	end
 end

@@ -201,6 +201,7 @@ end
 | `gap` | `size` of `within` (4), `near` (8) or `section` (16) |
 | `meter` | `label` (32 bytes), `value` (24 bytes), `fraction` from 0 to 1 and an optional `tone`: a name over a value with a thin bar under them |
 | `cells` | `cells`, one to six of `{ icon, label, value, ring = { fraction, tone } }`: the island's own metric cell, two across. `icon` is a mark, `label` and `value` are 24 bytes each, and a cell with no `ring` shows the empty one |
+| `table` | `title` (32 bytes), `columns` (one to three names of 12 bytes), `rows` (one to eight, each a name and one value for every column, 24 bytes each), optional `footer` (160 bytes), optional `open` and an optional `action` (an `id`, a `label` and `on_click`). The heading line is a button when there is an action, and shows a fold marker from `open`; the figures sit right-aligned in 84 wide columns |
 
 A row has any of `icon` (a mark, as for a capsule), `title` (64 bytes), `ring = { fraction, tone }` with `fraction` from 0 to 1, up to three `labels` (24 bytes each, or `{ text, tone }`) and a `badge` (16 bytes). A tone is `primary`, `secondary`, `accent`, `success`, `warning` or `error`. An action has an `id`, a `label` (24 bytes) and `on_click(handle, action_id)`. It is a plain button: a section never carries an item or a spell. Errors in `on_click` go to the addon error handler. A tooltip is a `title` and up to six `lines` of plain text.
 

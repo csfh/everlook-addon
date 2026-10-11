@@ -2676,7 +2676,7 @@ local function ensure_frame()
 			hover_target(target, node)
 			preview_controls[#preview_controls + 1] = target
 		end,
-		heading = shell.heading, space = shell.space, ring_size = shell.space.capsule_ring,
+		heading = shell.heading, space = shell.space, ring_size = shell.space.capsule_ring, primary = COLORS.primary,
 		rings = { make = shell.make_ring, place = shell.place_ring, chain = shell.chain_ring, set = shell.set_ring, hide = shell.hide_ring, track = shell.track_ring } }
 	shell.blocks_a = island_blocks.new(quest_content, block_host)
 	shell.blocks_b = island_blocks.new(inbox_content, block_host)

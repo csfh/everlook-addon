@@ -19,7 +19,9 @@ local BLOCK_KEYS = {
 	gap = { kind = true, size = true },
 	meter = { kind = true, label = true, value = true, fraction = true, tone = true },
 	cells = { kind = true, cells = true },
+	table = { kind = true, title = true, columns = true, rows = true, footer = true, action = true, open = true },
 }
+local MAX_COLUMNS, MAX_ROWS = 3, 8
 local CELL_KEYS = { icon = true, label = true, value = true, ring = true }
 local RING_KEYS = { fraction = true, tone = true }
 local MAX_CELLS = 6
@@ -150,6 +152,53 @@ local function read_block(block)
 			cells[index] = copy
 		end
 		return { kind = "cells", cells = cells }, bytes
+	end
+	if kind == "table" then
+		if not plain_text(block.title, 32) then return nil, "invalid_block" end
+		local columns, rows = block.columns, block.rows
+		if not plain_table(columns) or #columns < 1 or #columns > MAX_COLUMNS then return nil, "invalid_block" end
+		if not plain_table(rows) or #rows < 1 or #rows > MAX_ROWS then return nil, "invalid_block" end
+		local bytes = #block.title
+		local copy = { kind = "table", title = block.title, columns = {}, rows = {} }
+		for key in pairs(columns) do
+			if type(key) ~= "number" or key < 1 or key > #columns or key % 1 ~= 0 then return nil, "invalid_block" end
+		end
+		for index = 1, #columns do
+			if not plain_text(columns[index], 12) then return nil, "invalid_block" end
+			copy.columns[index] = columns[index]
+			bytes = bytes + #columns[index]
+		end
+		for key in pairs(rows) do
+			if type(key) ~= "number" or key < 1 or key > #rows or key % 1 ~= 0 then return nil, "invalid_block" end
+		end
+		for index = 1, #rows do
+			local row = rows[index]
+			-- A row is a name, then one value for each column.
+			if not plain_table(row) or #row ~= #columns + 1 then return nil, "invalid_block" end
+			for key in pairs(row) do
+				if type(key) ~= "number" or key < 1 or key > #row or key % 1 ~= 0 then return nil, "invalid_block" end
+			end
+			copy.rows[index] = {}
+			for position = 1, #row do
+				if not plain_text(row[position], 24) then return nil, "invalid_block" end
+				copy.rows[index][position] = row[position]
+				bytes = bytes + #row[position]
+			end
+		end
+		if block.footer ~= nil then
+			if not plain_text(block.footer, 160) then return nil, "invalid_block" end
+			copy.footer = block.footer
+			bytes = bytes + #block.footer
+		end
+		if block.open ~= nil and type(block.open) ~= "boolean" then return nil, "invalid_block" end
+		copy.open = block.open
+		if block.action ~= nil then
+			local action, reason = read_action(block.action)
+			if not action then return nil, reason end
+			copy.action = action
+			bytes = bytes + #action.label
+		end
+		return copy, bytes
 	end
 	local row, reason = capsule.read_row(block.row)
 	if not row then return nil, reason end
