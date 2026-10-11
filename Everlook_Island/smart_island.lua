@@ -99,17 +99,22 @@ local resting_slots = {}
 -- which is at least twice the one inside. `edge` is the inset the rows below share.
 -- `lead` is the gap between a 16 mark and its text, so every text column sits 22 from the
 -- content edge, as the capsule's does. `block` is the space between a header and what it
--- heads, `control` a button's height, `link` a small button's, and `step` a wheel notch.
-shell.space = { within = 4, near = 8, section = 16, edge = 12, ring = 28, icon = 14, mark = 16, capsule_ring = 14, head = 32, pane_min = 48, pane_max = 320, pane_floor = 200,
-	lead = 6, block = 24, control = 28, link = 24, step = 40 }
+-- heads, `control` a button's height, `link` a small button's, `row` a line of a list (a row with a
+-- button is `link` high), and `step` a wheel notch.
+shell.space = { within = 4, near = 8, section = 16, edge = 12, ring = 28, icon = 14, mark = 16, capsule_ring = 14, head = 32, pane_min = 48, pane_max = 360, pane_floor = 200,
+	lead = 6, block = 24, control = 28, link = 24, row = 20, step = 40 }
 -- The surface's corner radius: the capsule, a card or panel, and a control.
 shell.radius = { capsule = 14, panel = 12, control = 8 }
 -- A notice card, as a toast or an inbox row. The text column is the inset, the icon and the
 -- gap `near` between them.
 shell.card = { inset = 12, icon = 20, text = 40, icon_top = 12, label_top = 10, accent_x = 6, accent_top = 9, bar = 3,
 	wash_x = 4, wash_y = 2, min_height = 44, after_detail = 4, after_meta = 10, after_routine = 6, after_bar = 8 }
+-- The quest card and plan are sections the quest source pushes. A refresh pushes them again if what
+-- they say has changed, and returns whether it did, which is when an open island has been redrawn.
 local function refresh_quests(force)
+	shell.quest_pushed = false
 	quest_context.refresh(force)
+	return shell.quest_pushed
 end
 
 -- The quest events arrive in bursts. The first one scans at once, and the rest
@@ -136,6 +141,7 @@ local function refresh_quests_from_event()
 end
 function island.pin_quest(quest_id)
 	local changed = quest_context.pin(quest_id)
+	if changed then shell.push_quests() end
 	if changed and paint then paint() end
 	return changed
 end
@@ -630,6 +636,12 @@ local function in_batch(work)
 	return result
 end
 
+-- The quest card and its plan, pushed as sections in one batch.
+shell.push_quests = function()
+	return in_batch(function() return quest_context.push() end)
+end
+quest_context.after_refresh = function() shell.quest_pushed = shell.push_quests() end
+
 -- The header and the status cells, pushed as sections in one batch.
 local function push_summary()
 	return in_batch(function() return island_summary.push(readout, module.get(id, "low_slots")) end)
@@ -1108,7 +1120,7 @@ shell.panel = function(two)
 	return math.max(CLOSED_W, width), fitted
 end
 
-local function layout_expanded(list, status, inspection_height, two)
+local function layout_expanded(list, status, two)
 	local space = shell.space
 	local width
 	width, two = shell.panel(two)
@@ -1150,15 +1162,15 @@ local function layout_expanded(list, status, inspection_height, two)
 			+ (call(shell.empty_hint, "GetStringHeight") or 12) + space.section
 	end
 	-- Both lists share one height, so the divider between them runs clean.
-	local quest_height = two and inspection_height or 0
-	-- Sections in the quests pane sit under the quest card. With no quest, the first one's title
-	-- is the pane's heading and the card's place is empty.
+	-- The quests pane: the quest source's card and plan, and the sections of other addons below them.
+	-- Its heading is "Quests", unless the first section is another addon's, whose title it takes.
 	local a_list = two and sections.list("pane_a") or {}
-	local quest_title = not quest_context.has_content() and a_list[1] and a_list[1].title or nil
+	local first_a = a_list[1]
+	local quest_title = first_a and first_a.source ~= "everlook_quests" and first_a.title or nil
 	call(shell.quest_heading, "Show")
 	shell.heading(shell.quest_heading, quest_title or "Quests")
-	local a_end = shell.blocks_a:paint(a_list, quest_height > 0 and (quest_height - space.edge + space.section) or space.near, left_w, quest_title ~= nil)
-	if #a_list > 0 then quest_height = a_end + space.edge end
+	local a_end = shell.blocks_a:paint(a_list, space.near, left_w, quest_title ~= nil)
+	local quest_height = #a_list > 0 and (a_end + space.edge) or 0
 	local room = math.max(space.pane_min, screen_size("GetHeight") - viewport_top - space.edge - space.block)
 	-- Beside the quests, the notifications ask for no more than `pane_floor` of the height, and scroll
 	-- past it, so a long history does not stretch a short quest column into empty space.
@@ -1197,7 +1209,7 @@ local function layout_expanded(list, status, inspection_height, two)
 	call(shell.notice_heading, "ClearAllPoints")
 	call(shell.notice_heading, "SetPoint", "LEFT", expanded, "TOPLEFT", left_w + space.edge, -(header_height + space.head / 2))
 	-- With no quest to show, the island is the notifications alone.
-	for _, part in ipairs({ quest_scroll, shell.quest_head, shell.quest_heading, shell.pane_divider }) do
+	for _, part in ipairs({ quest_scroll, shell.quest_heading, shell.pane_divider }) do
 		call(part, two and "Show" or "Hide")
 	end
 	local height = viewport_top + scroll_height + space.edge
@@ -1207,13 +1219,6 @@ local function layout_expanded(list, status, inspection_height, two)
 	call(footer, "ClearAllPoints")
 	call(footer, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", left_w, -header_height)
 	call(footer, "SetSize", right_w, space.head)
-	call(shell.quest_head, "ClearAllPoints")
-	call(shell.quest_head, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", 0, -header_height)
-	call(shell.quest_head, "SetSize", left_w, space.head)
-	for _, action in ipairs(quest_context.actions()) do
-		call(action, "ClearAllPoints")
-		call(action, "SetPoint", "TOPRIGHT", shell.quest_head, "TOPRIGHT", -space.edge, -(space.head - space.link) / 2)
-	end
 	call(clear_button, #notices > 0 and "Show" or "Hide")
 	call(undo_button, undo_state and "Show" or "Hide")
 	call(undo_button, "ClearAllPoints")
@@ -1500,7 +1505,7 @@ paint = function(reason)
 	if compact and compact.progress == nil and type(status.progress) == "number" then
 		compact = { text = compact.text, icon = compact.icon, trailing = compact.trailing, progress = status.progress }
 	end
-	local page_width, two = shell.panel(visual_open and (quest_context.has_content() or #sections.list("pane_a") > 0))
+	local page_width, two = shell.panel(visual_open and #sections.list("pane_a") > 0)
 	local available = math.max(64, screen_size("GetWidth") - 32)
 	local morphing = preview.phase == "opening" or preview.phase == "closing"
 	-- The unread count sits on the capsule's right inset, and the capsule keeps clear of the room it takes.
@@ -1536,7 +1541,7 @@ paint = function(reason)
 	if show_icon then paint_icon(capsule_icon, status.icon) end
 	call(closed_text, "ClearAllPoints")
 	call(closed_text, "SetPoint", "CENTER", shell.face or frame, "CENTER", status and not layout and 4 or -4, 0)
-	if visual_open then width, height = layout_expanded(list, status, face.inspection_height, two) end
+	if visual_open then width, height = layout_expanded(list, status, two) end
 	if now ~= "open" then
 		width, height = closed_w, closed_h
 	end
@@ -2128,6 +2133,7 @@ local function hide()
 	painted = {}
 	sections.clear()
 	island_summary.reset()
+	quest_context.forget_push()
 	stop_reaction()
 	local kept = {}
 	for _, entry in ipairs(notices) do
@@ -2427,7 +2433,6 @@ local function ensure_frame()
 	shell.heading(shell.quest_heading, "Quests")
 	shell.notice_heading = make_label(panes_visual, "LEFT", "heading")
 	shell.heading(shell.notice_heading, "Notifications")
-	shell.quest_head = CreateFrame("Frame", nil, expanded)
 	quest_scroll = CreateFrame("ScrollFrame", nil, expanded)
 	call(quest_scroll, "EnableMouseWheel", true)
 	preview_controls[#preview_controls + 1] = quest_scroll
@@ -2474,11 +2479,9 @@ local function ensure_frame()
 	preview_controls[#preview_controls + 1] = shell.scrollbar.thumb
 	shell.quest_scrollbar = shell.scroll_api.make(expanded, { name = "EverlookIslandQuestScrollThumb", scroll_to = island.scroll_quests, ratio = drag_ratio })
 	preview_controls[#preview_controls + 1] = shell.quest_scrollbar.thumb
-	quest_context.ensure_ui({ root = shell.face, content = quest_content, label = make_label, visual = make_visual,
-		head = shell.quest_head, link = shell.make_link, space = shell.space, heading = shell.heading,
+	quest_context.ensure_ui({ root = shell.face, label = make_label, space = shell.space,
 		tones = { primary = COLORS.primary, muted = COLORS.muted, success = COLORS.success, quest = shell.quest_color },
-		rings = { make = shell.make_ring, place = shell.place_ring, chain = shell.chain_ring, set = shell.set_ring, hide = shell.hide_ring }, hover = hover_target, controls = preview_controls, pin = island.pin_quest,
-		repaint = function() paint() end })
+		rings = { make = shell.make_ring, place = shell.place_ring, chain = shell.chain_ring, set = shell.set_ring, hide = shell.hide_ring }, pin = island.pin_quest })
 	local block_host = { label = make_label, visual = make_visual, link = shell.make_link, set_link_text = shell.set_control_text,
 		hover = function(target, node)
 			hover_target(target, node)
@@ -2611,7 +2614,9 @@ local function apply(enabled)
 			read_coords()
 			pushed = push_summary()
 		end
-		refresh_quests(false)
+		-- A push of the quest sections redraws the open island after the scan, so it covers the quest chip too.
+		local quests_pushed = refresh_quests(false) and open
+		pushed = quests_pushed or pushed
 		local minutes = open and notice_minutes(clock_now()) or painted.minutes
 		local quest_mark = nil
 		if module.get(id, "quest_context") and quest_context.pulse then
@@ -2621,8 +2626,8 @@ local function apply(enabled)
 			and minutes == painted.minutes and quest_mark == painted.quest then
 			return
 		end
-		-- A summary push already redrew the open island for the clock and the coordinates.
-		local changed_elsewhere = minutes ~= painted.minutes or quest_mark ~= painted.quest
+		-- A push already redrew the open island for what it carried: the clock and the coordinates, or the quests.
+		local changed_elsewhere = minutes ~= painted.minutes or (quest_mark ~= painted.quest and not quests_pushed)
 		painted.clock, painted.coords = readout.clock_text, readout.coords_text
 		painted.minutes, painted.quest = minutes, quest_mark
 		if not pushed or changed_elsewhere then paint() end

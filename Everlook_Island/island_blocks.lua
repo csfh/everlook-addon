@@ -366,7 +366,7 @@ function View:paint(sections, top, width, title_in_band)
 				used.texts = used.texts + 1
 				local label = label_slot(self, self.texts, used.texts, "text")
 				call(label, "SetWidth", inner)
-				call(label, "SetText", block.runs and Everlook.island_capsule.compile(block.runs) or block.text)
+				call(label, "SetText", block.runs and Everlook.island_capsule.compile(block.runs, nil, "") or block.text)
 				place(label, call(label, "GetStringHeight") or 14)
 				call(label, "Show")
 			else
@@ -384,7 +384,9 @@ function View:paint(sections, top, width, title_in_band)
 				-- A function's first angle is asked for now, and kept up to date by tick().
 				if slot.arrow_function then spec_arrow = ask_arrow(slot) or 0 end
 				-- A row carries its own insets, the same the capsule has, so its frame is the whole pane.
-				call(slot.frame, "SetSize", width, self.options.row_height or space.control)
+				-- A line of a list is `row` high, and `link` high when it carries a button.
+				local row_height = self.options.row_height or (block.action and space.link or space.row)
+				call(slot.frame, "SetSize", width, row_height)
 				call(slot.frame, "ClearAllPoints")
 				call(slot.frame, "SetPoint", "TOPLEFT", self.parent, "TOPLEFT", 0, -y)
 				local reserve = 0
@@ -396,7 +398,7 @@ function View:paint(sections, top, width, title_in_band)
 				call(slot.frame, "Show")
 				slot.row:set({ icon = block.row.icon, arrow = spec_arrow, title = block.row.title, ring = block.row.ring, labels = block.row.labels, badge = block.row.badge }, reserve)
 				if slot.arrow_function then slot.row:aim(ask_arrow(slot)) end
-				y = y + (self.options.row_height or space.control)
+				y = y + row_height
 			end
 			previous = kind
 		end

@@ -633,12 +633,24 @@ return function(root, check, island_world, quest_world, secret_stat)
 		}
 		addon.module.set("smart_island", "quest_context", true)
 		env.everlook_smart_island_key("down")
+		-- A ring on each objective, in the pane: one filled to its count, and an empty one for the objective with none.
+		local function in_expanded(frame)
+			while frame do
+				if frame.name == "EverlookIslandExpanded" then return true end
+				frame = frame.parent
+			end
+			return false
+		end
 		local fills, bars = {}, 0
 		for _, frame in ipairs(frames) do
-			if frame.cooldown and frame.shown == true and frame.width == 16 then fills[#fills + 1] = (env.GetTime() - frame.cooldown.start) / frame.cooldown.duration end
+			if frame.cooldown and frame.shown == true and frame.width == 14 and in_expanded(frame) then
+				fills[#fills + 1] = (env.GetTime() - frame.cooldown.start) / frame.cooldown.duration
+			end
 			if frame.value and frame.shown == true and frame.height == 3 and frame.width and frame.width > 100 then bars = bars + 1 end
 		end
-		check("a countable objective gets a ring that fills to its progress, and no bar", #fills == 1 and math.abs(fills[1] - 1 / 6) < 1e-9 and bars == 0)
+		table.sort(fills)
+		check("a countable objective gets a ring that fills to its progress, the other an empty one, and no bar",
+			#fills == 2 and math.abs(fills[2] - 1 / 6) < 1e-9 and fills[1] < 0.001 and bars == 0)
 	end
 	do
 		local addon = island_world()
@@ -713,7 +725,7 @@ return function(root, check, island_world, quest_world, secret_stat)
 		local texts = {}
 		for _, frame in ipairs(frames) do
 			for _, region in ipairs(frame.regions or {}) do
-				if type(region.text) == "string" and region.shown ~= false then texts[#texts + 1] = region.text end
+				if type(region.text) == "string" and region.shown ~= false then texts[#texts + 1] = (region.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
 			end
 		end
 		local joined = "\n" .. table.concat(texts, "\n") .. "\n"

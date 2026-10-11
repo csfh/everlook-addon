@@ -324,7 +324,8 @@ function capsule.read_text_runs(value)
 	return runs
 end
 
-function capsule.compile(runs, money)
+-- joiner goes between the runs: a space for a notice's runs, nothing for a text that is one line in tones.
+function capsule.compile(runs, money, joiner)
 	if type(runs) ~= "table" then return nil end
 	local parts = {}
 	for index = 1, #runs do
@@ -338,7 +339,7 @@ function capsule.compile(runs, money)
 		end
 	end
 	if #parts == 0 then return nil end
-	return table.concat(parts, " ")
+	return table.concat(parts, joiner or " ")
 end
 
 local function mark_key(mark)

@@ -363,7 +363,7 @@ return function(root, check, island_world, quest_world)
 		end
 		local beside, alone_height = with_history(), alone()
 		check("a long history asks for at most 200 beside the quests, and the panes take the quest column's height if it is taller",
-			beside >= 200 and beside < 320 and alone_height == 320)
+			beside >= 200 and beside < alone_height and alone_height == 360)
 	end
 
 	-- The quest card: ready is green, and the plan's rows say they can be pinned.
@@ -475,8 +475,56 @@ return function(root, check, island_world, quest_world)
 		local lit_up = washes()
 		row_frame.scripts.OnLeave(row_frame)
 		check("a row that has an action lights under the pointer and rests when it leaves", lit_up == before + 1 and washes() == before)
-		local ready = find_text(frames, "|cffaeb6c3Suggested, |r |cff80e6a6ready to turn in|r")
-		check("a text in tones is drawn in them, with the same green as the capsule's ring",
-			ready ~= nil or find_text(frames, "|cffaeb6c3Suggested, |r|cff80e6a6ready to turn in|r") ~= nil)
+		check("a text in tones is drawn in them, joined with nothing between, with the same green as the capsule's ring",
+			find_text(frames, "|cffaeb6c3Suggested, |r|cff80e6a6ready to turn in|r") ~= nil)
+	end
+
+	-- The quest source: its card and plan are sections like anyone's.
+	do
+		local addon, env, event, state, _, tickers, frames = quest_world()
+		addon.module.set("smart_island", "quest_context", true)
+		addon.module.set("smart_island", "quest_plan", true)
+		open(addon, frames)
+		local function panel_text(text)
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if region.text == text and region.shown ~= false then return region end
+				end
+			end
+		end
+		check("the quests pane is headed Quests and holds the quest source's card and plan",
+			panel_text("QUESTS") ~= nil and panel_text("NEXT UP") ~= nil and addon.smart_island.view().width == 720)
+		-- Another addon's section lands under them, and the pane keeps its heading.
+		env.Everlook.island.section(spec({ region = "pane_a", key = "other", title = "Raid" }))
+		check("another addon's section in the same pane goes under the card and leaves the heading alone",
+			panel_text("QUESTS") ~= nil and panel_text("RAID") ~= nil)
+		local root_frame
+		for _, frame in ipairs(frames) do if frame.name == "EverlookSmartIsland" then root_frame = frame end end
+		local placements = 0
+		local place = root_frame.SetPoint
+		function root_frame:SetPoint(...)
+			placements = placements + 1
+			return place(self, ...)
+		end
+		placements = 0
+		for _, quest in ipairs(state.quests) do quest.distance = 777 end
+		state.time = state.time + 5
+		tickers[#tickers].callback()
+		check("a change in the distance redraws the open island once, for the card and its explanation together", placements == 1)
+		check("and the card says it", (function()
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if type(region.text) == "string" and region.text:find("~777 yd", 1, true) and region.shown ~= false then return true end
+				end
+			end
+		end)())
+		addon.module.set("smart_island", "enabled", false)
+		addon.module.set("smart_island", "enabled", true)
+		open(addon, frames)
+		check("turning the island off and on again brings the card back", panel_text("NEXT UP") ~= nil and addon.smart_island.view().sections >= 4)
+		state.quests, state.watched, state.selected = {}, {}, nil
+		event("QUEST_LOG_UPDATE")
+		check("with no quest to follow or suggest, the quest source's sections go and the island is one pane",
+			panel_text("NEXT UP") == nil and addon.smart_island.view().width == 432)
 	end
 end

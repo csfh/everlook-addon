@@ -2706,23 +2706,58 @@ return function(root, check)
 		addon.module.set("smart_island", "quest_plan", true)
 		env.everlook_smart_island_key("down")
 		check("expanded quest inspection shows objective counts", label("Collect things  1/6"))
-		check("expanded quest plan is headed Next up and explains its order", label("NEXT UP") and label("Closest to you and matched to your level"))
-		local pin
-		for _, frame in ipairs(frames) do if frame.name == "EverlookIslandPinQuest" then pin = frame end end
+		local function containing(text)
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if region.shown ~= false and type(region.text) == "string" and region.text:find(text, 1, true) then return region end
+				end
+			end
+		end
+		check("expanded quest plan is headed Next up and explains its order", label("NEXT UP") and containing("Closest to you and matched to your level"))
 		local current = addon.smart_island.view().quests.current
-		local release_button
-		for _, frame in ipairs(frames) do if frame.name == "EverlookIslandReleaseQuest" then release_button = frame end end
-		local title, count = label(current.title), label("Collect things  1/6")
-		-- 8 below the pane's heading, a 14 high title, 4 to the explanation, 14 high, 8 to the first objective.
-		-- Its text sits in the 22 text column the capsule uses: a 16 mark at the 12 edge, then 6.
-		check("the card's lines follow the spacing scale: pane inset, within a group, between siblings",
-			title and title.point[5] == -8 and count.point[5] == -(8 + 14 + 4 + 14 + 8) and count.point[4] == 12 + 16 + 6)
-		check("the pin action sits in the quests heading row, not in the card, and only the one that applies shows",
-			pin.shown ~= false and pin.point[1] == "TOPRIGHT" and pin.parent.shown ~= false and release_button.shown == false)
+		local lay = dofile(root .. "/tests/layout.lua").new()
+		local function pane_title()
+			-- The quest's name is on the capsule too, so take the one that is down in the pane.
+			local found
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if region.text == current.title and region.shown ~= false and lay.rectangle(region).top > 100 then found = region end
+				end
+			end
+			return found
+		end
+		local title, count, explanation = pane_title(), label("Collect things  1/6"), containing(addon.smart_island.view().quests.reason)
+		local title_box, explanation_box, count_box = lay.rectangle(title), lay.rectangle(explanation), lay.rectangle(count)
+		local island_top
+		for _, frame in ipairs(frames) do if frame.name == "EverlookSmartIsland" then island_top = lay.rectangle(frame) end end
+		-- The title row is the first thing in the pane, 8 below its heading, with the arrow's room before the title.
+		-- Its detail sits 4 below the row, the pin row 8 below that and the objectives 4 below it each.
+		check("the card's lines follow the spacing scale: pane inset, a row, its detail close under it, then the next group",
+			title_box.left - island_top.left == 34 and explanation_box.top - title_box.top > 0 and explanation_box.left - island_top.left == 12
+			and count_box.left - island_top.left == 12)
+		local function button_named(text)
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if region.text == text and region.shown ~= false then
+						local button = region.parent and region.parent.parent
+						if button and button.scripts and button.scripts.OnClick then
+							local visible, walker = true, button
+							while walker do
+								if walker.shown == false then visible = false end
+								walker = walker.parent
+							end
+							if visible then return button end
+						end
+					end
+				end
+			end
+		end
+		local pin, release_button = button_named("Pin quest"), button_named("Release pin")
+		check("the pin action is a button in the card's pin row, and only the one that applies shows", pin ~= nil and release_button == nil)
 		pin.scripts.OnClick(pin)
 		check("native pin button changes only Island context", addon.smart_island.view().quests.pinned == 23 and state.selected == 22)
-		local release
-		for _, frame in ipairs(frames) do if frame.name == "EverlookIslandReleaseQuest" then release = frame end end
+		local release = button_named("Release pin")
+		check("the card then offers to release the pin", release ~= nil and button_named("Pin quest") == nil and label("Pinned") ~= nil)
 		release.scripts.OnClick(release)
 		check("release button resumes quest suggestion", addon.smart_island.view().quests.pinned == nil)
 		event("QUEST_TURNED_IN", 22, 100, 123)
@@ -2756,21 +2791,37 @@ return function(root, check)
 			end
 		end
 		local done, todo = shown("Slay the first"), shown("Slay the second")
-		local rings, checks = 0, 0
+		-- A ring on the right of each objective: full and green when it is done, gold and filled to its count while it is not.
+		local green, gold = 0, 0
 		for _, frame in ipairs(frames) do
-			if frame.cooldown and frame.shown == true and frame.width == 16 then rings = rings + 1 end
-			for _, region in ipairs(frame.regions or {}) do
-				if region.atlas == "common-icon-checkmark" and region.shown ~= false then checks = checks + 1 end
+			if frame.cooldown and frame.shown == true and frame.width == 14 and frame.swipe_color then
+				local fraction = (env.GetTime() - frame.cooldown.start) / frame.cooldown.duration
+				if math.abs(frame.swipe_color[1] - 0.5) < 0.02 and math.abs(frame.swipe_color[2] - 0.9) < 0.02 and fraction > 0.99 then green = green + 1 end
+				if math.abs(frame.swipe_color[1] - 1) < 0.02 and math.abs(frame.swipe_color[2] - 0.82) < 0.02 and math.abs(fraction - 0.4) < 0.01 then gold = gold + 1 end
 			end
 		end
-		check("a finished objective steps back and takes a check, one still to do stays bright and takes a ring",
-			done and todo and done.color[1] < 0.6 and todo.color[1] > 0.9 and rings == 1 and checks == 1)
-		local pin_link
-		for _, frame in ipairs(frames) do if frame.name == "EverlookIslandPinQuest" then pin_link = frame end end
-		check("the pin action shows while a quest is followed", pin_link.shown ~= false)
+		for _, frame in ipairs(frames) do if false then print("RING", frame.width, frame.swipe_color and frame.swipe_color[1], frame.swipe_color and frame.swipe_color[2], (env.GetTime() - frame.cooldown.start) / frame.cooldown.duration) end end
+		check("a finished objective takes a full green ring, and one still to do a gold ring filled to its count",
+			done and todo and green >= 1 and gold == 1)
+		local function pin_visible()
+			for _, frame in ipairs(frames) do
+				for _, region in ipairs(frame.regions or {}) do
+					if region.text == "Pin quest" and region.shown ~= false then
+						local visible, walker = true, region.parent
+						while walker do
+							if walker.shown == false then visible = false end
+							walker = walker.parent
+						end
+						if visible then return true end
+					end
+				end
+			end
+			return false
+		end
+		check("the pin action shows while a quest is followed", pin_visible())
 		addon.module.set("smart_island", "quest_context", false)
 		check("turning quest tracking off takes the pin action away and narrows the island",
-			pin_link.shown == false and addon.smart_island.view().width == 432)
+			not pin_visible() and addon.smart_island.view().width == 432)
 	end
 	do
 		local addon, env, _, state = quest_world()
@@ -2834,7 +2885,7 @@ return function(root, check)
 		check("the island is two columns wide when there is a quest to show", addon.smart_island.view().width == 720)
 		check("Status and the quests share the left edge, and the notifications start at the divider and the inset", status and quests_heading
 			and status.point[4] == 12 and quests_heading.point[4] == 12 and notices_heading and notices_heading.point[4] == 300 + 12)
-		check("the experience table is a section in the notifications pane, with the summary's two", hour ~= nil and addon.smart_island.view().sections == 3)
+		check("the experience table is a section in the notifications pane, with the summary's two and the quest card", hour ~= nil and addon.smart_island.view().sections == 4)
 		check("the two panes share a top and a height, and the left ends where the right begins",
 			quest_pane and notice_pane and quest_pane.point[5] == notice_pane.point[5] and quest_pane.height == notice_pane.height
 			and quest_pane.width == notice_pane.point[4] and quest_pane.width + notice_pane.width == 720)
@@ -2978,18 +3029,30 @@ return function(root, check)
 		env.C_SuperTrack.SetSuperTrackedQuestID = function() error("the arrow must leave tracking alone") end
 		for _, quest in ipairs(state.quests) do quest.waypoint = { map = 37, x = 0.5, y = 0.25 } end
 		addon.module.set("smart_island", "quest_context", true)
+		env.everlook_smart_island_key("down")
 		local function arrows()
-			local capsule, inspection, closed_arrow, open_arrow
+			local capsule, closed_arrow, open_arrow, driver
 			for _, frame in ipairs(frames) do
-				if frame.name == "EverlookIslandQuestCapsule" then capsule, closed_arrow = frame, arrow_on(frame) end
-				if frame.name == "EverlookIslandQuestInspection" then inspection = frame end
+				if frame.name == "EverlookIslandQuestCapsule" then capsule = frame end
+			end
+			local function inside(frame, target)
+				while frame do
+					if frame == target then return true end
+					frame = frame.parent
+				end
 			end
 			for _, frame in ipairs(frames) do
-				if frame.parent == inspection then open_arrow = arrow_on(frame) or open_arrow end
+				if frame.parent and frame.parent.name == "EverlookIslandExpanded" and frame.scripts and frame.scripts.OnUpdate then driver = frame end
+				for _, region in ipairs(frame.regions or {}) do
+					if type(region.path) == "string" and region.path:find("island_arrow", 1, true) then
+						if inside(frame, capsule) then closed_arrow = region
+						elseif region.shown == true and not open_arrow then open_arrow = region end
+					end
+				end
 			end
-			return capsule, inspection, closed_arrow, open_arrow
+			return capsule, driver, closed_arrow, open_arrow
 		end
-		local capsule, inspection, closed_arrow, open_arrow = arrows()
+		local capsule, inspection, closed_arrow, open_arrow = arrows()  -- inspection: the frame that turns the open arrow
 		check("the closed capsule points toward the selected quest", asked[#asked] == 22 and closed_arrow and closed_arrow.shown and near(closed_arrow.rotation, 0))
 		check("turning the character waits a tenth of a second", (function()
 			state.facing = math.pi / 2
@@ -2997,6 +3060,7 @@ return function(root, check)
 			return near(closed_arrow.rotation, 0)
 		end)())
 		capsule.scripts.OnUpdate(capsule, 0.04)
+		inspection.scripts.OnUpdate(inspection, 0.12)
 		check("turning the character turns the arrow", near(closed_arrow.rotation, -math.pi / 2) and near(open_arrow.rotation, -math.pi / 2))
 		state.facing = 0
 		state.quests[2].waypoint = { map = 40, x = 0.25, y = 0.5 }
@@ -3008,6 +3072,7 @@ return function(root, check)
 		check("the arrow follows the pinned quest", asked[#asked] == 21 and state.selected == 22 and closed_arrow.shown)
 		state.quests[1].waypoint = { map = 12, x = 0.5, y = 0.25 }
 		capsule.scripts.OnUpdate(capsule, 0.1)
+		inspection.scripts.OnUpdate(inspection, 0.1)
 		check("another continent hides the arrow", closed_arrow.shown == false and open_arrow.shown == false)
 		state.quests[1].waypoint = nil
 		capsule.scripts.OnUpdate(capsule, 0.1)
@@ -3017,10 +3082,12 @@ return function(root, check)
 		capsule.scripts.OnUpdate(capsule, 0.1)
 		check("missing facing hides the arrow", closed_arrow.shown == false)
 		state.facing = 0
-		env.everlook_smart_island_key("down")
+		capsule.scripts.OnUpdate(capsule, 0.1)
+		inspection.scripts.OnUpdate(inspection, 0.1)
 		check("the open quest title keeps the same arrow", open_arrow.shown and near(open_arrow.rotation, 0) and near(closed_arrow.rotation, 0))
 		inspection.scripts.OnUpdate(inspection, 0.1)
 		state.facing = secret
+		capsule.scripts.OnUpdate(capsule, 0.1)
 		inspection.scripts.OnUpdate(inspection, 0.1)
 		check("a secret facing hides the arrow", closed_arrow.shown == false and open_arrow.shown == false)
 		state.facing = 0
@@ -5960,9 +6027,11 @@ return function(root, check)
 		local quests_heading, objective, empty = text_rect("QUESTS"), text_rect("Collect things  1/6"), text_rect("No notifications yet")
 		local band_bottom = quests_heading.top + quests_heading.height / 2 + 16
 		local card_title = text_rect("Suitable farther", band_bottom)
+		-- The card's title row starts 8 below the band, and its 14 high words sit in the middle of its 20.
 		check("a pane's content starts 8 below its heading band, in the quests and the notifications alike",
-			card_title.top - band_bottom == 8 and empty.top - band_bottom == 8)
-		check("an objective's text starts in the 22 text column, as the capsule's title does", objective.left - island.left == 12 + 22)
+			card_title.top - band_bottom == 8 + 3 and empty.top - band_bottom == 8)
+		check("a card's title takes the arrow's room, 22 on from the inset, and an objective's text starts on the inset itself",
+			card_title.left - island.left == 12 + 22 and objective.left - island.left == 12)
 		local island_grid = addon.island_grid
 		check("the grid's columns are whole pixels at both panel widths: 36 wide at 720 and 12 wide at 432",
 			island_grid.column(720) == 36 and island_grid.column(432) == 12)

@@ -123,7 +123,7 @@ end
 
 function quests.reset()
 	options, distances, skipped, pin_cache = {}, {}, {}, {}
-	if ui then ui.page = 1 end
+	if quests.forget_push then quests.forget_push() end
 	records, order, baseline = {}, {}, {}
 	selected, suggested, pinned, recent, recent_at, scanned, suggested_ready = nil, nil, nil, nil, nil, nil, nil
 	activity = {}
@@ -396,18 +396,12 @@ function quests.present(request)
 	elseif quest then
 		tooltip = quest.title .. "\n" .. quests.distance_text(quest)
 	end
-	local inspection_height = 0
-	if request and request.visual_open then
-		inspection_height = quests.inspection(view, true, request.content_width) or 0
-	end
-	quests.show_inspection(request and request.visual_open)
 	return {
 		quest = quest,
 		capsule_w = capsule_w,
 		capsule_h = capsule_h,
 		tooltip = tooltip,
 		status_closed = status and closed and true or false,
-		inspection_height = inspection_height,
 	}
 end
 
@@ -476,7 +470,6 @@ function quests.aim()
 	local angle = current and quests.direction(current.id)
 	ui.angle = angle
 	ui.row:aim(angle)
-	island_row.show_arrow(ui.heading_arrow, angle)
 end
 
 -- Ten updates a second turn the arrow smoothly enough and halve the map calls.
@@ -553,6 +546,8 @@ function quests.refresh(force)
 	for _, extension in ipairs(Everlook.module.extensions("smart_island")) do
 		if extension.refresh then extension.refresh(force) end
 	end
+	-- The island sets this to push the card and the plan again, whoever asked for the scan.
+	if quests.after_refresh then quests.after_refresh() end
 end
 
 function quests.note_accepted(id)
@@ -636,61 +631,14 @@ function quests.route(view)
 	return list, built_from_pin
 end
 
-local OBJECTIVES_SHOWN = 4
-
 function quests.ensure_ui(adapter)
 	if ui then return end
-	ui = { adapter = adapter, page = 1, objectives = {}, marks = {}, plan = {} }
+	ui = { adapter = adapter }
 	ui.capsule = CreateFrame("Frame", "EverlookIslandQuestCapsule", adapter.root)
 	call(ui.capsule, "EnableMouse", false)
 	call(ui.capsule, "SetPoint", "TOPLEFT", adapter.root, "TOPLEFT", 0, 0)
 	ui.row = island_row.new(ui.capsule, { label = adapter.label, rings = adapter.rings, ring_size = adapter.space.capsule_ring })
-	ui.panel = CreateFrame("Frame", "EverlookIslandQuestInspection", adapter.content)
-	call(ui.panel, "EnableMouse", false)
-	call(ui.panel, "SetPoint", "TOPLEFT", adapter.content, "TOPLEFT", 0, 0)
-	ui.visual = adapter.visual(ui.panel, true)
-	ui.heading_arrow = island_row.make_arrow(ui.visual)
-	-- The arrow sits level with the title's line, on the same right inset as everything else.
-	call(ui.heading_arrow, "SetPoint", "TOPRIGHT", ui.visual, "TOPRIGHT", -adapter.space.edge, -adapter.space.near)
-	ui.heading = adapter.label(ui.visual, "LEFT")
-	ui.explanation = adapter.label(ui.visual, "LEFT", true)
-	for index = 1, 20 do ui.objectives[index] = adapter.label(ui.visual, "LEFT", "text") end
-	-- Beside each objective: a check when it is done, a ring that fills when it counts.
-	for index = 1, OBJECTIVES_SHOWN do
-		local check = call(ui.visual, "CreateTexture", nil, "OVERLAY")
-		call(check, "SetAtlas", "common-icon-checkmark")
-		call(check, "SetSize", adapter.space.mark, adapter.space.mark)
-		call(check, "Hide")
-		ui.marks[index] = { check = check, ring = adapter.rings.make(ui.visual, adapter.space.mark) }
-	end
-	-- The two actions sit in the quests heading row, outside the card, so the card scrolls without them.
-	ui.pin = adapter.link(adapter.head, "EverlookIslandPinQuest", "Pin quest", function()
-		local view = quests.view()
-		if view and view.current then adapter.pin(view.current.id) end
-	end)
-	ui.release = adapter.link(adapter.head, "EverlookIslandReleaseQuest", "Release pin", function() adapter.pin(nil) end)
-	ui.plan_heading = adapter.label(ui.visual, "LEFT", "heading")
-	ui.plan_reason = adapter.label(ui.visual, "LEFT", "caption")
-	for index = 1, 3 do
-		local target = CreateFrame("Button", nil, ui.panel)
-		call(target, "RegisterForClicks", "LeftButtonUp")
-		local visual = adapter.visual(target, true)
-		local node = { frame = target, visual = visual, title = adapter.label(visual, "LEFT", "text"), detail = adapter.label(visual, "LEFT", "caption") }
-		-- A row lights under the pointer, and its Pin button says what a click on it does.
-		local wash = call(visual, "CreateTexture", nil, "BACKGROUND")
-		call(wash, "SetAllPoints", visual)
-		call(wash, "SetColorTexture", 1, 1, 1, 0.06)
-		call(wash, "Hide")
-		node.on_hover = function(inside) call(wash, inside and "Show" or "Hide") end
-		node.pin = adapter.link(target, nil, "Pin", function() if node.record then adapter.pin(node.record.id) end end)
-		call(node.pin, "SetPoint", "TOPRIGHT", target, "TOPRIGHT", 0, 0)
-		call(target, "SetScript", "OnClick", function() if node.record then adapter.pin(node.record.id) end end)
-		adapter.hover(target, node)
-		adapter.controls[#adapter.controls + 1] = target
-		ui.plan[index] = node
-	end
 	follow(ui.capsule)
-	follow(ui.panel)
 end
 
 -- How far a quest is: all of it when it can be handed in, otherwise the average
@@ -740,117 +688,116 @@ local function objective_text(objective)
 	return text
 end
 
--- Puts a label at `top`, `lead` in from the edge, and returns where it ends. The caller adds the gap.
-local function line(label, value, width, top, lead)
-	local edge, lead = ui.adapter.space.edge, lead or 0
-	call(label, "Show")
-	call(label, "SetText", value)
-	call(label, "SetWidth", width - 2 * edge - lead)
-	call(label, "ClearAllPoints")
-	call(label, "SetPoint", "TOPLEFT", ui.visual, "TOPLEFT", edge + lead, -top)
-	return top + (call(label, "GetStringHeight") or 14)
+-- Where the quest card, the plan and their buttons live: two sections in the quests pane, pushed
+-- through Everlook.island.section like anyone's. The card is the quest to follow with its objectives,
+-- and the plan the next three after it.
+local OBJECTIVES_SHOWN = 4
+local SOURCE = "everlook_quests"
+local pushed_signature
+
+-- Plain, and short enough for a row.
+local function plain(text, limit)
+	return (tostring(text or ""):gsub("|", ""):sub(1, limit))
 end
 
--- The two pin actions, so the island can place the one that shows.
-function quests.actions()
-	return ui and { ui.pin, ui.release } or {}
+local function objective_rows(current)
+	local blocks = {}
+	local shown = math.min(#current.objectives, OBJECTIVES_SHOWN)
+	for index = 1, shown do
+		local objective = current.objectives[index]
+		-- A ring on the right of every objective: gold while it counts, full and green when it is done.
+		local fraction = objective.finished and 1 or (objective.progress or 0)
+		blocks[#blocks + 1] = { kind = "row", row = { title = plain(objective_text(objective), 64),
+			ring = { fraction = fraction, tone = objective.finished and "success" or "gold" } } }
+	end
+	local hidden = #current.objectives - shown
+	if hidden > 0 then
+		blocks[#blocks + 1] = { kind = "text", runs = { { text = "+" .. hidden .. (hidden == 1 and " more objective" or " more objectives"), tone = "muted" } } }
+	end
+	return blocks
 end
 
-function quests.inspection(view, visible, width)
-	if not ui then return 0 end
-	local adapter = ui.adapter
-	local space, tones = adapter.space, adapter.tones
-	local edge = space.edge
-	call(ui.panel, visible and view and "Show" or "Hide")
-	-- The actions live in the heading row, so the panel does not hide them.
-	for _, link in ipairs({ ui.pin, ui.release }) do call(link, "Hide") end
-	if not view then quests.aim(); return 0 end
-	for _, label in ipairs(ui.objectives) do call(label, "Hide") end
-	for _, mark in ipairs(ui.marks) do
-		call(mark.check, "Hide")
-		adapter.rings.hide(mark.ring)
+local function card_section(view)
+	local current, pin = view.current, ui.adapter.pin
+	if not current then
+		return { source = SOURCE, key = "card", region = "pane_a", order = 10,
+			blocks = { { kind = "text", text = "Select a quest in the tracker" } } }
 	end
-	for _, node in ipairs(ui.plan) do call(node.frame, "Hide"); node.record = nil end
-	for _, control in ipairs({ ui.pin, ui.release, ui.plan_heading, ui.plan_reason }) do call(control, "Hide") end
-	local top, current = space.near, view.current
-	if current then
-		-- The title leaves room for the arrow beside it.
-		top = line(ui.heading, current.title, width - 22, top) + space.within
-		top = line(ui.explanation, view.reason .. ", " .. reason(current, tones), width, top) + space.near
-		-- Four objectives fit in the card. Any more fold into one line.
-		local shown = math.min(#current.objectives, #ui.objectives, OBJECTIVES_SHOWN)
-		local lead = space.mark + space.lead
-		for index = 1, shown do
-			local objective = current.objectives[index]
-			-- A finished objective steps back and takes a check, one that counts shows how far it is, and the text says the same.
-			call(ui.objectives[index], "SetTextColor", unpack(objective.finished and tones.muted or tones.primary))
-			local line_top = top
-			top = line(ui.objectives[index], objective_text(objective), width, top, lead)
-			local mark = ui.marks[index]
-			local mark_top = line_top + math.floor((top - line_top - space.mark) / 2)
-			if objective.finished then
-				call(mark.check, "ClearAllPoints")
-				call(mark.check, "SetPoint", "TOPLEFT", ui.visual, "TOPLEFT", edge, -mark_top)
-				call(mark.check, "Show")
-			elseif objective.progress ~= nil then
-				adapter.rings.place(mark.ring, ui.visual, edge, mark_top)
-				adapter.rings.set(mark.ring, objective.progress, tones.quest)
-			end
-			top = top + space.near
-		end
-		local hidden = #current.objectives - shown
-		if hidden > 0 then
-			call(ui.objectives[shown + 1], "SetTextColor", unpack(tones.muted))
-			top = line(ui.objectives[shown + 1], "+" .. hidden .. (hidden == 1 and " more objective" or " more objectives"), width, top, lead) + space.near
-		end
-		call(view.pinned and ui.release or ui.pin, "Show")
-	else
-		top = line(ui.heading, "Select a quest in the tracker", width, top) + space.near
-		call(ui.explanation, "Hide")
-	end
+	local ready = current.ready
+	local blocks = {
+		{ kind = "row", role = "title", row = { icon = "quest", title = plain(current.title, 64), arrow = function() return options.enabled and quests.direction(current.id) or nil end } },
+		{ kind = "text", runs = {
+			{ text = view.reason .. ", ", tone = "secondary" },
+			ready and { text = "ready to turn in", tone = "success" } or { text = current.level and "level " .. current.level or "level unavailable", tone = "secondary" },
+			{ text = ", " .. quests.distance_text(current), tone = "secondary" },
+		} },
+		{ kind = "row", row = { title = view.pinned and "Pinned" or "Not pinned" },
+			action = view.pinned and { id = "release", label = "Release pin", on_click = function() pin(nil) end }
+				or { id = "pin", label = "Pin quest", on_click = function() pin(current.id) end } },
+	}
+	for _, block in ipairs(objective_rows(current)) do blocks[#blocks + 1] = block end
+	return { source = SOURCE, key = "card", region = "pane_a", order = 10, blocks = blocks }
+end
+
+local function plan_section(view)
 	local route, from_pin = quests.route(view)
-	if #route > 0 then
-		-- A section gap from whatever is above, less the gap that line already left.
-		top = top - space.near + space.section
-		adapter.heading(ui.plan_heading, "Next up")
-		call(ui.plan_heading, "Show")
-		call(ui.plan_heading, "SetWidth", width - 2 * edge)
-		call(ui.plan_heading, "ClearAllPoints")
-		call(ui.plan_heading, "SetPoint", "TOPLEFT", ui.visual, "TOPLEFT", edge, -top)
-		top = top + (call(ui.plan_heading, "GetStringHeight") or 12) + space.within
-		top = line(ui.plan_reason, from_pin and "Nearest your pinned quest" or "Closest to you and matched to your level", width, top) + space.near
-		for index, node in ipairs(ui.plan) do
-			local record = route[index]
-			if record then
-				local where, why = quests.where(record), quests.why(record)
-				node.record, node.tooltip = record, "Pin quest: " .. record.title .. "\n" .. where .. "\nWhy: " .. why
-				-- The Pin button takes the right of the row, so the words keep clear of it.
-				local words = width - 2 * edge - (call(node.pin, "GetWidth") or 56) - space.near
-				call(node.title, "SetText", index .. ". " .. record.title)
-				call(node.title, "SetWidth", words)
-				call(node.title, "SetMaxLines", 2)
-				call(node.title, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 0, 0)
-				local title_height = call(node.title, "GetStringHeight") or 14
-				call(node.detail, "SetText", record.ready and where .. ", " .. ready_words(tones) or where)
-				call(node.detail, "SetWidth", words)
-				call(node.detail, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", 0, -title_height - space.within)
-				local detail_height = call(node.detail, "GetStringHeight") or 12
-				local height = title_height + space.within + detail_height
-				call(node.frame, "SetSize", width - 2 * edge, height)
-				call(node.frame, "ClearAllPoints")
-				call(node.frame, "SetPoint", "TOPLEFT", ui.panel, "TOPLEFT", edge, -top)
-				call(node.pin, "Show")
-				call(node.frame, "Show")
-				top = top + height + space.near
-			end
-		end
+	if #route == 0 then return nil end
+	local pin = ui.adapter.pin
+	local blocks = { { kind = "text", runs = { { text = from_pin and "Nearest your pinned quest" or "Closest to you and matched to your level", tone = "secondary" } } } }
+	for index, record in ipairs(route) do
+		local where, why = quests.where(record), quests.why(record)
+		blocks[#blocks + 1] = { kind = "row", row = { title = plain(index .. ". " .. record.title, 64) },
+			action = { id = "pin" .. index, label = "Pin", on_click = function() pin(record.id) end },
+			tooltip = { title = plain("Pin quest: " .. record.title, 64), lines = { plain(where, 160), plain("Why: " .. why, 160) } } }
+		blocks[#blocks + 1] = { kind = "text", runs = record.ready
+			and { { text = where .. ", ", tone = "secondary" }, { text = "ready to turn in", tone = "success" } }
+			or { { text = where, tone = "secondary" } } }
 	end
-	top = top - space.near + edge
-	call(ui.panel, "SetSize", width, top)
-	quests.aim()
-	return top
+	return { source = SOURCE, key = "plan", region = "pane_a", order = 20, title = "Next up", blocks = blocks }
 end
 
-function quests.show_inspection(visible)
-	if ui then call(ui.panel, visible and options.enabled and "Show" or "Hide") end
+-- A short key for what the two sections would say, so a second with the same words pushes nothing.
+local function signature(view, card, plan)
+	local parts = { tostring(view and view.pinned), tostring(view and view.reason) }
+	local function add(section)
+		for _, block in ipairs(section and section.blocks or {}) do
+			parts[#parts + 1] = block.kind
+			parts[#parts + 1] = block.row and (block.row.title .. (block.row.ring and block.row.ring.fraction or "")) or ""
+			for _, run in ipairs(block.runs or {}) do parts[#parts + 1] = run.text end
+			parts[#parts + 1] = block.text or ""
+			parts[#parts + 1] = block.action and block.action.label or ""
+		end
+	end
+	add(card)
+	add(plan)
+	return table.concat(parts, "\0")
+end
+
+-- Builds the card and the plan and pushes them when what they say has changed. Returns whether it
+-- pushed, and so redrew the open island. With no quest to follow or suggest, both are removed.
+function quests.push()
+	local api = Everlook.island
+	if not ui or not api or type(api.section) ~= "function" then return false end
+	local view = options.enabled and quests.view() or nil
+	local wanted = view and (view.current or #quests.route(view) > 0)
+	local card, plan
+	if wanted then card, plan = card_section(view), plan_section(view) end
+	local current = signature(view, card, plan) .. (wanted and "1" or "0")
+	if current == pushed_signature then return false end
+	pushed_signature = current
+	for key, section in pairs({ card = card, plan = plan }) do
+		if section then ui[key] = api.section(section) end
+	end
+	for _, key in ipairs({ "card", "plan" }) do
+		if ui[key] and not ({ card = card, plan = plan })[key] then
+			api.dismiss(ui[key])
+			ui[key] = nil
+		end
+	end
+	return true
+end
+
+-- Forgets what was last pushed, so the next push goes out. The handles stay, to remove what is still there.
+function quests.forget_push()
+	pushed_signature = nil
 end
