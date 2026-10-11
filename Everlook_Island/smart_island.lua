@@ -659,7 +659,7 @@ quest_context.after_refresh = function() shell.quest_pushed = shell.push_quests(
 local function push_summary()
 	return in_batch(function()
 		local summary_pushed = island_summary.push(readout, module.get(id, "low_slots"))
-		local resting_pushed = Everlook.island_resting.push(readout, {
+		local resting_pushed = island_summary.push_resting(readout, {
 			level = island.format_level(readout.level), xp = module.get(id, "closed_xp"), clock = module.get(id, "closed_clock"),
 			gear = module.get(id, "source_durability"), bags = module.get(id, "source_bags"), free = module.get(id, "closed_bags"),
 			low_slots = module.get(id, "low_slots"),
@@ -2122,7 +2122,6 @@ local function hide()
 	painted = {}
 	sections.clear()
 	island_summary.reset()
-	Everlook.island_resting.reset()
 	quest_context.forget_push()
 	stop_reaction()
 	local kept = {}
