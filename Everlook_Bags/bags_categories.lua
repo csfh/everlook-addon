@@ -7,6 +7,8 @@ local Everlook = Everlook
 local categories = { FREE = "free" }
 
 categories.SECTIONS = {
+	{ key = "pinned", title = "Pinned" },
+	{ key = "recent", title = "Recent" },
 	{ key = "armory", title = "The Armory" },
 	{ key = "prep", title = "Adventure Prep" },
 	{ key = "professions", title = "Professions" },
@@ -37,9 +39,13 @@ local function preset_of(class_id)
 	end
 end
 
--- The section of an item of this class. Only junk of exactly true counts as junk.
-function categories.of(class_id, junk)
+-- The section of an item of this class. A pin of exactly true puts it in pinned, whatever
+-- else it is. Otherwise junk of exactly true is junk, then a recent item of exactly true is
+-- recent, and any other item goes by its class.
+function categories.of(class_id, junk, pinned, recent)
+	if pinned == true then return "pinned" end
 	if junk == true then return "junk" end
+	if recent == true then return "recent" end
 	if secret(class_id) or type(class_id) ~= "number" then return "misc" end
 	return preset_of(class_id) or "misc"
 end

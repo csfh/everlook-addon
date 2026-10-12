@@ -10,6 +10,7 @@ return function(root, check)
 		env._G = env
 		env.EverlookDB = {}
 		env.IsShiftKeyDown = function() return false end
+		env.IsLoggedIn = function() return true end
 		local loaded = {}
 		env.EventUtil = { ContinueOnAddOnLoaded = function(name, callback) loaded[name] = callback end }
 		-- Every widget made through CreateFrame, so a test can find what the module added.
@@ -80,7 +81,7 @@ return function(root, check)
 		local addon = {}
 		-- world.lua shares the namespace as the global Everlook.
 		env.Everlook = addon
-		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_categories", "bags_headers", "bags_marker", "bags" }) do
+		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_categories", "bags_pins", "bags_recent", "bags_headers", "bags_marker", "bags" }) do
 			local chunk = assert(loadfile(source(file)))
 			setfenv(chunk, env)
 			chunk(file == "bags" and "Everlook_Bags" or "Everlook", addon)
@@ -202,9 +203,14 @@ return function(root, check)
 			keys[#keys + 1] = section.key
 			titles[#titles + 1] = section.title
 		end
-		check("sections run from the armory down to free space, junk just above it", table.concat(keys, " ") == "armory prep professions misc junk free")
+		check("sections run from pinned down to free space, junk just above it", table.concat(keys, " ") == "pinned recent armory prep professions misc junk free")
 		check("sections carry the preset names",
-			table.concat(titles, "|") == "The Armory|Adventure Prep|Professions|Miscellaneous|Junk|Free Space")
+			table.concat(titles, "|") == "Pinned|Recent|The Armory|Adventure Prep|Professions|Miscellaneous|Junk|Free Space")
+		check("a pinned item is in pinned whatever its type", categories.of(4, false, true, false) == "pinned" and categories.of(nil, false, true, true) == "pinned")
+		check("a pinned item that is junk stays pinned", categories.of(4, true, true, false) == "pinned")
+		check("a recent item is in recent whatever its type", categories.of(4, false, false, true) == "recent" and categories.of(nil, false, false, true) == "recent")
+		check("junk stays junk though it is recent", categories.of(4, true, false, true) == "junk")
+		check("anything but exactly true is not pinned or recent", categories.of(4, false, "yes", 1) == "armory")
 		check("a weapon is in the armory", categories.of(2, false) == "armory")
 		check("armor is in the armory", categories.of(4, false) == "armory")
 		check("a consumable is in adventure prep", categories.of(0, false) == "prep")
@@ -229,6 +235,62 @@ return function(root, check)
 		check("without the item class names every item is miscellaneous", no_enum.of(4, false) == "misc" and no_enum.of(2, false) == "misc")
 	end
 
+	-- The pin store: item ids the player pinned, kept in the saved settings.
+	do
+		local addon, env = load_bags()
+		local pins = addon.bags_pins
+		local data = {}
+		check("pinning an item says it is now pinned", pins.toggle(data, 6948) == true and pins.is_pinned(data, 6948))
+		check("pinning it again unpins it and leaves nothing behind", pins.toggle(data, 6948) == false and not pins.is_pinned(data, 6948) and next(data) == nil)
+		check("an item that was never pinned is not pinned", not pins.is_pinned(data, 2589))
+		for label, bad in pairs({ none = false, zero = 0, negative = -5, fraction = 1.5, text = "6948", infinity = math.huge, table = {} }) do
+			check("an id that is " .. label .. " pins nothing", pins.toggle(data, bad) == nil and next(data) == nil and not pins.is_pinned(data, bad))
+		end
+		check("a missing id pins nothing", pins.toggle(data, nil) == nil and not pins.is_pinned(data, nil))
+		local secret = {}
+		local guarded = load_bags({ issecretvalue = function(value) return value == secret end }).bags_pins
+		check("a secret id pins nothing", guarded.toggle({}, secret) == nil and not guarded.is_pinned({ [secret] = true }, secret))
+		local saved = pins.data()
+		check("the pin table lives with the Bags settings and survives being asked for again",
+			saved == env.EverlookDB.qol.bags.pinned and pins.data() == saved)
+		check("pins and junk marks are kept apart", env.EverlookDB.qol.bags.junk == nil or env.EverlookDB.qol.bags.junk ~= saved)
+	end
+
+	-- The recent list: what arrived in the bags this session, from the item totals now and before.
+	do
+		local addon = load_bags()
+		local recent = addon.bags_recent
+		local list = recent.new()
+		check("the first look at the bags is the baseline and makes nothing recent", list:observe({ [100] = 5, [200] = 1 }) == false and #list:items() == 0)
+		check("an unchanged bag adds nothing", list:observe({ [100] = 5, [200] = 1 }) == false and #list:items() == 0)
+		check("a bigger total puts the item first and says the list changed", list:observe({ [100] = 6, [200] = 1 }) == true and list:items()[1] == 100)
+		check("an item that was not in the bags before is recent", list:observe({ [100] = 6, [200] = 1, [300] = 1 }) == true and list:items()[1] == 300 and list:items()[2] == 100)
+		check("an item asks for its place in the list", list:rank(300) == 1 and list:rank(100) == 2 and list:rank(200) == nil)
+		check("has says whether an item is in the list", list:has(100) and not list:has(200))
+		check("a smaller total adds nothing", list:observe({ [100] = 2, [200] = 1, [300] = 1 }) == false and list:items()[1] == 300)
+		check("a split stack of the same total adds nothing", list:observe({ [100] = 2, [200] = 1, [300] = 1 }) == false)
+		check("an item that arrives again moves to the front", list:observe({ [100] = 3, [200] = 1, [300] = 1 }) == true and list:items()[1] == 100 and #list:items() == 2)
+		local items = list:items()
+		items[1] = 999
+		check("the list handed out is a copy", list:items()[1] == 100)
+
+		local crowd = recent.new()
+		crowd:observe({})
+		for id = 1, 13 do crowd:observe({ [id] = 1 }) ; crowd:observe({}) end
+		check("the list holds twelve, the newest first", #crowd:items() == recent.LIMIT and recent.LIMIT == 12 and crowd:items()[1] == 13 and crowd:items()[12] == 2)
+
+		local odd = recent.new()
+		odd:observe({ [100] = 1 })
+		check("a total that is not a table is ignored", odd:observe(nil) == false and odd:observe("bags") == false)
+		check("a count that is not a number is ignored", odd:observe({ [100] = "2", [200] = true }) == false and #odd:items() == 0)
+		local secret = {}
+		local guard = load_bags({ issecretvalue = function(value) return value == secret end }).bags_recent.new()
+		guard:observe({ [100] = 1 })
+		check("a secret count is ignored", guard:observe({ [100] = secret }) == false and #guard:items() == 0)
+		check("a secret id is ignored", guard:observe({ [secret] = 4 }) == false and #guard:items() == 0)
+		check("an id that is not a whole positive number is ignored", guard:observe({ [0] = 1, [-3] = 1, [1.5] = 1 }) == false and #guard:items() == 0)
+	end
+
 	-- Registration.
 	do
 		local addon = load_bags()
@@ -244,6 +306,9 @@ return function(root, check)
 		check("columns start at the stock ten", columns and columns.default == 10)
 		check("columns run from ten to sixteen", columns and columns.min == 10 and columns.max == 16 and columns.step == 1)
 		check("it names its own addon", found and found.addon == "Everlook_Bags")
+		check("pinned items start off", found and found.options.pins and found.options.pins.default == false)
+		check("recent items start off", found and found.options.recent and found.options.recent.default == false)
+		check("it listens for the world loading and for the bags changing", found and found.events and found.events[1] == "PLAYER_ENTERING_WORLD" and found.events[2] == "BAG_UPDATE_DELAYED")
 	end
 
 	-- Applying and undoing, on a stand-in for the stock frame.
@@ -264,6 +329,7 @@ return function(root, check)
 			function button:GetID() return self.slot end
 			function button:IsExtended() return false end
 			function button:IsMouseOver() return self.mouse_over == true end
+			function button:HookScript(name, callback) self.hooks = self.hooks or {}; self.hooks[name] = callback end
 			function button:GetFrameLevel() return 10 end
 			function button:CreateTexture(_, layer, _, sublevel)
 				local texture = { layer = layer, sublevel = sublevel, shown = true }
@@ -304,11 +370,15 @@ return function(root, check)
 		local info = {}
 		for index = 1, slot_total do
 			local entry = gear and gear[index]
-			if entry then info[index] = { itemID = 1000 + index, hyperlink = "link" .. index, quality = entry.quality, class = entry.class, level = entry.level } end
+			if entry then info[index] = { itemID = 1000 + index, hyperlink = "link" .. index, quality = entry.quality, class = entry.class, level = entry.level, stackCount = 1 } end
 		end
 		local env_extra = {
 			ContainerFrameCombinedBags = frame,
-			C_Container = { GetContainerItemInfo = function(bag, slot) if bag == 0 then return info[slot] end end },
+			C_Container = {
+				GetContainerItemInfo = function(bag, slot) if bag == 0 then return info[slot] end end,
+				GetContainerNumSlots = function(bag) return bag == 0 and slot_total or 0 end,
+			},
+			NUM_BAG_SLOTS = 4,
 			C_Item = {
 				GetItemInfoInstant = function(item_id) return item_id, "", "", "", 0, info[item_id - 1000].class, 0 end,
 				GetDetailedItemLevelInfo = function(link) return info[tonumber(link:match("%d+"))].level end,
@@ -562,6 +632,129 @@ return function(root, check)
 		frame.buttons[3].mouse_over = false
 		watcher.scripts.OnUpdate(watcher)
 		check("a wait that ends after grouping was turned off leaves the stock grid alone", at(frame.buttons[2], -42, 0) and at(frame.buttons[4], -126, 0))
+	end
+	do
+		-- Pinned items: a middle-click pins the item, and every copy of it sits in the Pinned section.
+		local entries = { { class = 4, quality = 4, level = 270 }, { class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 } }
+		local addon, env, frame = group_setup(5, entries)
+		local function middle_click(button) button.hooks.OnMouseUp(button, "MiddleButton") end
+		addon.module.set("bags", "group", true)
+		check("with pins off no slot listens for a middle-click", frame.buttons[3].hooks == nil)
+		addon.module.set("bags", "pins", true)
+		check("with pins on every slot listens", frame.buttons[3].hooks and frame.buttons[3].hooks.OnMouseUp ~= nil and frame.buttons[1].hooks.OnMouseUp ~= nil)
+		local first_hook = frame.buttons[3].hooks.OnMouseUp
+		addon.module.set("bags", "columns", 12)
+		addon.module.set("bags", "columns", 10)
+		frame:UpdateItems()
+		check("a slot is hooked once however often the bag refreshes", frame.buttons[3].hooks.OnMouseUp == first_hook)
+		check("nothing is pinned to begin with", #(function() local found = {} for _, h in ipairs(headers_of(env, frame)) do if h.shown and h.texts[1].content == "Pinned" then found[#found + 1] = h end end return found end)() == 0)
+
+		frame.buttons[3].mouse_over = true
+		frame.buttons[3].hooks.OnMouseUp(frame.buttons[3], "LeftButton")
+		check("a left click pins nothing", next(env.EverlookDB.qol.bags or {}) == nil or next(env.EverlookDB.qol.bags.pinned or {}) == nil)
+		middle_click(frame.buttons[3])
+		check("a middle-click pins the item and it is saved by item id", env.EverlookDB.qol.bags.pinned[1003] == true)
+		check("the pinned item moves to the top section at once, though the pointer is on it",
+			at(frame.buttons[3], -378, 142) and at(frame.buttons[1], -378, 71) and at(frame.buttons[2], -336, 71) and at(frame.buttons[4], -378, 0))
+		check("the pinned section has a header and a count", header_named(env, frame, "Pinned").shown and header_named(env, frame, "Pinned").texts[2].content == "1")
+		check("the section the item left loses its header", not header_named(env, frame, "Adventure Prep").shown)
+		frame.buttons[3].mouse_over = false
+		middle_click(frame.buttons[3])
+		check("a second middle-click unpins it and it goes back to its type", at(frame.buttons[3], -378, 71) and at(frame.buttons[1], -378, 142) and next(env.EverlookDB.qol.bags.pinned) == nil)
+
+		middle_click(frame.buttons[3])
+		addon.module.set("bags", "pins", false)
+		check("turning pins off puts the item back under its type and keeps the pin", at(frame.buttons[3], -378, 71) and env.EverlookDB.qol.bags.pinned[1003] == true)
+		middle_click(frame.buttons[3])
+		check("with pins off a middle-click does nothing", env.EverlookDB.qol.bags.pinned[1003] == true and at(frame.buttons[3], -378, 71))
+		addon.module.set("bags", "pins", true)
+		check("turning pins back on brings the pin back", at(frame.buttons[3], -378, 142))
+		addon.module.set("bags", "group", false)
+		middle_click(frame.buttons[3])
+		check("with grouping off a middle-click does nothing", env.EverlookDB.qol.bags.pinned[1003] == true and at(frame.buttons[3], -84, 0))
+		addon.module.set("bags", "group", true)
+		addon.module.set("bags", "enabled", false)
+		middle_click(frame.buttons[2])
+		check("with Bags off a middle-click does nothing", env.EverlookDB.qol.bags.pinned[1002] == nil)
+	end
+	do
+		-- Recent items: what arrived in the bags this session.
+		local entries = { { class = 4, quality = 4, level = 270 }, { class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 } }
+		local addon, env, frame, info = group_setup(6, entries)
+		local function bags_changed()
+			for _, widget in ipairs(env.created) do
+				if widget.parent == nil and widget.kind == "Frame" and widget.scripts.OnEvent then widget.scripts.OnEvent(widget, "BAG_UPDATE_DELAYED") return end
+			end
+			error("no module frame")
+		end
+		addon.module.set("bags", "group", true)
+		addon.module.set("bags", "recent", true)
+		check("what was in the bags when recent turned on is not recent", at(frame.buttons[1], -378, 142) and at(frame.buttons[3], -378, 71))
+		info[4] = { itemID = 1004, hyperlink = "link4", quality = 3, class = 2, level = 200, stackCount = 1 }
+		bags_changed()
+		check("a new item goes to the recent section at the top", at(frame.buttons[4], -378, 213) and at(frame.buttons[1], -378, 142) and at(frame.buttons[3], -378, 71) and at(frame.buttons[5], -378, 0))
+		check("the recent section has a header and a count", header_named(env, frame, "Recent").shown and header_named(env, frame, "Recent").texts[2].content == "1")
+		check("the list is not saved", type(env.EverlookDB.qol.bags.recent) ~= "table")
+
+		info[5] = { itemID = 1005, hyperlink = "link5", quality = 0, class = 15, level = 1, stackCount = 1 }
+		bags_changed()
+		check("a grey arrival is junk, not recent", at(frame.buttons[5], -378, 71) and at(frame.buttons[4], -378, 284) and header_named(env, frame, "Junk").shown)
+		info[6] = { itemID = 1006, hyperlink = "link6", quality = 4, class = 4, level = 280, stackCount = 1 }
+		bags_changed()
+		check("the newest arrival comes first in the recent section", at(frame.buttons[6], -378, 213) and at(frame.buttons[4], -336, 213))
+		check("an item that is still there but did not arrive stays under its type", at(frame.buttons[1], -378, 142) and at(frame.buttons[3], -378, 71))
+
+		addon.module.set("bags", "pins", true)
+		frame.buttons[6].hooks.OnMouseUp(frame.buttons[6], "MiddleButton")
+		check("a pinned item is pinned, not recent", at(frame.buttons[6], -378, 284) and at(frame.buttons[4], -378, 213))
+
+		addon.module.set("bags", "recent", false)
+		check("turning recent off puts its items under their types", at(frame.buttons[4], -294, 142) and at(frame.buttons[6], -378, 213))
+		check("with recent off a change in the bags does not fail", pcall(bags_changed) and at(frame.buttons[4], -294, 142))
+		addon.module.set("bags", "recent", true)
+		check("turning recent back on starts a new list, so nothing is recent yet", at(frame.buttons[4], -294, 142))
+	end
+	do
+		-- At login the bags are not filled when Everlook loads: what is in them then was always there.
+		local entries = {}
+		local addon, env, frame, info = group_setup(4, entries, { IsLoggedIn = function() return false end })
+		local function fire(event)
+			for _, widget in ipairs(env.created) do
+				if widget.parent == nil and widget.kind == "Frame" and widget.scripts.OnEvent then widget.scripts.OnEvent(widget, event) end
+			end
+		end
+		addon.module.set("bags", "group", true)
+		addon.module.set("bags", "recent", true)
+		-- The game fills the bags after Everlook has loaded.
+		info[1] = { itemID = 1001, hyperlink = "link1", quality = 4, class = 4, level = 270, stackCount = 1 }
+		info[2] = { itemID = 1002, hyperlink = "link2", quality = 4, class = 4, level = 270, stackCount = 1 }
+		fire("BAG_UPDATE_DELAYED")
+		check("a change before the world is entered is not looked at", not header_named(env, frame, "Recent"))
+		fire("PLAYER_ENTERING_WORLD")
+		fire("BAG_UPDATE_DELAYED")
+		check("what was in the bags on entering the world is not recent", not header_named(env, frame, "Recent"))
+		info[3] = { itemID = 1003, hyperlink = "link3", quality = 3, class = 2, level = 200, stackCount = 1 }
+		fire("BAG_UPDATE_DELAYED")
+		check("an arrival after that is recent", header_named(env, frame, "Recent") and header_named(env, frame, "Recent").shown)
+		fire("PLAYER_ENTERING_WORLD")
+		frame:UpdateItems()
+		check("a later loading screen keeps the list", header_named(env, frame, "Recent").shown and header_named(env, frame, "Recent").texts[2].content == "1")
+	end
+	do
+		-- What arrives while recent is off is not recent when it is turned on.
+		local entries = { { class = 4, quality = 4, level = 270 }, { class = 4, quality = 4, level = 270 } }
+		local addon, env, frame, info = group_setup(3, entries)
+		addon.module.set("bags", "group", true)
+		local function bags_changed()
+			for _, widget in ipairs(env.created) do
+				if widget.parent == nil and widget.kind == "Frame" and widget.scripts.OnEvent then widget.scripts.OnEvent(widget, "BAG_UPDATE_DELAYED") end
+			end
+		end
+		bags_changed()
+		info[3] = { itemID = 1003, hyperlink = "link3", quality = 3, class = 2, level = 200, stackCount = 1 }
+		bags_changed()
+		addon.module.set("bags", "recent", true)
+		check("an arrival while recent was off is not recent once it is on", at(frame.buttons[3], -294, 0) and not header_named(env, frame, "Recent"))
 	end
 	do
 		-- Junk marks decide the section, and a mark made in mark mode waits for the mode to end.
