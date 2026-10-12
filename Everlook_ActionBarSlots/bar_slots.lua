@@ -5,7 +5,7 @@ local layouts = Everlook.bar_layouts
 local id = "action_bar_slots"
 
 -- The game already has this setting: Always Show Buttons, per bar, in Edit Mode. A preset
--- layout cannot be changed, so this keeps a layout named Everlook with it turned off on the
+-- layout cannot be changed, so this keeps a layout named Everlook Slots with it turned off on the
 -- two bars above the main bar and switches to it. Everything goes through C_EditMode as
 -- plain data. No Blizzard frame is called, hooked or written to.
 
@@ -77,7 +77,7 @@ end
 module.register({
 	addon = addon_name, page = "interface", order = 40,
 	id = id, name = "Action bar slots",
-	description = "Hides the empty slots on the two action bars above the main bar, until you drag something or open the spellbook. It uses the game's own Always Show Buttons setting from Edit Mode: it keeps a layout named Everlook, a copy of the layout you use, with that setting off on Action Bar 2 and 3, and switches to it. It waits for combat to end and for Edit Mode to be closed. Turning this off switches back to the layout you came from, if you are still on Everlook. The Everlook layout stays, and another specialization keeps the layout it has.",
+	description = "Hides the empty slots on the two action bars above the main bar, until you drag something or open the spellbook. It uses the game's own Always Show Buttons setting from Edit Mode: it keeps a layout named Everlook Slots, a copy of the layout you use, with that setting off on Action Bar 2 and 3, and switches to it. A layout you named Everlook yourself is not touched. It waits for combat to end and for Edit Mode to be closed. Turning this off switches back to the layout you came from, if you are still on Everlook Slots. That layout stays, and another specialization keeps the layout it has.",
 	apply = apply, out_of_combat = true,
 	events = { "PLAYER_ENTERING_WORLD", "EDIT_MODE_LAYOUTS_UPDATED" }, on_event = function() apply(module.enabled(id)) end,
 })

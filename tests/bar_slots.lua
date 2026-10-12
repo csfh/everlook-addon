@@ -87,7 +87,7 @@ return function(root, check)
 
 		local info = { layouts = { layout("Mine", ACCOUNT, 1) }, activeLayout = 1 }
 		local result = layouts.prepare(info, presets(), c)
-		check("from a preset a copy named Everlook is added after the saved layouts", result and result.created and #info.layouts == 2 and info.layouts[2].layoutName == "Everlook")
+		check("from a preset a copy named Everlook Slots is added after the saved layouts", result and result.created and #info.layouts == 2 and info.layouts[2].layoutName == "Everlook Slots")
 		check("the copy is a character layout", info.layouts[2].layoutType == CHARACTER)
 		check("its index counts the presets first", result.index == 3 + 2)
 		check("the copy hides the empty slots", always_of(info.layouts[2], 2) == 0 and always_of(info.layouts[2], 3) == 0)
@@ -102,15 +102,15 @@ return function(root, check)
 		layouts.prepare(fresh, presets(), c)
 		check("the copy shares no tables with its source", fresh.layouts[1].systems[2].settings ~= source_layout.systems[2].settings)
 
-		local saved = { layouts = { layout("Mine", ACCOUNT, 1), layout("Everlook", ACCOUNT, 1) }, activeLayout = 4 }
+		local saved = { layouts = { layout("Mine", ACCOUNT, 1), layout("Everlook Slots", ACCOUNT, 1) }, activeLayout = 4 }
 		result = layouts.prepare(saved, presets(), c)
-		check("an Everlook layout that exists is reused", result and not result.created and #saved.layouts == 2 and result.index == 3 + 2)
+		check("an Everlook Slots layout that exists is reused", result and not result.created and #saved.layouts == 2 and result.index == 3 + 2)
 		check("and has its empty slots hidden", result.changed and always_of(saved.layouts[2], 2) == 0)
 		check("the layout in use is remembered", result.previous.name == "Mine" and result.previous.type == ACCOUNT)
 
-		saved = { layouts = { layout("Everlook", ACCOUNT, 0) }, activeLayout = 4 }
+		saved = { layouts = { layout("Everlook Slots", ACCOUNT, 0) }, activeLayout = 4 }
 		result = layouts.prepare(saved, presets(), c)
-		check("when Everlook is already in use and done, nothing changes and nothing is remembered", result and not result.changed and result.previous == nil and result.index == 4)
+		check("when Everlook Slots is already in use and done, nothing changes and nothing is remembered", result and not result.changed and result.previous == nil and result.index == 4)
 
 		local full = { layouts = {}, activeLayout = 1 }
 		for index = 1, 5 do full.layouts[index] = layout("Char " .. index, CHARACTER, 1) end
@@ -183,7 +183,7 @@ return function(root, check)
 
 		addon.module.set("action_bar_slots", "enabled", true)
 		check("enabling saves a new Everlook layout and makes it the active one", state.calls[1] == "save" and state.calls[2] == "added:5:true:false" and state.active == 5)
-		check("the saved layout hides empty slots on the bars above the main bar", layout_named(state, "Everlook") and always_of(layout_named(state, "Everlook"), 2) == 0)
+		check("the saved layout hides empty slots on the bars above the main bar", layout_named(state, "Everlook Slots") and always_of(layout_named(state, "Everlook Slots"), 2) == 0)
 		local remembered = env.EverlookDB.qol.action_bar_slots.switched["Player-1"]
 		check("the layout in use before is remembered by name and type", remembered and remembered.name == "Mine" and remembered.type == ACCOUNT)
 		local count = #state.calls
@@ -192,7 +192,7 @@ return function(root, check)
 
 		addon.module.set("action_bar_slots", "enabled", false)
 		check("disabling switches back to the layout that was in use", state.calls[#state.calls] == "active:4" and state.active == 4)
-		check("the Everlook layout is kept", layout_named(state, "Everlook") ~= nil)
+		check("the Everlook Slots layout is kept", layout_named(state, "Everlook Slots") ~= nil)
 		count = #state.calls
 		addon.module.set("action_bar_slots", "enabled", false)
 		check("disabling again does nothing", #state.calls == count)
@@ -207,7 +207,7 @@ return function(root, check)
 		addon.module.set("action_bar_slots", "enabled", false)
 		check("a layout the player chose is not switched away", #state.calls == count and state.active == 3)
 		addon.module.set("action_bar_slots", "enabled", true)
-		check("enabling later switches to the Everlook layout that is already there", state.calls[#state.calls] == "active:5" and state.active == 5 and #state.saved == 2)
+		check("enabling later switches to the Everlook Slots layout that is already there", state.calls[#state.calls] == "active:5" and state.active == 5 and #state.saved == 2)
 	end
 
 	do
@@ -229,8 +229,17 @@ return function(root, check)
 	end
 
 	do
-		-- Already on the Everlook layout with the slots hidden: nothing to switch to, nothing to switch back.
-		local addon, _, state = world({ saved = { layout("Everlook", CHARACTER, 0) }, active = 4 })
+		-- A layout the player named Everlook is theirs: it is not adopted, changed or switched to.
+		local mine = layout("Everlook", ACCOUNT, 1)
+		local addon, _, state = world({ saved = { mine }, active = 4 })
+		addon.module.set("action_bar_slots", "enabled", true)
+		check("a layout named Everlook is left as it was", always_of(layout_named(state, "Everlook"), 2) == 1 and always_of(layout_named(state, "Everlook"), 3) == 1)
+		check("a separate layout is made instead, as a copy of the one in use", layout_named(state, "Everlook Slots") ~= nil and #state.saved == 2 and state.active == 5)
+	end
+
+	do
+		-- Already on the Everlook Slots layout with the slots hidden: nothing to switch to, nothing to switch back.
+		local addon, _, state = world({ saved = { layout("Everlook Slots", CHARACTER, 0) }, active = 4 })
 		addon.module.set("action_bar_slots", "enabled", true)
 		check("nothing is saved or switched when the layout in use is already right", #state.calls == 0)
 		addon.module.set("action_bar_slots", "enabled", false)
@@ -238,11 +247,11 @@ return function(root, check)
 	end
 
 	do
-		-- An Everlook layout that already exists is reused, not copied again.
-		local addon, _, state = world({ saved = { layout("Mine", ACCOUNT, 1), layout("Everlook", ACCOUNT, 1) } })
+		-- An Everlook Slots layout that already exists is reused, not copied again.
+		local addon, _, state = world({ saved = { layout("Mine", ACCOUNT, 1), layout("Everlook Slots", ACCOUNT, 1) } })
 		addon.module.set("action_bar_slots", "enabled", true)
-		check("an existing Everlook layout is saved and switched to, not added", state.calls[1] == "save" and state.calls[2] == "active:5" and #state.saved == 2 and state.active == 5)
-		check("and has its empty slots hidden", always_of(layout_named(state, "Everlook"), 3) == 0)
+		check("an existing Everlook Slots layout is saved and switched to, not added", state.calls[1] == "save" and state.calls[2] == "active:5" and #state.saved == 2 and state.active == 5)
+		check("and has its empty slots hidden", always_of(layout_named(state, "Everlook Slots"), 3) == 0)
 	end
 
 	do

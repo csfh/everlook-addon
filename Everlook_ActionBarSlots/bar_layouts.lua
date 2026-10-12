@@ -3,7 +3,7 @@ local Everlook = Everlook
 
 -- Edit Mode layouts as plain data: what the game hands out in C_EditMode.GetLayouts, with
 -- the presets ahead of the saved layouts in one numbering. Nothing here touches a frame.
-local layouts = { NAME = "Everlook", BARS = { 2, 3 } }
+local layouts = { NAME = "Everlook Slots", BARS = { 2, 3 } }
 
 local function copy(value)
 	if type(value) ~= "table" then return value end
