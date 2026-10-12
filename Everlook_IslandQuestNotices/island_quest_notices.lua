@@ -74,10 +74,12 @@ end
 
 local PIN_OFFER_GAP, PIN_QUEST_GAP = 60, 600
 
--- A quest the ready notice or a pin offer has just spoken for needs no
--- suggestion on top of it, whichever of them comes first.
+-- A quest the ready notice or a pin offer has just spoken for, or the island
+-- already shows, needs no suggestion on top of it.
 local function spoken_for(quest_id)
 	if state.announced and state.announced[quest_id] then return true end
+	local view = quests.view()
+	if view and view.current and view.current.id == quest_id then return true end
 	local offered = state.pin_seen and state.pin_seen[quest_id]
 	return offered ~= nil and now() - offered < PIN_QUEST_GAP
 end
@@ -132,7 +134,8 @@ end
 -- Offers to pin a quest when the player's activity points at one: a quest just
 -- accepted, progress on a quest that is not pinned, or the pinned quest done.
 -- One offer at a time, not more than one a minute, and the same quest not again
--- for ten minutes. A quest the ready notice has announced is not offered too.
+-- for ten minutes. A quest the ready notice has announced, or the island already
+-- shows, is not offered, except to replace a pinned quest that is done.
 
 local PIN_REASONS = {
 	accepted = "New quest",
@@ -175,6 +178,11 @@ local function pin_suggestions()
 	end
 	if not record or record.id == quests.pinned_id() then return end
 	if state.announced and state.announced[record.id] then return end
+	if chosen.kind ~= "finished" then
+		-- Offering to pin what the island already shows would change nothing on screen.
+		local view = quests.view()
+		if view and view.current and view.current.id == record.id then return end
+	end
 	if state.pin_seen[record.id] and time - state.pin_seen[record.id] < PIN_QUEST_GAP then return end
 	state.pin_seen[record.id], state.pin_at = time, time
 	local quest_id = record.id
@@ -217,8 +225,8 @@ Everlook.module.extend("smart_island", {
 	options = {
 		source_quest_completion = { name = "Show completed quests", default = false, description = "Shows a notice when you turn in a quest, with the quest name from your log and any copper reward. If the log no longer has the quest, the notice uses its number. A hidden quest id stays quiet.", presets = { Quiet = false, Standard = true, Informative = true } },
 		feed_quest_ready = { name = "Quest ready", default = false, description = "Tells you when a quest in your log newly becomes ready to turn in, and those quests share one notice. Quests already ready when you turn this on stay quiet, the notice names the quest while only one quest that became ready after that first look is still ready and the count when more than one of those is still ready, it goes away when none of those are still ready, an older ready quest can remain, turning this off clears it, and the quest capsule can stay off.", presets = { Quiet = false, Standard = true, Informative = true } },
-		feed_quest_next = { name = "Next quest", default = false, description = "Tells you when the suggested quest changes, and keeps one notice on it. The quest already suggested when you turn this on stays quiet. Another change within 30 seconds goes to the inbox without a toast. A quest that was just offered for pinning, or announced as ready, is not suggested as well. The notice goes away when nothing is suggested or you turn this off.", presets = { Quiet = false, Standard = false, Informative = true } },
-		feed_pin_suggest = { name = "Suggest pinning quests", default = true, description = "Offers to pin a quest when you accept one, make progress on one that is not pinned, or finish the one you pinned. It offers the next best quest in that case. Not more than one offer a minute, and none for a quest the ready notice has announced. Needs Show active quest.", presets = { Quiet = false, Standard = true, Informative = true } },
+		feed_quest_next = { name = "Next quest", default = false, description = "Tells you when the suggested quest changes, and keeps one notice on it. The quest already suggested when you turn this on stays quiet. Another change within 30 seconds goes to the inbox without a toast. A quest that was just offered for pinning, announced as ready, or is already on the Island is not suggested as well. The notice goes away when nothing is suggested or you turn this off.", presets = { Quiet = false, Standard = false, Informative = true } },
+		feed_pin_suggest = { name = "Suggest pinning quests", default = true, description = "Offers to pin a quest when you accept one, make progress on one that is not pinned, or finish the one you pinned. It offers the next best quest in that case. Not more than one offer a minute, and none for a quest the ready notice has announced or the island already shows. Needs Show active quest.", presets = { Quiet = false, Standard = true, Informative = true } },
 	},
 	sections = { { name = "Notices", keys = { "source_quest_completion", "feed_quest_ready", "feed_quest_next", "feed_pin_suggest" } } },
 	events = { "QUEST_ACCEPTED", "QUEST_TURNED_IN" },

@@ -5357,13 +5357,13 @@ return function(root, check)
 			end
 			-- A new quest is offered once. The pin offer, the suggestion and the ready notice
 			-- all point at the same quest, so only the first of them speaks.
-			local function new_quest_world(ready)
+			local function new_quest_world(ready, distance)
 				local addon, env, event, state = quest_world()
 				state.quests[3].ready = false
 				for _, name in ipairs({ "feed_quest_ready", "feed_quest_next", "quest_context", "quest_plan" }) do
 					addon.module.set("smart_island", name, true)
 				end
-				table.insert(state.quests, { questID = 25, title = "A fresh errand", level = 12, distance = 5, ready = ready,
+				table.insert(state.quests, { questID = 25, title = "A fresh errand", level = 12, distance = distance or 5, ready = ready,
 					objectives = { { text = "Fetch", numFulfilled = 0, numRequired = 3, finished = false } } })
 				state.time = state.time + 100
 				event("QUEST_ACCEPTED", 25)
@@ -5371,10 +5371,27 @@ return function(root, check)
 				return addon
 			end
 			do
-				local addon = new_quest_world(false)
+				local addon = new_quest_world(false, 5000)
 				local offer = notice_key(addon, "pin-suggest")
-				check("a new quest is offered for pinning", offer and offer.text == "Pin A fresh errand?")
+				check("a new quest the island is not showing is offered for pinning", offer and offer.text == "Pin A fresh errand?")
 				check("and is not suggested next as well", notice_key(addon, "next-quest") == nil)
+			end
+			do
+				local addon = new_quest_world(false, 5)
+				check("a new quest the island already shows is not offered for pinning", addon.smart_island.view().quests.current.id == 25
+					and notice_key(addon, "pin-suggest") == nil)
+				check("nor suggested next, which the island already shows", notice_key(addon, "next-quest") == nil)
+			end
+			do
+				local addon, _, event, state = quest_world()
+				for _, name in ipairs({ "feed_quest_next", "quest_context", "quest_plan" }) do
+					addon.module.set("smart_island", name, true)
+				end
+				addon.smart_island.pin_quest(21)
+				state.quests[3].distance = 1200
+				event("QUEST_LOG_UPDATE")
+				check("a suggestion the island is not showing, because another quest is pinned, is announced",
+					addon.smart_island.view().quests.current.id == 21 and notice_key(addon, "next-quest") ~= nil)
 			end
 			do
 				local addon = new_quest_world(true)
@@ -5403,7 +5420,8 @@ return function(root, check)
 				table.insert(state.quests, 2, removed)
 				removed.distance = 10
 				event("QUEST_LOG_UPDATE")
-				check("removing a quest from the log clears its skip", notice_key(addon, "next-quest").text == "Suitable farther")
+				check("removing a quest from the log clears its skip", addon.smart_island.view().quests.suggested == 22)
+				check("and the island, now showing it, drops the notice", notice_key(addon, "next-quest") == nil)
 			end
 			do
 				local addon, _, event, state, _, _, frames = quest_world()

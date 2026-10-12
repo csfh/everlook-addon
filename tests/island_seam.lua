@@ -1177,7 +1177,7 @@ return function(root, check, island_world, quest_world, secret_stat)
 		end
 		check("pin suggestions start on", addon.module.get("smart_island", "feed_pin_suggest") == true)
 		check("nothing is suggested before anything happens", suggestion() == nil)
-		table.insert(state.quests, { questID = 25, title = "A fresh errand", level = 12, distance = 40,
+		table.insert(state.quests, { questID = 25, title = "A fresh errand", level = 12, distance = 5000,
 			objectives = { { text = "Fetch", numFulfilled = 0, numRequired = 3, finished = false } } })
 		state.time = state.time + 100
 		event("QUEST_ACCEPTED", 25)
