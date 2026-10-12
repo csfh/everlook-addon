@@ -54,6 +54,36 @@ end
 
 local subpages = {}
 
+-- The game's own switch for logging taint, kept in its console variable so the
+-- game stays the one place the level lives. The log is useful when chasing a
+-- blocked action. Left on, calls to methods that addons hook failed with
+-- "attempt to call a nil value" at level 2 on client build 70338.
+local TAINT_LOG = "taintLog"
+local TAINT_LOG_HELP = "Writes what taints addon code to Logs/taint.log, which helps when chasing a blocked action. Keep it off otherwise: with it on, the game can make calls to methods that addons hook fail with \"attempt to call a nil value\", which has been seen at level 2."
+
+local function taint_log_level()
+	return tonumber(GetCVar(TAINT_LOG)) or 0
+end
+
+local function add_debug_page()
+	if type(GetCVar) ~= "function" or type(SetCVar) ~= "function" then return end
+	local present, current = pcall(GetCVar, TAINT_LOG)
+	if not present or current == nil then return end
+	local page, page_layout = Settings.RegisterVerticalLayoutSubcategory(category, "Debug")
+	subpages[#subpages + 1] = page
+	page_layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Taint log", TAINT_LOG_HELP))
+	local proxy = Settings.RegisterProxySetting(page, "Everlook_Debug_taint_log", "number", "Taint log level", 0,
+		taint_log_level, function(value) SetCVar(TAINT_LOG, value) end)
+	local function choices()
+		local container = Settings.CreateControlTextContainer()
+		container:Add(0, "Off")
+		container:Add(1, "Level 1")
+		container:Add(2, "Level 2")
+		return container:GetData()
+	end
+	Settings.CreateDropdown(page, proxy, choices, TAINT_LOG_HELP)
+end
+
 -- Module addons load after Everlook, so the page waits for login, when all of
 -- them have registered and their key bindings are known.
 local function build()
@@ -123,6 +153,7 @@ local function build()
 	if Everlook.sched and Everlook.sched.page then
 		subpages[#subpages + 1] = Settings.RegisterCanvasLayoutSubcategory(category, Everlook.sched.page(), "Performance")
 	end
+	add_debug_page()
 	Settings.RegisterAddOnCategory(category)
 end
 
