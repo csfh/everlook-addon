@@ -2633,6 +2633,7 @@ assert(loadfile(root .. "/tests/settings_build.lua"))()(root, check)
 assert(loadfile(root .. "/tests/segments.lua"))()(root, check)
 assert(loadfile(root .. "/tests/module.lua"))()(root, check)
 assert(loadfile(root .. "/tests/qol.lua"))()(root, check)
+assert(loadfile(root .. "/tests/bags.lua"))()(root, check)
 assert(loadfile(root .. "/tests/waves.lua"))()(root, check)
 
 if failed > 0 then
