@@ -38,20 +38,25 @@ local function ready()
 	return c, info, EditModePresetLayoutManager:GetCopyOfPresetLayouts()
 end
 
+-- Once for each start, the player is put on the slots layout. Their own choice of another
+-- layout after that is left alone.
+local ensured = false
+
 local function switch_on()
 	local all, guid = records("switched")
 	if not all then return end
 	local c, info, presets = ready()
 	if not c then return end
-	-- Done once. A way back with no layout behind it, left by an earlier version, is not done.
-	if all[guid] and layouts.ours(info, presets) then return end
+	-- A way back with no layout behind it, left by an earlier version, is not done.
+	if ensured and all[guid] and layouts.ours(info, presets) then return end
 	local result = layouts.prepare(info, presets, c)
 	if not result then return end
 	if result.created and C_EditMode.IsValidLayoutName(layouts.NAME) ~= true then return end
 	if result.created or result.changed then C_EditMode.SaveLayouts(info) end
+	ensured = true
 	-- Written first: the switch below makes the game send EDIT_MODE_LAYOUTS_UPDATED while it
 	-- runs, which comes back here.
-	all[guid] = result.previous or { stay = true }
+	all[guid] = result.previous or all[guid] or { stay = true }
 	if result.created then
 		C_EditMode.OnLayoutAdded(result.index, true, false)
 	elseif result.changed or info.activeLayout ~= result.index then

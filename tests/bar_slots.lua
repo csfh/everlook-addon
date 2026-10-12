@@ -322,6 +322,24 @@ return function(root, check)
 	end
 
 	do
+		-- Starting up puts the player on the slots layout, once. A layout they pick later stays.
+		local db = { qol = { action_bar_slots = { enabled = true, switched = { ["Player-1"] = { name = "Mine", type = ACCOUNT } } } } }
+		local addon, _, state, fire = world({ db = db, saved = { layout("Mine", ACCOUNT, 1), layout("Everlook Slots", CHARACTER, 0) }, active = 4 })
+		check("starting up on another layout switches to the slots layout", state.active == 5 and state.calls[1] == "active:5")
+		check("and keeps the way back", db.qol.action_bar_slots.switched["Player-1"].name == "Mine")
+		state.active = 4
+		local count = #state.calls
+		fire("EDIT_MODE_LAYOUTS_UPDATED")
+		fire("PLAYER_ENTERING_WORLD")
+		check("a layout the player picks afterwards is left alone", #state.calls == count and state.active == 4)
+
+		db = { qol = { action_bar_slots = { enabled = true, switched = { ["Player-1"] = { name = "Mine", type = ACCOUNT } } } } }
+		_, _, state = world({ db = db, saved = { layout("Mine", ACCOUNT, 1), layout("Everlook Slots", CHARACTER, 0) }, active = 5 })
+		check("starting up on the slots layout already changes nothing", #state.calls == 0)
+		check("and keeps the way back to the layout before it", db.qol.action_bar_slots.switched["Player-1"].name == "Mine")
+	end
+
+	do
 		-- A layout the player named Everlook is theirs: it is not adopted, changed or switched to.
 		local mine = layout("Everlook", ACCOUNT, 1)
 		local addon, _, state = world({ saved = { mine }, active = 4 })
