@@ -2634,6 +2634,7 @@ assert(loadfile(root .. "/tests/segments.lua"))()(root, check)
 assert(loadfile(root .. "/tests/module.lua"))()(root, check)
 assert(loadfile(root .. "/tests/qol.lua"))()(root, check)
 assert(loadfile(root .. "/tests/bags.lua"))()(root, check)
+assert(loadfile(root .. "/tests/blizzard_settings.lua"))()(root, check)
 assert(loadfile(root .. "/tests/bar_slots.lua"))()(root, check)
 assert(loadfile(root .. "/tests/waves.lua"))()(root, check)
 
