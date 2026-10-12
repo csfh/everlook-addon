@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffActionBarSlots|r
+## Notes: Hides the empty slots on the two action bars above the main bar until you drag something or open the spellbook, with the game's own Edit Mode setting.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+bar_layouts.lua
+bar_slots.lua
