@@ -3,10 +3,13 @@ return function(root, check)
 	local source = dofile(root .. "/tests/suite.lua")(root)
 
 	local function load(with_sched, cvars)
+		local said = {}
 		local Everlook = {
 			module = { chapters = function() return {}, {}, {} end },
 			scan = { now = function() end },
 			collected = { page = function() return {} end },
+			say = function(text) said[#said + 1] = text end,
+			said = said,
 		}
 		local game = { built = 0, opened = nil, login = nil, deferred = {}, subpages = {}, headers = {}, proxies = {}, dropdowns = {} }
 		if with_sched then
@@ -38,7 +41,9 @@ return function(root, check)
 			RegisterAddOnCategory = function() end,
 			OpenToCategory = function(id) game.opened = id end,
 		}
-		env.CreateSettingsButtonInitializer = function() end
+		env.CreateSettingsButtonInitializer = function(name, label, click, tooltip, search)
+			return { name = name, label = label, click = click, tooltip = tooltip, search = search, button = true }
+		end
 		env.CreateSettingsListSectionHeaderInitializer = function(name, tooltip) return { name = name, tooltip = tooltip } end
 		if cvars then
 			env.GetCVar = function(name) return cvars[name] end
@@ -76,50 +81,49 @@ return function(root, check)
 		check("with no scheduler, login builds the page", game.built == 1)
 	end
 
-	-- The Debug subpage: one control for the game's taint log.
+	-- The Debug subpage: one button that turns the game's taint log off. Turning it on from the
+	-- page crashed the client at level 2, so the page cannot do that.
 	local function build_with(cvars)
 		local addon, game = load(true, cvars)
 		game.login()
 		game.deferred.settings()
+		game.addon = addon
 		return game
+	end
+	local function debug_button(game)
+		for _, row in ipairs(game.headers) do
+			if row.button then return row end
+		end
 	end
 	do
 		local cvars = { taintLog = "2" }
 		local game = build_with(cvars)
 		check("the Debug subpage is the last one in the list", game.subpages[#game.subpages] == "Debug")
-		local header = game.headers[#game.headers]
-		check("it opens with a Taint log heading", header and header.name == "Taint log")
-		local proxy = game.proxies.Everlook_Debug_taint_log
-		check("the taint log has a control", proxy ~= nil)
-		check("the control is a number and is off by default", proxy.kind == "number" and proxy.default == 0)
-		check("it shows what the game has right now", proxy.get() == 2)
-		cvars.taintLog = "1"
-		check("a change made somewhere else shows when the page is read again", proxy.get() == 1)
-		proxy.set(0)
-		check("choosing Off turns the game's taint log off", cvars.taintLog == "0")
-		proxy.set(2)
-		check("choosing a level sets that level", cvars.taintLog == "2")
-		cvars.taintLog = "nonsense"
-		check("a value the game gives that is not a number reads as off", proxy.get() == 0)
-		local dropdown = game.dropdowns.Everlook_Debug_taint_log
-		local labels = {}
-		for _, choice in ipairs(dropdown.choices) do labels[#labels + 1] = choice.value .. "=" .. choice.label end
-		check("the dropdown offers off and two levels", table.concat(labels, ",") == "0=Off,1=Level 1,2=Level 2")
-		check("the help says what leaving it on can cost", dropdown.tooltip:find("attempt to call a nil value", 1, true) ~= nil and dropdown.tooltip:find("Logs/taint.log", 1, true) ~= nil)
-		check("the heading carries the same help", header.tooltip == dropdown.tooltip)
-	end
-	do
-		local game = build_with(nil)
-		check("a client without the console variable calls has no Debug subpage", #game.subpages == 0 and game.proxies.Everlook_Debug_taint_log == nil)
-	end
-	do
-		local game = build_with({})
-		check("a client that has no taintLog variable has no Debug subpage", #game.subpages == 0)
+		check("it opens with a Taint log heading", game.headers[1] and game.headers[1].name == "Taint log")
+		local button = debug_button(game)
+		check("the page has a button to turn the taint log off", button ~= nil and button.label == "Turn off")
+		check("the button can be found by searching the settings", button.search == true)
+		check("nothing on the page can turn the taint log on", next(game.proxies) == nil and next(game.dropdowns) == nil)
+		button.click()
+		check("the button turns the game's taint log off", cvars.taintLog == "0")
+		check("it says so", #game.addon.said == 1 and game.addon.said[1]:find("off", 1, true) ~= nil)
+		check("the help says where the log goes and what leaving it on can cost",
+			button.tooltip:find("Logs/taint.log", 1, true) ~= nil and button.tooltip:find("attempt to call a nil value", 1, true) ~= nil)
+		check("the help says how to turn it on again", button.tooltip:find("/console taintLog", 1, true) ~= nil)
+		check("the heading carries the same help", game.headers[1].tooltip == button.tooltip)
 	end
 	do
 		local cvars = { taintLog = "0" }
 		local game = build_with(cvars)
-		local _, built_again = pcall(function() return game.proxies.Everlook_Debug_taint_log.get() end)
-		check("with the log off the control reads off", built_again == 0)
+		debug_button(game).click()
+		check("pressing it with the log already off leaves it off", cvars.taintLog == "0")
+	end
+	do
+		local game = build_with(nil)
+		check("a client without the console variable calls has no Debug subpage", #game.subpages == 0)
+	end
+	do
+		local game = build_with({})
+		check("a client that has no taintLog variable has no Debug subpage", #game.subpages == 0)
 	end
 end

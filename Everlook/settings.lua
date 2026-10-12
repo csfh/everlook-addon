@@ -54,15 +54,17 @@ end
 
 local subpages = {}
 
--- The game's own switch for logging taint, kept in its console variable so the
--- game stays the one place the level lives. The log is useful when chasing a
--- blocked action. Left on, calls to methods that addons hook failed with
--- "attempt to call a nil value" at level 2 on client build 70338.
+-- The game's own switch for logging taint is its console variable. The log
+-- helps when chasing a blocked action, but at level 2 calls to methods that
+-- addons hook have failed with "attempt to call a nil value", and choosing
+-- level 2 on this page crashed the client while the settings menu rebuilt, on
+-- build 70338. So the page only turns the log off. Turning it on is /console.
 local TAINT_LOG = "taintLog"
-local TAINT_LOG_HELP = "Writes what taints addon code to Logs/taint.log, which helps when chasing a blocked action. Keep it off otherwise: with it on, the game can make calls to methods that addons hook fail with \"attempt to call a nil value\", which has been seen at level 2."
+local TAINT_LOG_HELP = "Writes what taints addon code to Logs/taint.log, which helps when chasing a blocked action. Keep it off otherwise: with it on, the game can make calls to methods that addons hook fail with \"attempt to call a nil value\", which has been seen at level 2. This page only turns it off, because choosing level 2 here crashed the game. To turn it on, type /console taintLog 1 or /console taintLog 2."
 
-local function taint_log_level()
-	return tonumber(GetCVar(TAINT_LOG)) or 0
+local function turn_taint_log_off()
+	SetCVar(TAINT_LOG, 0)
+	Everlook.say("Taint log is off.")
 end
 
 local function add_debug_page()
@@ -72,16 +74,7 @@ local function add_debug_page()
 	local page, page_layout = Settings.RegisterVerticalLayoutSubcategory(category, "Debug")
 	subpages[#subpages + 1] = page
 	page_layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Taint log", TAINT_LOG_HELP))
-	local proxy = Settings.RegisterProxySetting(page, "Everlook_Debug_taint_log", "number", "Taint log level", 0,
-		taint_log_level, function(value) SetCVar(TAINT_LOG, value) end)
-	local function choices()
-		local container = Settings.CreateControlTextContainer()
-		container:Add(0, "Off")
-		container:Add(1, "Level 1")
-		container:Add(2, "Level 2")
-		return container:GetData()
-	end
-	Settings.CreateDropdown(page, proxy, choices, TAINT_LOG_HELP)
+	page_layout:AddInitializer(CreateSettingsButtonInitializer("Taint log", "Turn off", turn_taint_log_off, TAINT_LOG_HELP, true))
 end
 
 -- Module addons load after Everlook, so the page waits for login, when all of
