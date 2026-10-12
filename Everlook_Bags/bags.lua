@@ -4,6 +4,8 @@ local module = Everlook.module
 local layout = Everlook.bags_layout
 local item_level = Everlook.bags_item_level
 local junk = Everlook.bags_junk
+local categories = Everlook.bags_categories
+local headers = Everlook.bags_headers
 local marker = Everlook.bags_marker
 local id = "bags"
 
@@ -48,8 +50,8 @@ end
 
 -- Lays the grid out in the given number of columns, anchored where stock
 -- anchors it. At the stock column count this is the layout stock draws.
-local function place(frame, columns)
-	if not frame.MoneyFrame or not stock_width then return end
+local function place_flat(frame, columns)
+	headers.hide_all()
 	local slots = layout.order(slots_of(frame))
 	local grid = layout.grid(#slots, columns)
 	for index, slot in ipairs(slots) do
@@ -58,6 +60,57 @@ local function place(frame, columns)
 		slot.button:SetPoint("BOTTOMRIGHT", frame.MoneyFrame, "TOPRIGHT", position.x, GRID_OFFSET_Y + position.y)
 	end
 	frame:SetSize(layout.resized(stock_width, stock_height, #slots, columns))
+end
+
+-- The section a slot belongs to: its item's type, junk ahead of it, or free
+-- space when it holds nothing. A grey item is junk, and so is a marked one
+-- while the marker is on.
+local function section_of(slot)
+	local info = C_Container.GetContainerItemInfo(slot.bag, slot.slot)
+	if type(info) ~= "table" then return categories.FREE end
+	local item_id, quality = info.itemID, info.quality
+	if secret(item_id) or type(item_id) ~= "number" then return "misc" end
+	local class_id = select(6, C_Item.GetItemInfoInstant(item_id))
+	local grey = not secret(quality) and quality == 0
+	return categories.of(class_id, grey or Everlook.bags.is_junk(item_id))
+end
+
+-- Lays the slots out in sections under headers, in the order stock keeps them
+-- in within each section. It reports whether it could: without the container
+-- API nothing is known about the items, and the caller lays out a flat grid.
+local function place_grouped(frame, columns)
+	if type(C_Container) ~= "table" or type(C_Container.GetContainerItemInfo) ~= "function"
+		or type(C_Item) ~= "table" or type(C_Item.GetItemInfoInstant) ~= "function" then
+		return false
+	end
+	local slots = layout.order(slots_of(frame))
+	local members = {}
+	for _, slot in ipairs(slots) do
+		local key = section_of(slot)
+		members[key] = members[key] or {}
+		members[key][#members[key] + 1] = slot
+	end
+	local wanted = {}
+	for _, section in ipairs(categories.SECTIONS) do
+		wanted[#wanted + 1] = { key = section.key, title = section.title, count = members[section.key] and #members[section.key] or 0 }
+	end
+	local grouped = layout.grouped(wanted, columns)
+	for _, section in ipairs(grouped.sections) do
+		for index, slot in ipairs(members[section.key]) do
+			local position = section.positions[index]
+			slot.button:ClearAllPoints()
+			slot.button:SetPoint("BOTTOMRIGHT", frame.MoneyFrame, "TOPRIGHT", position.x, GRID_OFFSET_Y + position.y)
+		end
+	end
+	headers.show(frame, frame.MoneyFrame, GRID_OFFSET_Y, grouped)
+	frame:SetSize(layout.grouped_size(stock_width, stock_height, #slots, grouped))
+	return true
+end
+
+local function place(frame, columns, grouped)
+	if not frame.MoneyFrame or not stock_width then return end
+	if grouped and place_grouped(frame, columns) then return end
+	place_flat(frame, columns)
 end
 
 local function gear_label(button)
@@ -92,14 +145,18 @@ local function show_labels(frame, wanted)
 	end
 end
 
+local function grouping()
+	return module.get(id, "group") == true
+end
+
 -- Stock has just drawn the grid and sized the frame. Anything wanted that
 -- stock does not do is done over it.
 local function on_layout(frame)
 	if not module.enabled(id) then return end
 	remember_stock_size(frame)
-	local columns = module.get(id, "columns")
-	changed = columns ~= layout.STOCK_COLUMNS
-	if changed then place(frame, columns) end
+	local columns, grouped = module.get(id, "columns"), grouping()
+	changed = grouped or columns ~= layout.STOCK_COLUMNS
+	if changed then place(frame, columns, grouped) end
 end
 
 -- Stock has refreshed what the slots hold, which is when a label can change.
@@ -107,6 +164,19 @@ local function on_items(frame)
 	if not module.enabled(id) then return end
 	show_labels(frame, module.get(id, "item_level"))
 	marker.apply(frame, module.get(id, "junk_marker"))
+	-- Stock does not move slots when items arrive, so a grouped bag sorts them again. It waits
+	-- while marks are being made, so the slot under the cursor stays where it is.
+	if grouping() and not marker.is_active() then
+		changed = true
+		place(frame, module.get(id, "columns"), true)
+	end
+end
+
+-- Mark mode has ended, and the marks it made can move their items now.
+marker.on_stop = function(frame)
+	if not (module.enabled(id) and grouping()) or type(frame.IsShown) ~= "function" or not frame:IsShown() then return end
+	changed = true
+	place(frame, module.get(id, "columns"), true)
 end
 
 -- The hooks run after stock and cannot be taken off, so they check the
@@ -124,17 +194,20 @@ local function apply(enabled)
 	if not frame then return end
 	if enabled then install(frame) end
 	marker.apply(frame, enabled and module.get(id, "junk_marker"))
+	local grouped = enabled and grouping()
 	local shown = type(frame.IsShown) == "function" and frame:IsShown()
 	if not shown then
-		-- A closed bag is laid out from scratch by stock when it opens.
+		-- A closed bag is laid out from scratch by stock when it opens, and its headers must not outlast this.
+		if not grouped then headers.hide_all() end
 		changed = false
 		return
 	end
 	if not changed then remember_stock_size(frame) end
 	local columns = enabled and module.get(id, "columns") or layout.STOCK_COLUMNS
-	if changed or columns ~= layout.STOCK_COLUMNS then
-		place(frame, columns)
-		changed = columns ~= layout.STOCK_COLUMNS
+	local moved = grouped or columns ~= layout.STOCK_COLUMNS
+	if changed or moved then
+		place(frame, columns, grouped)
+		changed = moved
 	end
 	show_labels(frame, enabled and module.get(id, "item_level"))
 end
@@ -146,6 +219,7 @@ module.register({
 	options = {
 		item_level = { name = "Show item level on gear", default = false, description = "Writes the item level of each weapon and piece of armor, including rings, trinkets and cloaks, at the bottom right of its slot, where a stack count would sit, in the color of its quality. Other items show nothing, and turning this off removes the numbers." },
 		junk_marker = { name = "Mark items as junk", default = false, description = "Adds a coin button to the title row of the combined bag. Click it, then click items to mark or unmark them as junk, and click it again to stop. A marked item shows the junk coin, and every copy of that item is marked. Sell junk can sell marked items at a vendor when you turn that on there. Turning this off hides the button and the coins and keeps your marks." },
+		group = { name = "Group items by type", default = false, description = "Sorts the slots of the combined bag into sections under headers: The Armory for weapons and armor, Adventure Prep for consumables, gems and item enhancements, Professions for trade goods, reagents and recipes, Miscellaneous for the rest, and Junk for grey items and, when Mark items as junk is on, the items you marked. Empty slots wait at the bottom as Free Space. The bag keeps its look, and its search box and sort button work as before, though sorting moves items between slots and the sections follow. Turning this off puts the grid back." },
 		columns = { name = "Columns", default = 10, min = 10, max = 16, step = 1, description = "How many slots sit in each row of the combined bag. Ten is how the game draws it, and more columns make the bag wider and shorter." },
 	},
 	apply = apply,

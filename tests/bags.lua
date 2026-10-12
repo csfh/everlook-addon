@@ -22,6 +22,18 @@ return function(root, check)
 			function widget:HookScript(name, callback) self.hooks[name] = callback end
 			function widget:SetSize(width, height) self.width, self.height = width, height end
 			function widget:SetPoint(...) self.points[#self.points + 1] = { ... } end
+			function widget:ClearAllPoints() self.points = {} end
+			function widget:EnableMouse(enabled) self.mouse = enabled end
+			function widget:CreateFontString(_, layer, template)
+				local text = { layer = layer, template = template, shown = true, points = {} }
+				function text:SetPoint(...) self.points[#self.points + 1] = { ... } end
+				function text:SetText(content) self.content = content end
+				function text:Show() self.shown = true end
+				function text:Hide() self.shown = false end
+				self.texts = self.texts or {}
+				self.texts[#self.texts + 1] = text
+				return text
+			end
 			function widget:SetAllPoints(target) self.all_points = target end
 			function widget:SetFrameLevel(level) self.level = level end
 			function widget:GetFrameLevel() return self.level end
@@ -36,6 +48,7 @@ return function(root, check)
 				local texture = { layer = layer, sublevel = sublevel, shown = true }
 				function texture:SetAtlas(atlas, use_size) self.atlas, self.use_size = atlas, use_size end
 				function texture:SetPoint(...) self.point = { ... } end
+				function texture:SetHeight(height) self.height = height end
 				function texture:Show() self.shown = true end
 				function texture:Hide() self.shown = false end
 				self.textures[#self.textures + 1] = texture
@@ -59,12 +72,15 @@ return function(root, check)
 				callback(self, ...)
 			end
 		end
-		env.Enum = { ItemClass = { Weapon = 2, Armor = 4, Consumable = 0 } }
+		env.Enum = { ItemClass = {
+			Consumable = 0, Weapon = 2, Gem = 3, Armor = 4, Reagent = 5, Tradegoods = 7, ItemEnhancement = 8,
+			Recipe = 9, Questitem = 12, Key = 13, Miscellaneous = 15, Profession = 19,
+		} }
 		for key, value in pairs(extra or {}) do env[key] = value end
 		local addon = {}
 		-- world.lua shares the namespace as the global Everlook.
 		env.Everlook = addon
-		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_marker", "bags" }) do
+		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_categories", "bags_headers", "bags_marker", "bags" }) do
 			local chunk = assert(loadfile(source(file)))
 			setfenv(chunk, env)
 			chunk(file == "bags" and "Everlook_Bags" or "Everlook", addon)
@@ -113,6 +129,44 @@ return function(root, check)
 		local input = { { bag = 0, slot = 2 }, { bag = 0, slot = 1 } }
 		layout.order(input)
 		check("ordering leaves the list it was given alone", input[1].slot == 2)
+
+		-- Sections read top down and slots left to right, but the grid is anchored at
+		-- its bottom right corner, so everything is an offset up and to the left of it.
+		local grouped = layout.grouped({
+			{ key = "armory", title = "The Armory", count = 12 },
+			{ key = "prep", title = "Adventure Prep", count = 0 },
+			{ key = "junk", title = "Junk", count = 3 },
+		}, 10)
+		check("a section with no slots is left out", #grouped.sections == 2 and grouped.sections[1].key == "armory" and grouped.sections[2].key == "junk")
+		check("a section keeps its title and count", grouped.sections[2].title == "Junk" and grouped.sections[2].count == 3)
+		local armory, junk = grouped.sections[1], grouped.sections[2]
+		check("the bottom section starts at the anchor with its first slot on the left of a full row",
+			junk.positions[1].x == -9 * 42 and junk.positions[1].y == 0)
+		check("slots in a row run to the right", junk.positions[3].x == -9 * 42 + 2 * 42 and junk.positions[3].y == 0)
+		check("a header sits just above its section's top row", junk.header_y == 37 + 4)
+		check("the section above clears the one below it, its header and a gap",
+			armory.positions[11].x == -9 * 42 and armory.positions[11].y == 61 + 10)
+		check("a section's first slot is on its top row", armory.positions[1].x == -9 * 42 and armory.positions[1].y == 61 + 10 + 42)
+		check("a full top row ends at the right edge", armory.positions[10].x == 0 and armory.positions[10].y == 61 + 10 + 42)
+		check("a short last row fills from the left", armory.positions[12].x == -9 * 42 + 42 and armory.positions[12].y == 61 + 10)
+		check("the upper header sits above its two rows", armory.header_y == 71 + 79 + 4)
+		check("the grouped grid is as tall as its sections, headers and gaps", grouped.height == 71 + 20 + 4 + 79)
+		check("the grouped grid is as wide as the columns", grouped.width == 10 * ITEM + 9 * SPACING)
+		check("a header is twenty pixels tall", layout.HEADER_HEIGHT == 20)
+
+		local wide_grouped = layout.grouped({ { key = "misc", title = "Miscellaneous", count = 14 } }, 12)
+		check("twelve columns put the first slot of two rows eleven slots left",
+			wide_grouped.sections[1].positions[1].x == -11 * 42 and wide_grouped.sections[1].positions[1].y == 42)
+		check("twelve columns put the thirteenth slot on the bottom row", wide_grouped.sections[1].positions[13].x == -11 * 42 and wide_grouped.sections[1].positions[13].y == 0)
+		check("twelve columns make a wider grid", wide_grouped.width == 12 * ITEM + 11 * SPACING)
+		check("a lone section is a header over its rows", wide_grouped.height == 20 + 4 + 79 and wide_grouped.sections[1].header_y == 79 + 4)
+		check("no sections make an empty grid", #layout.grouped({}, 10).sections == 0 and layout.grouped({}, 10).height == 0)
+
+		-- The frame is the stock size with the grid's share swapped for the grouped grid's.
+		width, height = layout.grouped_size(400, 600, 15, grouped)
+		check("grouping grows the frame by what headers and gaps add to the rows", width == 400 and height == 600 + 174 - 79)
+		local wide_width, wide_height = layout.grouped_size(400, 600, 14, wide_grouped)
+		check("twelve grouped columns widen the frame", wide_width == 400 + 84 and wide_height == 600 + (20 + 4 + 79) - 79)
 	end
 
 	-- The item level label: gear only, in the item's quality.
@@ -137,6 +191,42 @@ return function(root, check)
 		check("a secret quality shows none", guarded.bags_item_level.label(4, secret, 100) == nil)
 		local no_enum = load_bags({ Enum = false })
 		check("without the item class names nothing is gear", no_enum.bags_item_level.label(4, 4, 276) == nil)
+	end
+
+	-- Sorting items into sections: the presets, with junk ahead of the item's type.
+	do
+		local addon = load_bags()
+		local categories = addon.bags_categories
+		local keys, titles = {}, {}
+		for _, section in ipairs(categories.SECTIONS) do
+			keys[#keys + 1] = section.key
+			titles[#titles + 1] = section.title
+		end
+		check("sections run from the armory down to free space, junk just above it", table.concat(keys, " ") == "armory prep professions misc junk free")
+		check("sections carry the preset names",
+			table.concat(titles, "|") == "The Armory|Adventure Prep|Professions|Miscellaneous|Junk|Free Space")
+		check("a weapon is in the armory", categories.of(2, false) == "armory")
+		check("armor is in the armory", categories.of(4, false) == "armory")
+		check("a consumable is in adventure prep", categories.of(0, false) == "prep")
+		check("a gem is in adventure prep", categories.of(3, false) == "prep")
+		check("an item enhancement is in adventure prep", categories.of(8, false) == "prep")
+		for label, class_id in pairs({ ["trade goods"] = 7, ["a reagent"] = 5, ["a recipe"] = 9, ["a profession item"] = 19 }) do
+			check(label .. " is in professions", categories.of(class_id, false) == "professions")
+		end
+		check("a quest item is miscellaneous", categories.of(12, false) == "misc")
+		check("a key is miscellaneous", categories.of(13, false) == "misc")
+		check("an item class nobody sorts is miscellaneous", categories.of(15, false) == "misc" and categories.of(99, false) == "misc")
+		check("an item with no class is miscellaneous", categories.of(nil, false) == "misc")
+		check("a class that is not a number is miscellaneous", categories.of("4", false) == "misc")
+		check("junk beats the item's type", categories.of(4, true) == "junk" and categories.of(0, true) == "junk" and categories.of(nil, true) == "junk")
+		check("anything but junk of exactly true is not junk", categories.of(4, nil) == "armory" and categories.of(4, "yes") == "armory" and categories.of(4, 1) == "armory")
+		check("an empty slot is free space", categories.FREE == "free")
+		local secret = {}
+		local guarded = load_bags({ issecretvalue = function(value) return value == secret end }).bags_categories
+		check("a secret class is miscellaneous", guarded.of(secret, false) == "misc")
+		check("a secret class that is junk is still junk", guarded.of(secret, true) == "junk")
+		local no_enum = load_bags({ Enum = false }).bags_categories
+		check("without the item class names every item is miscellaneous", no_enum.of(4, false) == "misc" and no_enum.of(2, false) == "misc")
 	end
 
 	-- Registration.
@@ -223,8 +313,9 @@ return function(root, check)
 				GetDetailedItemLevelInfo = function(link) return info[tonumber(link:match("%d+"))].level end,
 			},
 			ColorManager = { GetColorDataForItemQuality = function(quality) return { r = quality / 10, g = 0.5, b = 0.25 } end },
+			C_Texture = { GetAtlasInfo = function(atlas) if atlas == "Options_HorizontalDivider" then return { width = 330, height = 3 } end end },
 		}
-		return frame, env_extra, points_log
+		return frame, env_extra, points_log, info
 	end
 	local function anchor(button) return button.points[1] end
 
@@ -328,6 +419,194 @@ return function(root, check)
 		second.module.set("bags", "enabled", true)
 		check("without the container API the item level option does not fail", pcall(second.module.set, "bags", "item_level", true))
 		check("the layout still works without the container API", pcall(function() second_frame:UpdateItemLayout() end))
+	end
+
+	-- Group by type: the slots sit under headers, on a stand-in for the stock frame.
+	local function group_setup(slot_total, entries, options)
+		local gear = {}
+		for slot, entry in pairs(entries) do gear[slot] = entry end
+		local frame, extra, _, info = stand_in(slot_total, gear)
+		for key, value in pairs(options or {}) do extra[key] = value end
+		local addon, env, loaded = load_bags(extra)
+		loaded["Everlook_Bags"]()
+		addon.module.set("bags", "enabled", true)
+		return addon, env, frame, info
+	end
+	local function headers_of(env, frame)
+		local found = {}
+		for _, widget in ipairs(env.created) do
+			if widget.parent == frame and widget.kind == "Frame" then found[#found + 1] = widget end
+		end
+		return found
+	end
+	local function header_named(env, frame, title)
+		for _, widget in ipairs(headers_of(env, frame)) do
+			if widget.texts and widget.texts[1].content == title then return widget end
+		end
+	end
+	local function at(button, x, y)
+		local point = button.points[1]
+		return point ~= nil and point[1] == "BOTTOMRIGHT" and point[4] == x and point[5] == y + 4
+	end
+	do
+		-- Six slots: armor, a potion, a weapon, a grey, and two empty.
+		local entries = {
+			{ class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 }, { class = 2, quality = 3, level = 200 },
+			{ class = 15, quality = 0, level = 1 },
+		}
+		local addon, env, frame, info = group_setup(6, entries)
+		check("group by type starts off", (function()
+			for _, module in ipairs(addon.module.modules) do
+				if module.id == "bags" then return module.options.group and module.options.group.default == false end
+			end
+		end)())
+		frame:UpdateItemLayout()
+		check("with grouping off the slots are in the stock grid and no header exists", at(frame.buttons[2], -42, 0) and #headers_of(env, frame) == 0)
+
+		addon.module.set("bags", "group", true)
+		check("the armor and the weapon share the top section, left to right", at(frame.buttons[1], -378, 213) and at(frame.buttons[3], -336, 213))
+		check("the potion sits in adventure prep below it", at(frame.buttons[2], -378, 142))
+		check("the grey item is in junk, though the marker is off", at(frame.buttons[4], -378, 71))
+		check("the empty slots are free space at the bottom", at(frame.buttons[5], -378, 0) and at(frame.buttons[6], -336, 0))
+		check("slots keep the stock anchor frame and corner", frame.buttons[1].points[1][2] == frame.MoneyFrame and frame.buttons[1].points[1][3] == "TOPRIGHT")
+		check("a button has one anchor", #frame.buttons[1].points == 1)
+		check("the frame grows by the headers and gaps the sections add", frame.height == 600 + 274 - 37 and frame.width == 400)
+		local shown = {}
+		for _, header in ipairs(headers_of(env, frame)) do
+			if header.shown then shown[#shown + 1] = header.texts[1].content .. " " .. header.texts[2].content end
+		end
+		table.sort(shown)
+		check("a header per section that has slots, with its count",
+			table.concat(shown, "|") == "Adventure Prep 1|Free Space 2|Junk 1|The Armory 2")
+		local armory = header_named(env, frame, "The Armory")
+		local point = armory.points[1]
+		check("a header sits above its section, over the grid's width",
+			point[1] == "BOTTOMRIGHT" and point[2] == frame.MoneyFrame and point[3] == "TOPRIGHT" and point[4] == 0 and point[5] == 4 + 213 + 37 + 4
+			and armory.width == 415 and armory.height == 20)
+		check("a header lets mouse clicks through to the slots", armory.mouse == false)
+		check("the title is in the game's gold heading font", armory.texts[1].template == "GameFontNormal")
+		check("the count is in the game's small highlight font", armory.texts[2].template == "GameFontHighlightSmall")
+		check("the rule under a header is the game's divider", armory.textures[1] and armory.textures[1].atlas == "Options_HorizontalDivider" and armory.textures[1].height == 3)
+
+		-- Things change in the bag: a weapon lands in the first empty slot.
+		info[5] = { itemID = 1005, hyperlink = "link5", quality = 3, class = 2, level = 200 }
+		frame:UpdateItems()
+		check("an item that lands in an empty slot joins its section on the next refresh", at(frame.buttons[5], -294, 213) and at(frame.buttons[6], -378, 0))
+		check("the header counts follow", header_named(env, frame, "The Armory").texts[2].content == "3" and header_named(env, frame, "Free Space").texts[2].content == "1")
+		check("a section that fills its slots away loses its header", (function()
+			info[2] = nil
+			frame:UpdateItems()
+			return not header_named(env, frame, "Adventure Prep").shown
+		end)())
+		check("a refresh does not pile anchors on a button", #frame.buttons[1].points == 1)
+
+		-- The game lays the grid out again: grouping is put back over it.
+		frame:UpdateItemLayout()
+		check("a layout pass by the game is grouped again, over the grid the game drew",
+			at(frame.buttons[1], -378, 142) and at(frame.buttons[2], -378, 0) and frame.height == 600 + 203 - 37 and #frame.buttons[1].points == 1)
+
+		-- Turning it off at ten columns must put stock's grid back, though the columns are stock's.
+		addon.module.set("bags", "group", false)
+		check("turning grouping off puts every slot where stock draws it", at(frame.buttons[6], -5 * 42, 0) and at(frame.buttons[2], -42, 0))
+		check("turning grouping off restores the stock size", frame.width == 400 and frame.height == 600)
+		check("turning grouping off hides every header", (function()
+			for _, header in ipairs(headers_of(env, frame)) do if header.shown then return false end end
+			return true
+		end)())
+		addon.module.set("bags", "group", true)
+		check("turning it back on groups again and shows the headers", at(frame.buttons[1], -378, 142) and header_named(env, frame, "The Armory").shown)
+		addon.module.set("bags", "enabled", false)
+		check("disabling the module puts the grid and size back and hides the headers",
+			at(frame.buttons[2], -42, 0) and frame.height == 600 and not header_named(env, frame, "The Armory").shown)
+		frame:UpdateItemLayout()
+		check("a disabled module leaves the layout the game draws", at(frame.buttons[2], -42, 0) and frame.height == 600)
+	end
+
+	do
+		-- Junk marks decide the section, and a mark made in mark mode waits for the mode to end.
+		local entries = { { class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 }, { class = 0, quality = 1, level = 1 } }
+		local addon, env, frame = group_setup(3, entries)
+		addon.module.set("bags", "group", true)
+		addon.bags_junk.toggle(addon.bags_junk.data(), 1002)
+		frame:UpdateItems()
+		check("a mark does nothing to the sections while the marker is off",
+			at(frame.buttons[2], -378, 0) and at(frame.buttons[3], -336, 0) and at(frame.buttons[1], -378, 71))
+		addon.module.set("bags", "junk_marker", true)
+		check("a marked item moves into junk, below the sections of its type", at(frame.buttons[2], -378, 0) and at(frame.buttons[3], -378, 71) and at(frame.buttons[1], -378, 142))
+
+		local coin
+		for _, widget in ipairs(env.created) do if widget.parent == frame and widget.kind == "Button" then coin = widget end end
+		coin.scripts.OnClick(coin)
+		local overlay
+		for _, widget in ipairs(env.created) do if widget.parent == frame.buttons[3] and widget.kind == "Button" then overlay = widget end end
+		overlay.scripts.OnClick(overlay)
+		check("a mark made in mark mode does not move the slot under the cursor", at(frame.buttons[3], -378, 71) and addon.bags.is_junk(1003))
+		frame:UpdateItems()
+		check("a refresh during mark mode leaves the slots where they are", at(frame.buttons[3], -378, 71))
+		coin.scripts.OnClick(coin)
+		check("ending mark mode groups the new mark", at(frame.buttons[2], -378, 0) and at(frame.buttons[3], -336, 0) and at(frame.buttons[1], -378, 71))
+	end
+	do
+		-- Wider than stock: the grouped grid is as wide as the columns.
+		local entries = { { class = 4, quality = 4, level = 270 }, { class = 4, quality = 4, level = 270 } }
+		local addon, env, frame = group_setup(14, entries)
+		addon.module.set("bags", "columns", 12)
+		addon.module.set("bags", "group", true)
+		check("free slots fill a row of twelve", at(frame.buttons[3], -11 * 42, 0) and at(frame.buttons[14], 0, 0))
+		check("grouped slots follow the column count", at(frame.buttons[1], -11 * 42, 61 + 10) and at(frame.buttons[2], -10 * 42, 61 + 10))
+		check("the frame is as wide as twelve columns", frame.width == 400 + 84)
+		check("the header spans twelve columns", header_named(env, frame, "The Armory").width == 12 * 37 + 11 * 5)
+		addon.module.set("bags", "group", false)
+		check("ungrouped again, twelve columns are still twelve", at(frame.buttons[13], 0, 42) and frame.width == 400 + 84)
+	end
+	do
+		-- A locked slot sits last among the empty ones.
+		local addon, env, frame = group_setup(3, { { class = 4, quality = 4, level = 270 } })
+		frame.buttons[2].IsExtended = function() return true end
+		addon.module.set("bags", "group", true)
+		check("a locked slot comes after the free slots", at(frame.buttons[3], -378, 0) and at(frame.buttons[2], -336, 0))
+	end
+	do
+		-- Slots in several bags: stock order within a section.
+		local containers = {
+			["0:1"] = { itemID = 1001, hyperlink = "link1", quality = 4 },
+			["1:2"] = { itemID = 1002, hyperlink = "link2", quality = 4 },
+		}
+		local addon, env, frame = group_setup(3, { { class = 4, quality = 4, level = 270 }, { class = 4, quality = 4, level = 270 } },
+			{ C_Container = { GetContainerItemInfo = function(bag, slot) return containers[bag .. ":" .. slot] end } })
+		frame.buttons[2].GetBagID = function() return 1 end
+		addon.module.set("bags", "group", true)
+		check("within a section the later bag comes first, as in stock", at(frame.buttons[2], -378, 71) and at(frame.buttons[1], -336, 71) and at(frame.buttons[3], -378, 0))
+	end
+	do
+		-- Missing pieces of the game: leave the stock grid alone.
+		local addon, env, frame = group_setup(4, { { class = 4, quality = 4, level = 270 } }, { C_Container = false })
+		check("without the container API grouping does not fail", pcall(addon.module.set, "bags", "group", true))
+		check("without the container API the slots are in a flat grid and no header shows", at(frame.buttons[2], -42, 0) and #headers_of(env, frame) == 0)
+		local second_addon, second_env, second_frame = group_setup(4, { { class = 4, quality = 4, level = 270 } }, { C_Texture = false })
+		second_addon.module.set("bags", "group", true)
+		check("without the atlas lookup headers still show, with no rule", header_named(second_env, second_frame, "The Armory").shown
+			and header_named(second_env, second_frame, "The Armory").textures[1] == nil)
+	end
+	do
+		-- Disabling with the bag closed: stock lays it out fresh on opening, so nothing of ours may be left showing.
+		local addon, env, frame = group_setup(4, { { class = 4, quality = 4, level = 270 } })
+		addon.module.set("bags", "group", true)
+		frame.IsShown = function() return false end
+		addon.module.set("bags", "group", false)
+		check("turning grouping off with the bag closed hides the headers", not header_named(env, frame, "The Armory").shown)
+		addon.module.set("bags", "group", true)
+		addon.module.set("bags", "enabled", false)
+		check("turning the module off with the bag closed hides the headers", not header_named(env, frame, "The Armory").shown)
+	end
+	do
+		-- One hook however often it is applied.
+		local addon, _, frame = group_setup(4, { { class = 4, quality = 4, level = 270 } })
+		addon.module.set("bags", "group", true)
+		addon.module.set("bags", "columns", 12)
+		addon.module.set("bags", "columns", 10)
+		frame:UpdateItemLayout()
+		check("applying again does not stack anchors", #frame.buttons[2].points == 1)
 	end
 
 	-- The junk store: item ids the player marked, kept in the saved settings.

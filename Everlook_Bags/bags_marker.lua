@@ -102,11 +102,13 @@ local function refresh_overlays()
 end
 
 local function set_mode(on)
+	local was = mode
 	mode = on
 	if coin_button then
 		if on then coin_button:LockHighlight() else coin_button:UnlockHighlight() end
 	end
 	refresh_overlays()
+	if was and not on and marker.on_stop then marker.on_stop(bag) end
 end
 
 local function make_coin_button()
@@ -130,6 +132,16 @@ local function make_coin_button()
 	end)
 	coin_button:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
+
+-- Whether mark mode is on. Whoever moves slots around waits for it to end, so
+-- the slot under the cursor stays put while marks are made.
+function marker.is_active()
+	return mode
+end
+
+-- Set by the caller: runs with the bag when mark mode ends by a click on the
+-- coin or by the bag closing.
+marker.on_stop = nil
 
 -- Brings the bag in line with the settings: the button, the coins and, in mark
 -- mode, the overlays are there when the marker is on, and gone when it is off.
