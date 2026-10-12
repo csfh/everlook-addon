@@ -73,7 +73,7 @@ local function apply(enabled)
 end
 
 module.register({
-	addon = addon_name, page = "interface", order = 30,
+	addon = addon_name, page = "text", order = 30,
 	id = id,
 	name = "Unit frame names",
 	description = "Adds the points on Extra points to the player and target names on the default unit frames, and grows each name's region so the larger text is not clipped. Focus, target of target, and boss names stay as they are, the change waits until combat ends, a missing name is skipped, a font another addon set stays and the extra points sit on top of it, and turning this off puts back the size and the region height while each still shows what this set.",

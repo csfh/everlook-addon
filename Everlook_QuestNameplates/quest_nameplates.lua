@@ -83,7 +83,7 @@ local function apply(enabled)
 end
 
 module.register({
-	addon = addon_name, page = "interface", order = 45,
+	addon = addon_name, page = "nameplates", order = 45,
 	id = id,
 	name = "Quest marks on nameplates",
 	description = "Puts a quest mark beside the nameplate of a unit that is part of a quest you are on and still has something to do: a creature to kill or loot, an object or item to use, someone to talk to or hand in to, or a quest boss. A creature loses its mark when its objective is done. The game's own quest mark above the unit stays, because an addon cannot move or hide it. Who offers a quest you have not taken is not something the game tells an addon about a unit, so those get no mark. Where the mark goes and how wide it is are set under Nameplates, which does the placing and needs to be on for a mark to show.",

@@ -92,7 +92,7 @@ local function apply(enabled)
 end
 
 module.register({
-	addon = addon_name, page = "interface", order = 40,
+	addon = addon_name, page = "nameplates", order = 44,
 	id = id,
 	name = "NPC names on nameplates",
 	description = "NPCs get the same name style as players, with their title under the name, such as Drink Vendor or Trade Supplies, whether they are friendly, neutral or hostile. The game draws an NPC's own name and title as engine text that an addon cannot restyle, so this uses friendly NPC nameplates instead. The title is a line on the Nameplates view, which does the placing and needs to be on for a title to show.",

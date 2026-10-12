@@ -601,7 +601,7 @@ local function apply(enabled)
 end
 
 module.register({
-	addon = addon_name, page = "interface", order = 90,
+	addon = addon_name, page = "bags", order = 90,
 	id = id, name = "Bags",
 	description = "Adds to the combined bag, which needs Combine all bags to be on in the game's settings. It keeps the bag's look, and its slots, search box and sort button stay the game's own. Turning this off puts the grid back as the game draws it, and a choice here does nothing until this is on.",
 	options = {

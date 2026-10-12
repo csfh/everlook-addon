@@ -60,7 +60,7 @@ end
 Everlook.optimize = { held = function() return held end, release = release }
 
 module.register({
-	addon = addon_name, page = "interface", order = 90,
+	addon = addon_name, page = "loading", order = 90,
 	id = id, name = "Load faster",
 	description = "Holds Lua's garbage collector while the game loads and starts it again when the loading screen ends, so a login or a reload spends less of its loading screen collecting. It takes effect from the next load, and it is only a gain if the Performance page shows a shorter load with it on than off. The collector starts again at the end of the loading screen, when the heap passes 400 MB, after eight seconds, on logout, and when this is turned off. Everlook never runs a full collection.",
 	options = { gc_window = { name = "Hold the garbage collector while loading", default = true, description = "Stops Lua's garbage collector from the moment this loads until the loading screen ends. Turn it off to keep the module and leave the collector alone." } },

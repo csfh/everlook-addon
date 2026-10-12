@@ -23,7 +23,7 @@ local function apply(enabled)
 end
 
 module.register({
-	addon = addon_name, page = "interface", order = 70,
+	addon = addon_name, page = "screen", order = 70,
 	id = id,
 	name = "Camera distance",
 	description = "Sets the farthest the camera can zoom out, using the factor on Maximum camera distance, from 100% to 400%. A higher percentage lets the camera sit farther out, other camera settings stay as they are, the number does nothing until this is on, nothing changes when the client has no way to set it, and turning this off puts back the factor from before this was turned on.",

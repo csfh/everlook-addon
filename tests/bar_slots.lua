@@ -192,7 +192,7 @@ return function(root, check)
 
 	do
 		local addon, env, state = world()
-		check("the module is registered, off, on the Interface page", addon.module.get("action_bar_slots", "enabled") == false)
+		check("the module is registered, off, on the Action bars page", addon.module.get("action_bar_slots", "enabled") == false)
 		check("a disabled module leaves the layouts alone", #state.calls == 0 and #state.saved == 1)
 
 		addon.module.set("action_bar_slots", "enabled", true)

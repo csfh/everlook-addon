@@ -367,7 +367,7 @@ local function apply_module(enabled)
 end
 
 module.register({
-	addon = addon_name, page = "interface", order = 44,
+	addon = addon_name, page = "nameplates", order = 40,
 	id = id,
 	name = "Nameplates",
 	description = "Gives every kind of nameplate one layout: the name at the left end of its health bar, a mark to the left of the name and the health bar when another module has one for that unit, and a subtitle line under the bar. A plate with only a name keeps it centred, with the mark beside the text and the subtitle under it. It works on the game's own plates and puts each back as the game had it when this is off or the plate goes. Plates that cannot be changed or that are not a name over a bar, such as a player's own, one with only widgets and a simplified one, are left as the game made them.",

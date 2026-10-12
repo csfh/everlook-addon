@@ -63,7 +63,7 @@ local function apply(enabled)
 end
 
 module.register({
-	addon = addon_name, page = "interface", order = 10,
+	addon = addon_name, page = "screen", order = 10,
 	id = id, name = "Hide clutter",
 	description = "Stops a new talking head, center-screen zone name, red error, or raid warning when that choice is on, and hides the stance bar when that choice is on. Turning this off lets the next one show, the stance bar waits until combat ends and then the game decides whether it belongs on screen, and a choice here does nothing until this is on.",
 	options = {

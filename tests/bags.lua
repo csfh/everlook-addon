@@ -444,7 +444,7 @@ return function(root, check)
 			if module.id == "bags" then found = module end
 		end
 		check("the bags module registers", found ~= nil)
-		check("it sits on the Interface page", found and found.page == "interface")
+		check("it sits on the Bags page", found and found.page == "bags")
 		check("it starts disabled", found and not addon.module.enabled("bags"))
 		check("item level on gear starts off", found and found.options.item_level and found.options.item_level.default == false)
 		local columns = found and found.options.columns

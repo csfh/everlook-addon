@@ -108,7 +108,7 @@ apply = function(enabled)
 end
 
 module.register({
-	addon = addon_name, page = "interface", order = 40,
+	addon = addon_name, page = "action_bars", order = 40,
 	id = id, name = "Action bar slots",
 	description = "Hides the empty slots on the two action bars above the main bar, until you drag something or open the spellbook. It uses the game's own Always Show Buttons setting from Edit Mode: it keeps a layout named Everlook Slots, a copy of the layout you use, with that setting off on Action Bar 2 and 3, and switches to it. A layout you named Everlook yourself is not touched. It also turns on Action Bar 2 and 3 under Settings, Gameplay, Action Bars when they are off, a few seconds after login at the earliest, because the bars do not exist otherwise. It waits for combat to end and for Edit Mode to be closed. Turning this off switches back to the layout you came from, if you are still on Everlook Slots, and turns off only the bars it turned on. That layout stays, and another specialization keeps the layout it has.",
 	apply = apply, out_of_combat = true,

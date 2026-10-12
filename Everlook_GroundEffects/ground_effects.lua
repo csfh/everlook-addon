@@ -53,7 +53,7 @@ local function apply(enabled)
 end
 
 module.register({
-	addon = addon_name, page = "interface", order = 75,
+	addon = addon_name, page = "combat", order = 75,
 	id = id,
 	name = "Ground effects",
 	description = "Sets how much ground clutter, such as grass, the game draws, how far from you it is drawn, and how far it fades out. Each number does nothing until this is on, a setting the client does not have is left alone, the game may keep a value inside its own limits, and turning this off puts back what each setting was before this was turned on.",

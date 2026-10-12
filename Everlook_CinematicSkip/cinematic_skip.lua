@@ -21,7 +21,7 @@ local function cancel()
 end
 
 module.register({
-	addon = addon_name, page = "interface", order = 80,
+	addon = addon_name, page = "screen", order = 80,
 	id = id,
 	name = "Cinematic skip",
 	description = "Closes a cinematic or a movie when it starts. One already playing stays up, holding Shift leaves the new one playing, nothing happens when the client has no cancel function, and turning this off leaves the next one.",

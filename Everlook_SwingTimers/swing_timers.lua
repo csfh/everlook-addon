@@ -83,7 +83,7 @@ local function apply(enabled)
 end
 
 module.register({
-	addon = addon_name, page = "interface", order = 50,
+	addon = addon_name, page = "combat", order = 50,
 	id = id,
 	name = "Swing timers",
 	description = "Sets the main hand, off hand, and ranged swing timers to the size on Timer scale, and leaves Edit Mode's saved size alone. The change waits until combat ends, a bar that is not initialized or has no scale setting is left alone, and turning this off puts back the size it last took over when the bar still shows this size.",

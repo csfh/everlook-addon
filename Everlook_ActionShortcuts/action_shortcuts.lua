@@ -64,7 +64,7 @@ local function apply(enabled)
 end
 
 module.register({
-	addon = addon_name, page = "interface", order = 60,
+	addon = addon_name, page = "action_bars", order = 60,
 	id = id,
 	name = "Compact action shortcuts",
 	description = "Shortens Shift and Alt on the default action bars, so s-4 and a-4 read as S4 and A4, and s-a-4 reads as SA4. Ctrl and a label with no Shift or Alt stay as they are, text the client hides stays as it is, a label another addon changed stays, a binding refresh or a new button on those bars keeps the short form, and turning this off puts back the label it last shortened while that button still shows the short form.",
