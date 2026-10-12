@@ -1,6 +1,7 @@
 local addon_name = ...
 local Everlook = Everlook
 local junk = Everlook.bags_junk
+local layout = Everlook.bags_layout
 
 -- A coin button in the bag's title row turns mark mode on. While it is on,
 -- each slot gets a transparent button over it that marks or unmarks the item
@@ -49,7 +50,7 @@ end
 
 local function refresh_coins(active)
 	local data = junk.data()
-	for _, button in bag:EnumerateValidItems() do
+	for _, button in ipairs(layout.buttons_of(bag)) do
 		local item_id = active and item_id_of(button)
 		show_coin(button, item_id ~= nil and junk.is_marked(data, item_id))
 	end
@@ -98,7 +99,7 @@ local function refresh_overlays()
 		for _, overlay in pairs(overlays) do overlay:Hide() end
 		return
 	end
-	for _, button in bag:EnumerateValidItems() do overlay_of(button):Show() end
+	for _, button in ipairs(layout.buttons_of(bag)) do overlay_of(button):Show() end
 end
 
 local function set_mode(on)

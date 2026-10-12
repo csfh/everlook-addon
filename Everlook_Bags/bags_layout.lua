@@ -9,6 +9,16 @@ local STEP = ITEM_SIZE + SPACING
 
 local layout = { STOCK_COLUMNS = 10 }
 
+-- The slot buttons the game has made, in order. Its own walk runs to the size of the
+-- bag and meets a hole where a button is not made yet, which a plain loop cannot skip.
+function layout.buttons_of(frame)
+	local found = {}
+	for _, button in frame:EnumerateValidItems() do
+		if button ~= nil then found[#found + 1] = button end
+	end
+	return found
+end
+
 local function span(count)
 	return count * ITEM_SIZE + (count - 1) * SPACING
 end

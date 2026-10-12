@@ -480,7 +480,13 @@ return function(root, check)
 		function frame:GetWidth() return self.width end
 		function frame:GetHeight() return self.height end
 		function frame:IsShown() return true end
-		function frame:EnumerateValidItems() return ipairs(self.buttons) end
+		-- The game's own walk runs to the bag's size and yields whatever is in Items there, a hole included.
+		function frame:EnumerateValidItems()
+			return function(container, index)
+				index = index + 1
+				if index <= (container.size or #container.buttons) then return index, container.buttons[index] end
+			end, self, 0
+		end
 		for index = 1, slot_total do
 			local button = { slot = index, points = {}, texts = {} }
 			function button:GetBagID() return 0 end
@@ -661,6 +667,22 @@ return function(root, check)
 		second.module.set("bags", "enabled", true)
 		check("without the container API the item level option does not fail", pcall(second.module.set, "bags", "item_level", true))
 		check("the layout still works without the container API", pcall(function() second_frame:UpdateItemLayout() end))
+	end
+
+	do
+		-- The game counts the bag's slots before it has made every button, so a walk can meet a hole.
+		local frame, extra = stand_in(6)
+		frame.size = 8
+		local addon, env, loaded = load_bags(extra)
+		loaded["Everlook_Bags"]()
+		addon.module.set("bags", "enabled", true)
+		for _, option in ipairs({ "junk_marker", "item_level", "group", "pins", "recent", "sidebar", "remember" }) do
+			check("a hole among the slots does not break " .. option, pcall(addon.module.set, "bags", option, true))
+		end
+		check("a layout pass over a hole is fine", pcall(function() frame:UpdateItemLayout(); frame:UpdateItems() end))
+		local coin
+		for _, widget in ipairs(env.created) do if widget.parent == frame and widget.kind == "Button" and not widget.texts then coin = widget end end
+		check("mark mode over a hole is fine", coin ~= nil and pcall(coin.scripts.OnClick, coin))
 	end
 
 	-- Group by type: the slots sit under headers, on a stand-in for the stock frame.

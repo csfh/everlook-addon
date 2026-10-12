@@ -82,7 +82,7 @@ end
 
 local function slots_of(frame)
 	local slots = {}
-	for _, button in frame:EnumerateValidItems() do
+	for _, button in ipairs(layout.buttons_of(frame)) do
 		slots[#slots + 1] = { button = button, bag = button:GetBagID(), slot = button:GetID(), extended = button:IsExtended() }
 	end
 	return slots
@@ -276,7 +276,7 @@ local function gear_label(button)
 end
 
 local function show_labels(frame, wanted)
-	for _, button in frame:EnumerateValidItems() do
+	for _, button in ipairs(layout.buttons_of(frame)) do
 		local content, quality
 		if wanted then content, quality = gear_label(button) end
 		local text = labels[button]
@@ -322,7 +322,7 @@ on_solo = function(key)
 end
 
 local function pointer_on_slot(frame)
-	for _, button in frame:EnumerateValidItems() do
+	for _, button in ipairs(layout.buttons_of(frame)) do
 		if type(button.IsMouseOver) == "function" and button:IsMouseOver() then return true end
 	end
 	return false
@@ -393,7 +393,7 @@ local function wants_clicks()
 end
 
 local function listen_for_clicks(frame)
-	for _, button in frame:EnumerateValidItems() do
+	for _, button in ipairs(layout.buttons_of(frame)) do
 		if not listening[button] and type(button.HookScript) == "function" then
 			button:HookScript("OnMouseUp", slot_clicked)
 			listening[button] = true
