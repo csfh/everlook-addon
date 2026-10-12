@@ -165,6 +165,18 @@ return function(root, check)
 				IsValidLayoutName = function() return state.valid_names end,
 			},
 		}
+		if options.bars then
+			-- The game's own action bar toggles for Action Bar 2 to 8, and a clock with timers.
+			state.bars = options.bars
+			state.time, state.timers = 100, {}
+			extra.GetTime = function() return state.time end
+			extra.C_Timer = { After = function(delay, callback) state.timers[#state.timers + 1] = { at = state.time + delay, callback = callback } end }
+			extra.GetActionBarToggles = function() return unpack(state.bars, 1, 7) end
+			extra.SetActionBarToggles = function(...)
+				state.calls[#state.calls + 1] = "bars"
+				state.bars = { ... }
+			end
+		end
 		extra.EverlookDB = options.db
 		extra.UnitGUID = options.guid and function() return options.guid end or nil
 		for key, value in pairs(options.extra or {}) do extra[key] = value end
@@ -226,6 +238,56 @@ return function(root, check)
 		check("and its way back is cleared", db.qol.action_bar_slots.switched["Player-A"] == nil)
 		local _, _, unknown = world({ db = { qol = { action_bar_slots = { enabled = true } } }, extra = { UnitGUID = function() return nil end } })
 		check("a character it cannot name is left alone", #unknown.calls == 0)
+	end
+
+	do
+		-- Action Bar 2 and 3 are turned on in the game's settings, and the module checks them too.
+		local off = { false, false, true, false, false, false, false }
+		local addon, _, state = world({ bars = off })
+		state.time = 110
+		addon.module.set("action_bar_slots", "enabled", true)
+		check("both bars are turned on, with the other bars left as they were", state.bars[1] == true and state.bars[2] == true and state.bars[3] == true and state.bars[4] == false)
+		addon.module.set("action_bar_slots", "enabled", false)
+		check("turning the module off turns off the bars it turned on", state.bars[1] == false and state.bars[2] == false and state.bars[3] == true)
+
+		addon, _, state = world({ bars = { true, false, false, false, false, false, true } })
+		state.time = 110
+		addon.module.set("action_bar_slots", "enabled", true)
+		check("a bar that is already on is left alone, and only the other is turned on", state.bars[1] == true and state.bars[2] == true and state.bars[7] == true)
+		addon.module.set("action_bar_slots", "enabled", false)
+		check("and only the bar it turned on is turned off again", state.bars[1] == true and state.bars[2] == false and state.bars[7] == true)
+
+		addon, _, state = world({ bars = { true, true, false, false, false, false, false } })
+		state.time = 110
+		addon.module.set("action_bar_slots", "enabled", true)
+		addon.module.set("action_bar_slots", "enabled", false)
+		check("bars that were already on are never touched", state.bars[1] == true and state.bars[2] == true)
+		local touched = false
+		for _, call in ipairs(state.calls) do if call == "bars" then touched = true end end
+		check("and no call is made for them", not touched)
+
+		addon, _, state = world({ bars = off })
+		addon.module.set("action_bar_slots", "enabled", true)
+		check("right after login the game's values are not trusted yet, so nothing is changed", state.bars[1] == false and state.bars[2] == false)
+		check("it looks again once the game has caught up", #state.timers == 1)
+		state.time = state.time + 6
+		for _, timer in ipairs(state.timers) do timer.callback() end
+		check("and then turns the bars on", state.bars[1] == true and state.bars[2] == true)
+
+		addon, _, state = world({ bars = off })
+		state.time = 110
+		state.combat = true
+		addon.module.set("action_bar_slots", "enabled", true)
+		check("the bars wait for combat to end", state.bars[1] == false)
+
+		addon, _, state = world({ bars = { false, "secret", false, false, false, false, false } })
+		state.time = 110
+		addon.module.set("action_bar_slots", "enabled", true)
+		check("values that are not plain on or off stop it", state.bars[1] == false)
+
+		addon, _, state = world({ bars = off, extra = { SetActionBarToggles = false } })
+		state.time = 110
+		check("a client without the toggle calls changes no bars and does not fail", pcall(addon.module.set, "action_bar_slots", "enabled", true) and state.bars[1] == false)
 	end
 
 	do
