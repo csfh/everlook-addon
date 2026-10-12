@@ -62,6 +62,16 @@ local function sellable(info)
 	return true
 end
 
+-- An item the player marked as junk in Bags. Bags is asked every time, because a mark can be
+-- taken back or Bags turned off during a visit. Anything but an answer of exactly true, or no
+-- Bags at all, leaves the item alone.
+local function marked_junk(item_id)
+	if module.get(id, "marked_junk") ~= true then return false end
+	local bags = Everlook.bags
+	if type(bags) ~= "table" or type(bags.is_junk) ~= "function" then return false end
+	return bags.is_junk(item_id) == true
+end
+
 local function confirm_sale()
 	if not pending then return end
 	local info = C_Container.GetContainerItemInfo(pending.bag, pending.slot)
@@ -102,7 +112,7 @@ local function tick()
 	while queue and #queue > 0 do
 		local slot = table.remove(queue, 1)
 		local info = C_Container.GetContainerItemInfo(slot.bag, slot.slot)
-		if info and info.itemID == slot.item_id and info.quality == 0 and not info.isLocked
+		if info and info.itemID == slot.item_id and (info.quality == 0 or marked_junk(info.itemID)) and not info.isLocked
 			and not info.hasNoValue and sellable(info) then
 			local price = item_price(info.itemID)
 			if type(price) == "number" and price > 0 then
@@ -122,7 +132,7 @@ local function start()
 	for bag = 0, NUM_BAG_SLOTS or 4 do
 		for slot = 1, C_Container.GetContainerNumSlots(bag) do
 			local info = C_Container.GetContainerItemInfo(bag, slot)
-			if info and info.quality == 0 and not info.hasNoValue then
+			if info and (info.quality == 0 or marked_junk(info.itemID)) and not info.hasNoValue then
 				queue[#queue + 1] = { bag = bag, slot = slot, item_id = info.itemID }
 			end
 		end
@@ -133,7 +143,10 @@ end
 module.register({
 	addon = addon_name, page = "vendors", order = 10,
 	id = id, name = "Sell junk",
-	description = "Sells grey items when a vendor opens, and says what that junk brought in once selling stops. A quest starter, a recipe, a crafting reagent, a locked item, or a grey it cannot classify stays in the bag, an item with no sell price stays too, nothing sold or a total the client hides stays quiet, turning this on while the vendor is already open waits for the next one, closing the vendor, holding Shift, or turning this off stops the rest of that visit, and nothing happens when the client cannot sell from the bags.",
+	description = "Sells grey items when a vendor opens, and the items you marked as junk in Bags when that choice is on, and says what that junk brought in once selling stops. A quest starter, a recipe, a crafting reagent, a locked item, or a grey it cannot classify stays in the bag, an item with no sell price stays too, nothing sold or a total the client hides stays quiet, turning this on while the vendor is already open waits for the next one, closing the vendor, holding Shift, or turning this off stops the rest of that visit, and nothing happens when the client cannot sell from the bags.",
+	options = {
+		marked_junk = { name = "Also sell items marked as junk in Bags", default = false, description = "Sells the items you marked as junk in the combined bag along with the grey ones when a vendor opens. A marked item sells only while Bags and its Mark items as junk choice are on, and it goes through the same checks as a grey item, so a quest starter, a recipe, a crafting reagent, a locked item, one with no sell price, or one it cannot classify stays in the bag. Taking a mark back, or turning Bags off, before an item sells keeps it, holding Shift stops it as it does for grey items, and turning this off sells only grey items." },
+	},
 	events = { "MERCHANT_SHOW", "MERCHANT_CLOSED" },
 	on_event = function(event)
 		merchant_open = event == "MERCHANT_SHOW"

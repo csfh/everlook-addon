@@ -6252,5 +6252,6 @@ return function(root, check)
 	assert(loadfile(root .. "/tests/quest_nameplates.lua"))()(root, check, island_world)
 	assert(loadfile(root .. "/tests/island_react_addon.lua"))()(root, check, island_world)
 	assert(loadfile(root .. "/tests/island_share.lua"))()(root, check, load_qol)
+assert(loadfile(root .. "/tests/sell_junk_marked.lua"))()(root, check, load_qol)
 
 end
