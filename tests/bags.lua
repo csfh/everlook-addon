@@ -263,6 +263,7 @@ return function(root, check)
 			function button:GetBagID() return 0 end
 			function button:GetID() return self.slot end
 			function button:IsExtended() return false end
+			function button:IsMouseOver() return self.mouse_over == true end
 			function button:GetFrameLevel() return 10 end
 			function button:CreateTexture(_, layer, _, sublevel)
 				local texture = { layer = layer, sublevel = sublevel, shown = true }
@@ -522,6 +523,46 @@ return function(root, check)
 		check("a disabled module leaves the layout the game draws", at(frame.buttons[2], -42, 0) and frame.height == 600)
 	end
 
+	do
+		-- A slot under the pointer stays put: using or selling an item must not slide the next one under it.
+		local entries = { { class = 4, quality = 4, level = 270 }, { class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 } }
+		local addon, env, frame, info = group_setup(4, entries)
+		addon.module.set("bags", "group", true)
+		local function watcher_of()
+			for _, widget in ipairs(env.created) do
+				if widget.parent == nil and widget.kind == "Frame" and widget.scripts.OnUpdate then return widget end
+			end
+		end
+		check("armor fills the top row from the left", at(frame.buttons[1], -378, 142) and at(frame.buttons[2], -336, 142))
+		check("nothing watches the pointer until a refresh has to wait", watcher_of() == nil)
+		frame.buttons[1].mouse_over = true
+		info[1] = nil
+		frame:UpdateItems()
+		check("a refresh with the pointer on a slot leaves every slot where it is", at(frame.buttons[1], -378, 142) and at(frame.buttons[2], -336, 142))
+		local watcher = watcher_of()
+		check("something now waits for the pointer to leave the slots", watcher ~= nil and watcher.shown and watcher.scripts.OnUpdate ~= nil)
+		watcher.scripts.OnUpdate(watcher)
+		check("it keeps waiting while the pointer is still on a slot", at(frame.buttons[2], -336, 142) and watcher.shown)
+		frame.buttons[1].mouse_over = false
+		watcher.scripts.OnUpdate(watcher)
+		check("the slots are sorted once the pointer is off them", at(frame.buttons[2], -378, 142) and at(frame.buttons[3], -378, 71) and at(frame.buttons[1], -378, 0))
+		check("and it stops waiting", not watcher.shown)
+
+		-- Off the slots, say on the sort button, a refresh does not wait.
+		info[2] = nil
+		frame:UpdateItems()
+		check("with the pointer off the slots a refresh sorts at once", at(frame.buttons[3], -378, 71) and at(frame.buttons[2], -336, 0) and not watcher.shown)
+
+		-- Waiting must not outlive grouping.
+		info[2] = { itemID = 1002, hyperlink = "link2", quality = 4, class = 4, level = 270 }
+		frame.buttons[3].mouse_over = true
+		frame:UpdateItems()
+		check("the slots wait again under the pointer", watcher.shown)
+		addon.module.set("bags", "group", false)
+		frame.buttons[3].mouse_over = false
+		watcher.scripts.OnUpdate(watcher)
+		check("a wait that ends after grouping was turned off leaves the stock grid alone", at(frame.buttons[2], -42, 0) and at(frame.buttons[4], -126, 0))
+	end
 	do
 		-- Junk marks decide the section, and a mark made in mark mode waits for the mode to end.
 		local entries = { { class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 }, { class = 0, quality = 1, level = 1 } }

@@ -149,6 +149,36 @@ local function grouping()
 	return module.get(id, "group") == true
 end
 
+local function regroup(frame)
+	changed = true
+	place(frame, module.get(id, "columns"), true)
+end
+
+local function pointer_on_slot(frame)
+	for _, button in frame:EnumerateValidItems() do
+		if type(button.IsMouseOver) == "function" and button:IsMouseOver() then return true end
+	end
+	return false
+end
+
+-- A slot under the pointer must stay put: selling or using an item empties its slot, and a
+-- regroup would slide the next item under the pointer for the click that follows. The regroup
+-- waits for the pointer to leave the slots. The watcher exists only to ask that, and runs only
+-- while a regroup waits.
+local watcher
+
+local function wait_for_pointer(frame)
+	if not watcher then
+		watcher = CreateFrame("Frame")
+		watcher:SetScript("OnUpdate", function(self)
+			if pointer_on_slot(frame) then return end
+			self:Hide()
+			if module.enabled(id) and grouping() and not marker.is_active() and frame:IsShown() then regroup(frame) end
+		end)
+	end
+	watcher:Show()
+end
+
 -- Stock has just drawn the grid and sized the frame. Anything wanted that
 -- stock does not do is done over it.
 local function on_layout(frame)
@@ -165,18 +195,16 @@ local function on_items(frame)
 	show_labels(frame, module.get(id, "item_level"))
 	marker.apply(frame, module.get(id, "junk_marker"))
 	-- Stock does not move slots when items arrive, so a grouped bag sorts them again. It waits
-	-- while marks are being made, so the slot under the cursor stays where it is.
+	-- while marks are being made, and while the pointer is on a slot.
 	if grouping() and not marker.is_active() then
-		changed = true
-		place(frame, module.get(id, "columns"), true)
+		if pointer_on_slot(frame) then wait_for_pointer(frame) else regroup(frame) end
 	end
 end
 
 -- Mark mode has ended, and the marks it made can move their items now.
 marker.on_stop = function(frame)
 	if not (module.enabled(id) and grouping()) or type(frame.IsShown) ~= "function" or not frame:IsShown() then return end
-	changed = true
-	place(frame, module.get(id, "columns"), true)
+	regroup(frame)
 end
 
 -- The hooks run after stock and cannot be taken off, so they check the
