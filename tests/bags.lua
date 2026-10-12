@@ -82,7 +82,7 @@ return function(root, check)
 		local addon = {}
 		-- world.lua shares the namespace as the global Everlook.
 		env.Everlook = addon
-		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_categories", "bags_pins", "bags_recent", "bags_folds", "bags_headers", "bags_marker", "bags" }) do
+		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_categories", "bags_pins", "bags_recent", "bags_folds", "bags_headers", "bags_sidebar", "bags_marker", "bags" }) do
 			local chunk = assert(loadfile(source(file)))
 			setfenv(chunk, env)
 			chunk(file == "bags" and "Everlook_Bags" or "Everlook", addon)
@@ -170,6 +170,15 @@ return function(root, check)
 		local wide_width, wide_height = layout.grouped_size(400, 600, 14, wide_grouped)
 		check("twelve grouped columns widen the frame", wide_width == 400 + 84 and wide_height == 600 + (20 + 4 + 79) - 79)
 
+		-- A list of sections on the left widens the frame and, when it has more rows than the grid, makes it taller.
+		check("the list is 130 wide with a gap of 8 and its rows are 22 tall", layout.SIDEBAR_WIDTH == 130 and layout.SIDEBAR_GAP == 8 and layout.SIDEBAR_ROW_HEIGHT == 22)
+		width, height = layout.grouped_size(400, 600, 15, grouped, 3)
+		check("a list adds its width and its gap to the frame", width == 400 + 130 + 8)
+		check("a short list leaves the height to the grid", height == 600 + 174 - 79)
+		width, height = layout.grouped_size(400, 600, 15, grouped, 9)
+		check("a long list sets the height", height == 600 + 9 * 22 - 79)
+		width, height = layout.grouped_size(400, 600, 15, grouped, nil)
+		check("no list adds nothing", width == 400 and height == 600 + 174 - 79)
 		-- A folded section keeps its header and gives up its rows. A hidden one gives up everything.
 		local folded = layout.grouped({
 			{ key = "armory", title = "The Armory", count = 12 },
@@ -672,6 +681,98 @@ return function(root, check)
 		frame.buttons[3].mouse_over = false
 		watcher.scripts.OnUpdate(watcher)
 		check("a wait that ends after grouping was turned off leaves the stock grid alone", at(frame.buttons[2], -42, 0) and at(frame.buttons[4], -126, 0))
+	end
+	do
+		-- The section list: a click on a row shows that section alone.
+		local entries = {
+			{ class = 4, quality = 4, level = 270 }, { class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 },
+			{ class = 15, quality = 0, level = 1 },
+		}
+		local addon, env, frame, info = group_setup(6, entries)
+		addon.module.set("bags", "group", true)
+		local function list_of()
+			for _, widget in ipairs(env.created) do
+				if widget.parent == frame and widget.kind == "Frame" then return widget end
+			end
+		end
+		local function rows_of(list)
+			local found = {}
+			for _, widget in ipairs(env.created) do
+				if widget.parent == list and widget.kind == "Button" then found[#found + 1] = widget end
+			end
+			return found
+		end
+		check("the section list starts off", (function()
+			for _, module in ipairs(addon.module.modules) do
+				if module.id == "bags" then return module.options.sidebar and module.options.sidebar.default == false end
+			end
+		end)())
+		check("with the list off there is none and the frame is as wide as before", list_of() == nil and frame.width == 400)
+		addon.module.set("bags", "sidebar", true)
+		local list = list_of()
+		check("the list is a child of the bag, left of the grid and level with its bottom",
+			list ~= nil and list.points[1][1] == "BOTTOMRIGHT" and list.points[1][2] == frame.MoneyFrame and list.points[1][3] == "TOPRIGHT"
+			and list.points[1][4] == -(415 + 8) and list.points[1][5] == 4)
+		check("the list is 130 wide and as tall as its rows", list.width == 130 and list.height == 5 * 22)
+		check("the list does not take the mouse itself", list.mouse == false)
+		local rows = rows_of(list)
+		local names = {}
+		for _, row in ipairs(rows) do names[#names + 1] = row.texts[1].content .. " " .. row.texts[2].content end
+		check("a row for everything and one per section that has slots, with counts",
+			table.concat(names, "|") == "All Items 4|The Armory 2|Adventure Prep 1|Junk 1|Free Space 2")
+		check("rows stack from the top of the list", rows[1].points[1][1] == "TOPLEFT" and rows[1].points[1][5] == 0 and rows[3].points[1][5] == -2 * 22)
+		check("the row for everything is the one marked", rows[1].locked == true and rows[3].locked == false)
+		check("the frame is wider by the list and its gap", frame.width == 400 + 138 and frame.height == 600 + 274 - 37)
+		check("grouping itself is unchanged", at(frame.buttons[1], -378, 213) and at(frame.buttons[3], -378, 142))
+
+		rows[3].scripts.OnClick(rows[3])
+		check("a click on a row shows that section alone, at the bottom of the grid", at(frame.buttons[3], -378, 0))
+		check("every other slot is parked, clear and not clickable", (function()
+			for _, index in ipairs({ 1, 2, 4, 5, 6 }) do
+				local button = frame.buttons[index]
+				if not (at(button, 0, 0) and button.alpha == 0 and button.mouse == false) then return false end
+			end
+			return true
+		end)())
+		check("only that section keeps its header", header_named(env, frame, "Adventure Prep").shown and not header_named(env, frame, "The Armory").shown
+			and not header_named(env, frame, "Junk").shown and not header_named(env, frame, "Free Space").shown)
+		check("the frame is as tall as the list needs", frame.height == 600 + 5 * 22 - 37)
+		check("the chosen row is marked and the others are not", rows[3].locked == true and rows[1].locked == false)
+		check("the counts do not change", rows[2].texts[2].content == "2" and rows[1].texts[2].content == "4")
+
+		rows[3].scripts.OnClick(rows[3])
+		check("a click on the chosen row shows everything again", at(frame.buttons[3], -378, 142) and at(frame.buttons[1], -378, 213) and frame.buttons[1].alpha == 1 and rows[1].locked == true)
+		rows[2].scripts.OnClick(rows[2])
+		rows[1].scripts.OnClick(rows[1])
+		check("a click on the row for everything shows everything", at(frame.buttons[1], -378, 213) and frame.buttons[2].mouse == true)
+
+		-- A section that empties out while it is the one shown: everything is shown again.
+		rows[3].scripts.OnClick(rows[3])
+		info[3] = nil
+		frame:UpdateItems()
+		check("the section shown alone empties and everything comes back", at(frame.buttons[1], -378, 142) and frame.buttons[1].alpha == 1 and rows[1].locked == true)
+
+		-- Folding does not hide the section shown alone.
+		info[3] = { itemID = 1003, hyperlink = "link3", quality = 1, class = 0, level = 1, stackCount = 1 }
+		addon.module.set("bags", "fold", true)
+		env.EverlookDB.qol.bags.folded = { prep = true }
+		frame:UpdateItems()
+		rows = rows_of(list)
+		rows[3].scripts.OnClick(rows[3])
+		check("the section shown alone is open though it is folded", at(frame.buttons[3], -378, 0) and frame.buttons[3].alpha == 1)
+		rows[1].scripts.OnClick(rows[1])
+		addon.module.set("bags", "fold", false)
+
+		rows[3].scripts.OnClick(rows[3])
+		addon.module.set("bags", "sidebar", false)
+		check("turning the list off hides it, shows everything and shrinks the frame", not list.shown and at(frame.buttons[1], -378, 213) and frame.buttons[1].alpha == 1 and frame.width == 400)
+		addon.module.set("bags", "sidebar", true)
+		check("turning it back on starts with everything shown", list.shown and at(frame.buttons[1], -378, 213) and rows[1].locked == true)
+		addon.module.set("bags", "group", false)
+		check("turning grouping off hides the list and brings the stock grid back", not list.shown and frame.width == 400 and at(frame.buttons[2], -42, 0))
+		addon.module.set("bags", "group", true)
+		addon.module.set("bags", "enabled", false)
+		check("turning the module off hides the list", not list.shown and frame.width == 400)
 	end
 	do
 		-- Folding: a click on a header folds its section down to the header.

@@ -8,6 +8,7 @@ local categories = Everlook.bags_categories
 local pins = Everlook.bags_pins
 local recent = Everlook.bags_recent
 local folds = Everlook.bags_folds
+local sidebar = Everlook.bags_sidebar
 local headers = Everlook.bags_headers
 local marker = Everlook.bags_marker
 local id = "bags"
@@ -35,6 +36,8 @@ local in_world = false
 -- A slot that is folded away keeps its place at the grid's corner, clear and deaf to the mouse. What it
 -- was before is kept, so it can be put back exactly.
 local parked = setmetatable({}, { __mode = "k" })
+-- The section the list has been asked to show alone. It lasts the session, and only while the list is on.
+local solo
 -- Slots that already listen for a middle-click. A listener cannot be taken off, so it checks the settings.
 local listening = setmetatable({}, { __mode = "k" })
 
@@ -83,6 +86,7 @@ end
 
 local function place_flat(frame, columns)
 	headers.hide_all()
+	sidebar.hide()
 	unpark_all()
 	local slots = layout.order(slots_of(frame))
 	local grid = layout.grid(#slots, columns)
@@ -112,8 +116,8 @@ end
 -- Lays the slots out in sections under headers, in the order stock keeps them
 -- in within each section. It reports whether it could: without the container
 -- API nothing is known about the items, and the caller lays out a flat grid.
--- A click on a section's header, set once regroup exists.
-local on_fold
+-- Clicks on a section's header and on a row of the list, set once regroup exists.
+local on_fold, on_solo
 
 local function place_grouped(frame, columns)
 	if type(C_Container) ~= "table" or type(C_Container.GetContainerItemInfo) ~= "function"
@@ -140,14 +144,21 @@ local function place_grouped(frame, columns)
 			return first.index < second.index
 		end)
 	end
+	local list_on = module.get(id, "sidebar") == true
+	-- A section that has emptied out cannot be shown alone, so everything is shown again.
+	if solo and not (members[solo] and #members[solo] > 0) then solo = nil end
+	local shown_alone = list_on and solo or nil
 	local wanted = {}
 	for _, section in ipairs(categories.SECTIONS) do
 		local state = fold_on and folds.is_folded(fold_data, section.key) and "collapsed" or nil
+		if shown_alone then state = section.key ~= shown_alone and "hidden" or nil end
 		wanted[#wanted + 1] = { key = section.key, title = section.title, count = members[section.key] and #members[section.key] or 0, state = state }
 	end
 	local grouped = layout.grouped(wanted, columns)
 	unpark_all()
+	local placed = {}
 	for _, section in ipairs(grouped.sections) do
+		placed[section.key] = true
 		for index, slot in ipairs(members[section.key]) do
 			local position = section.positions[index]
 			if position then
@@ -158,8 +169,29 @@ local function place_grouped(frame, columns)
 			end
 		end
 	end
+	for key, parked_slots in pairs(members) do
+		if not placed[key] then
+			for _, slot in ipairs(parked_slots) do park(slot.button, frame) end
+		end
+	end
 	headers.show(frame, frame.MoneyFrame, GRID_OFFSET_Y, grouped, fold_on and on_fold or nil)
-	frame:SetSize(layout.grouped_size(stock_width, stock_height, #slots, grouped))
+	local list_rows
+	if list_on then
+		local entries, items = {}, 0
+		for _, section in ipairs(categories.SECTIONS) do
+			local count = members[section.key] and #members[section.key] or 0
+			if count > 0 then
+				entries[#entries + 1] = { key = section.key, title = section.title, count = count }
+				if section.key ~= categories.FREE then items = items + count end
+			end
+		end
+		table.insert(entries, 1, { key = sidebar.ALL, title = "All Items", count = items })
+		sidebar.show(frame, frame.MoneyFrame, GRID_OFFSET_Y, grouped.width, entries, shown_alone or sidebar.ALL, on_solo)
+		list_rows = #entries
+	else
+		sidebar.hide()
+	end
+	frame:SetSize(layout.grouped_size(stock_width, stock_height, #slots, grouped, list_rows))
 	return true
 end
 
@@ -214,6 +246,14 @@ on_fold = function(key)
 	if not (module.enabled(id) and module.get(id, "fold") == true and grouping()) then return end
 	local frame = combined_bag()
 	if not frame or folds.toggle(folds.data(), key) == nil then return end
+	if type(frame.IsShown) == "function" and frame:IsShown() then regroup(frame) end
+end
+
+on_solo = function(key)
+	if not (module.enabled(id) and module.get(id, "sidebar") == true and grouping()) then return end
+	local frame = combined_bag()
+	if not frame then return end
+	if key == sidebar.ALL or key == solo then solo = nil else solo = key end
 	if type(frame.IsShown) == "function" and frame:IsShown() then regroup(frame) end
 end
 
@@ -351,6 +391,7 @@ local function apply(enabled)
 	if enabled then install(frame) end
 	marker.apply(frame, enabled and module.get(id, "junk_marker"))
 	if enabled and module.get(id, "pins") == true then listen_for_pins(frame) end
+	if not (enabled and module.get(id, "sidebar") == true) then solo = nil end
 	-- Turned on in a running session, the bags can be read now.
 	if enabled and not in_world and type(IsLoggedIn) == "function" and IsLoggedIn() then in_world = true end
 	if enabled and module.get(id, "recent") == true then
@@ -384,6 +425,7 @@ module.register({
 		item_level = { name = "Show item level on gear", default = false, description = "Writes the item level of each weapon and piece of armor, including rings, trinkets and cloaks, at the bottom right of its slot, where a stack count would sit, in the color of its quality. Other items show nothing, and turning this off removes the numbers." },
 		junk_marker = { name = "Mark items as junk", default = false, description = "Adds a coin button to the title row of the combined bag. Click it, then click items to mark or unmark them as junk, and click it again to stop. A marked item shows the junk coin, and every copy of that item is marked. Sell junk can sell marked items at a vendor when you turn that on there. Turning this off hides the button and the coins and keeps your marks." },
 		group = { name = "Group items by type", default = false, description = "Sorts the slots of the combined bag into sections under headers: The Armory for weapons and armor, Adventure Prep for consumables, gems and item enhancements, Professions for trade goods, reagents and recipes, Miscellaneous for the rest, and Junk for grey items and, when Mark items as junk is on, the items you marked. Empty slots wait at the bottom as Free Space. The bag keeps its look, and its search box and sort button work as before, though sorting moves items between slots and the sections follow. Turning this off puts the grid back." },
+		sidebar = { name = "Section list", default = false, description = "Adds a list of the sections to the left of the grouped bag, a row for everything and one for each section with its name and how many slots it holds. Click a row to show only that section, and click it again, or the row for everything, to show them all. The counts do not change with the search box. It needs Group items by type to be on, and turning this off shows every section again." },
 		fold = { name = "Fold sections", default = false, description = "Click the header of a section in the grouped bag to fold it down to its header, which keeps its count and shows an arrow, and click again to open it. Which sections are folded is saved. It needs Group items by type to be on, and turning this off opens every section and keeps the folds." },
 		pins = { name = "Pinned items", default = false, description = "Middle-click an item in the combined bag to pin it, and middle-click it again to unpin it. Every copy of a pinned item sits in a Pinned section at the top of the bag, and the pin stays after you log out. It needs Group items by type to be on, and turning this off puts the items back under their types and keeps the pins." },
 		recent = { name = "Recent items", default = false, description = "Items whose total in your bags goes up, whether looted, bought, taken from the mail or the bank, or taken off your character, wait in a Recent section just below Pinned, the newest first, twelve at most, until you log out or reload. Every copy of such an item is there, and junk and pinned items stay in their own sections. It needs Group items by type to be on, and turning this off puts the items back under their types and forgets the list." },

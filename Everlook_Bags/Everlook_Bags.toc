@@ -14,5 +14,6 @@ bags_pins.lua
 bags_recent.lua
 bags_folds.lua
 bags_headers.lua
+bags_sidebar.lua
 bags_marker.lua
 bags.lua
