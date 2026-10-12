@@ -82,7 +82,7 @@ return function(root, check)
 				callback(self, ...)
 			end
 		end
-		env.Enum = { ItemClass = {
+		env.Enum = { TooltipDataType = { Item = 0 }, ItemClass = {
 			Consumable = 0, Weapon = 2, Gem = 3, Armor = 4, Reagent = 5, Tradegoods = 7, ItemEnhancement = 8,
 			Recipe = 9, Questitem = 12, Key = 13, Miscellaneous = 15, Profession = 19,
 		} }
@@ -90,7 +90,7 @@ return function(root, check)
 		local addon = {}
 		-- world.lua shares the namespace as the global Everlook.
 		env.Everlook = addon
-		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_categories", "bags_pins", "bags_assign", "bags_recent", "bags_folds", "bags_headers", "bags_sidebar", "bags_marker", "bags" }) do
+		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_categories", "bags_pins", "bags_assign", "bags_alts", "bags_recent", "bags_folds", "bags_headers", "bags_sidebar", "bags_marker", "bags" }) do
 			local chunk = assert(loadfile(source(file)))
 			setfenv(chunk, env)
 			chunk(file == "bags" and "Everlook_Bags" or "Everlook", addon)
@@ -334,6 +334,54 @@ return function(root, check)
 		check("the table lives with the Bags settings and survives being asked for again", saved == env.EverlookDB.qol.bags.assigned and assign.data() == saved)
 	end
 
+	-- What the module remembers about each character's bags and bank.
+	do
+		local addon, env = load_bags({
+			NUM_BAG_SLOTS = 4,
+			C_Container = {
+				GetContainerNumSlots = function(bag) return ({ [0] = 3, [1] = 2, [6] = 2, [12] = 2 })[bag] or 0 end,
+				GetContainerItemInfo = function(bag, slot)
+					local contents = {
+						["0:1"] = { itemID = 6948, stackCount = 1, quality = 1 }, ["0:3"] = { itemID = 2589, stackCount = 20, quality = 1 },
+						["1:2"] = { itemID = 2589, stackCount = 5, quality = 1 },
+						["6:1"] = { itemID = 2589, stackCount = 40, quality = 1 }, ["12:2"] = { itemID = 4306, stackCount = 15, quality = 1 },
+					}
+					return contents[bag .. ":" .. slot]
+				end,
+			},
+		})
+		local alts = addon.bags_alts
+		local bags = alts.scan(alts.BAGS)
+		check("a scan keeps item, count and quality of each filled slot, by bag and slot", bags[0][1][1] == 6948 and bags[0][3][2] == 20 and bags[0][3][3] == 1 and bags[1][2][1] == 2589)
+		check("a scan leaves empty slots and empty bags out", bags[0][2] == nil and bags[2] == nil)
+		check("bags are 0 to 5, the character bank 6 to 11 and the warband bank 12 to 16", alts.BAGS[1] == 0 and alts.BAGS[#alts.BAGS] == 5
+			and alts.CHARACTER_BANK[1] == 6 and alts.CHARACTER_BANK[#alts.CHARACTER_BANK] == 11 and alts.WARBAND_BANK[1] == 12 and alts.WARBAND_BANK[#alts.WARBAND_BANK] == 16)
+		check("counting adds up an item over every slot", alts.count(bags, 2589) == 25 and alts.count(bags, 6948) == 1 and alts.count(bags, 1) == 0)
+		check("counting nothing is nothing", alts.count(nil, 2589) == 0)
+		local bank = alts.scan(alts.CHARACTER_BANK)
+		check("the bank scans the same way", alts.count(bank, 2589) == 40)
+
+		local root = { characters = {
+			["Mage-Realm"] = { name = "Mage", realm = "Realm", bags = bags, bank = bank },
+			["Rogue-Realm"] = { name = "Rogue", realm = "Realm", bags = { [0] = { [1] = { 2589, 7, 1 } } } },
+			["Me-Realm"] = { name = "Me", realm = "Realm", bags = bags },
+		}, warband = { bank = alts.scan(alts.WARBAND_BANK) } }
+		local others, warband = alts.others(root, "Me-Realm", 2589)
+		check("other characters that have the item are listed, the one with most first, not the current one",
+			#others == 2 and others[1].name == "Mage" and others[1].bags == 25 and others[1].bank == 40 and others[2].name == "Rogue" and others[2].bags == 7 and others[2].bank == 0)
+		check("the warband bank is counted apart", warband == 0)
+		_, warband = alts.others(root, "Me-Realm", 4306)
+		check("an item in the warband bank is counted there", warband == 15 and #alts.others(root, "Me-Realm", 4306) == 0)
+		check("an item nobody has gives nothing", #alts.others(root, "Me-Realm", 1) == 0)
+		check("nothing remembered gives nothing", #alts.others({}, "Me-Realm", 2589) == 0 and #alts.others(nil, "Me-Realm", 2589) == 0)
+		local secret = {}
+		local guarded = load_bags({ issecretvalue = function(value) return value == secret end }).bags_alts
+		check("a secret item gives nothing", #guarded.others(root, "Me-Realm", secret) == 0)
+		check("a character is keyed by name and realm", alts.key("Mage", "Realm") == "Mage-Realm" and alts.key(nil, "Realm") == nil and alts.key("Mage", "") == nil)
+		local saved = alts.data()
+		check("the remembered items live with the Bags settings, apart from the option", saved == env.EverlookDB.qol.bags.remembered and type(saved.characters) == "table" and alts.data() == saved)
+	end
+
 	-- The recent list: what arrived in the bags this session, from the item totals now and before.
 	do
 		local addon = load_bags()
@@ -406,12 +454,17 @@ return function(root, check)
 		local scale = found and found.options.scale
 		check("window scale starts at a hundred percent and runs from seventy to a hundred and ten", scale and scale.default == 100 and scale.min == 70 and scale.max == 110 and scale.step == 5)
 		check("pinned items start off", found and found.options.pins and found.options.pins.default == false)
+		check("remembering items on other characters starts off", found and found.options.remember and found.options.remember.default == false)
 		for number = 1, 3 do
 			local custom = found and found.options["custom" .. number]
 			check("custom section " .. number .. " starts off and offers names to choose from", custom and custom.default == "off" and #custom.choices >= 3 and custom.choices[1][1] == "off")
 		end
 		check("recent items start off", found and found.options.recent and found.options.recent.default == false)
-		check("it listens for the world loading and for the bags changing", found and found.events and found.events[1] == "PLAYER_ENTERING_WORLD" and found.events[2] == "BAG_UPDATE_DELAYED")
+		check("it listens for the world loading, the bags changing and the bank", (function()
+			local heard = {}
+			for _, event in ipairs(found and found.events or {}) do heard[event] = true end
+			return heard.PLAYER_ENTERING_WORLD and heard.BAG_UPDATE_DELAYED and heard.BANKFRAME_OPENED and heard.BANKFRAME_CLOSED
+		end)())
 	end
 
 	-- Applying and undoing, on a stand-in for the stock frame.
@@ -973,6 +1026,99 @@ return function(root, check)
 		addon.module.set("bags", "group", true)
 		addon.module.set("bags", "custom1", "keep")
 		check("without a way to read Ctrl a middle-click assigns nothing", pcall(frame.buttons[1].hooks.OnMouseUp, frame.buttons[1], "MiddleButton") and next(env.EverlookDB.qol.bags.assigned or {}) == nil)
+	end
+	do
+		-- Remembering the items on each character, and telling where else an item is.
+		local bank_visible = false
+		local posted
+		local contents = {
+			["0:1"] = { itemID = 2589, stackCount = 20, quality = 1 }, ["0:2"] = { itemID = 6948, stackCount = 1, quality = 1 },
+			["6:1"] = { itemID = 2589, stackCount = 40, quality = 1 }, ["12:2"] = { itemID = 4306, stackCount = 15, quality = 1 },
+		}
+		local frame, extra = stand_in(3)
+		extra.C_Container = {
+			GetContainerNumSlots = function(bag) if bag == 0 then return 3 end if (bag == 6 or bag == 12) and bank_visible then return 2 end return 0 end,
+			GetContainerItemInfo = function(bag, slot) if bag == 0 or bank_visible then return contents[bag .. ":" .. slot] end end,
+		}
+		extra.UnitName = function() return "Me" end
+		extra.GetRealmName = function() return "Realm" end
+		extra.UnitClass = function() return "Mage", "MAGE" end
+		extra.GetServerTime = function() return 1000 end
+		extra.TooltipDataProcessor = { AddTooltipPostCall = function(kind, callback) if kind == 0 then posted = callback end end }
+		local addon, env, loaded = load_bags(extra)
+		loaded["Everlook_Bags"]()
+		local function fire(event)
+			for _, widget in ipairs(env.created) do
+				if widget.parent == nil and widget.kind == "Frame" and widget.scripts.OnEvent then widget.scripts.OnEvent(widget, event) end
+			end
+		end
+		local function tooltip()
+			local lines = {}
+			local shown = { lines = lines, cleared = {} }
+			function shown:AddDoubleLine(left, right) lines[#lines + 1] = left .. " | " .. right end
+			function shown:AddLine(text) lines[#lines + 1] = text end
+			function shown:HasScript() return true end
+			function shown:HookScript(name, callback) self.cleared[name] = callback end
+			return shown
+		end
+		addon.module.set("bags", "enabled", true)
+		fire("BAG_UPDATE_DELAYED")
+		check("with remembering off nothing is stored", env.EverlookDB.qol.bags.remembered == nil)
+		addon.module.set("bags", "remember", true)
+		local mine = env.EverlookDB.qol.bags.remembered.characters["Me-Realm"]
+		check("turning it on remembers the bags at once, under the name and realm", mine and mine.name == "Me" and mine.realm == "Realm" and mine.class == "MAGE" and mine.time == 1000
+			and addon.bags_alts.count(mine.bags, 2589) == 20)
+		check("the bank is not remembered while it is closed", mine.bank == nil)
+		bank_visible = true
+		fire("BANKFRAME_OPENED")
+		mine = env.EverlookDB.qol.bags.remembered.characters["Me-Realm"]
+		check("opening the bank remembers it, and the warband bank apart", addon.bags_alts.count(mine.bank, 2589) == 40
+			and addon.bags_alts.count(env.EverlookDB.qol.bags.remembered.warband.bank, 4306) == 15)
+		contents["0:1"] = { itemID = 2589, stackCount = 25, quality = 1 }
+		fire("BAG_UPDATE_DELAYED")
+		check("the bags are looked at again when they change", addon.bags_alts.count(mine.bags, 2589) == 25)
+		fire("BANKFRAME_CLOSED")
+		bank_visible = false
+		fire("BAG_UPDATE_DELAYED")
+		check("a closed bank is not looked at, so what was remembered stays",
+			addon.bags_alts.count(env.EverlookDB.qol.bags.remembered.characters["Me-Realm"].bank, 2589) == 40)
+
+		-- Others are seeded; the tooltip says where else an item is.
+		local root = env.EverlookDB.qol.bags.remembered
+		root.characters["Mage-Realm"] = { name = "Mage", realm = "Realm", bags = { [0] = { [1] = { 2589, 7, 1 } } }, bank = { [6] = { [1] = { 2589, 3, 1 } } } }
+		check("the game is asked to add to item tooltips once the module is on", type(posted) == "function")
+		local shown = tooltip()
+		posted(shown, { id = 2589 })
+		check("the tooltip names the other characters that have the item, with where", shown.lines[1] == "Mage | 7 in bags, 3 in bank")
+		check("the warband bank is named when it has the item", (function()
+			local second = tooltip()
+			posted(second, { id = 4306 })
+			return second.lines[1] == "Warband bank | 15"
+		end)())
+		posted(shown, { id = 2589 })
+		check("a tooltip refreshed with the same item has the lines once", #shown.lines == 1)
+		shown.cleared.OnTooltipCleared(shown)
+		posted(shown, { id = 2589 })
+		check("a tooltip that is cleared gets them again", #shown.lines == 2)
+		local none = tooltip()
+		posted(none, { id = 1 })
+		check("an item nobody else has adds nothing", #none.lines == 0)
+		for number = 1, 6 do
+			root.characters["Extra" .. number .. "-Realm"] = { name = "Extra" .. number, realm = "Realm", bags = { [0] = { [1] = { 6948, number, 1 } } } }
+		end
+		local crowded = tooltip()
+		posted(crowded, { id = 6948 })
+		check("only the first five characters are named, and the rest are counted", #crowded.lines == 6 and crowded.lines[6] == "and 1 more")
+		local secret_tooltip = tooltip()
+		check("an item the client hides adds nothing and does not fail", pcall(posted, secret_tooltip, { id = nil }) and #secret_tooltip.lines == 0)
+		addon.module.set("bags", "remember", false)
+		local off = tooltip()
+		posted(off, { id = 2589 })
+		check("with remembering off the tooltip is left alone", #off.lines == 0)
+		contents["0:1"] = { itemID = 2589, stackCount = 99, quality = 1 }
+		fire("BAG_UPDATE_DELAYED")
+		check("with remembering off the bags are not looked at, and what was kept stays",
+			addon.bags_alts.count(env.EverlookDB.qol.bags.remembered.characters["Me-Realm"].bags, 2589) == 25)
 	end
 	do
 		-- Folding: a click on a header folds its section down to the header.

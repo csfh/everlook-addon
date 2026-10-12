@@ -7,6 +7,7 @@ local junk = Everlook.bags_junk
 local categories = Everlook.bags_categories
 local pins = Everlook.bags_pins
 local assign = Everlook.bags_assign
+local alts = Everlook.bags_alts
 local recent = Everlook.bags_recent
 local folds = Everlook.bags_folds
 local sidebar = Everlook.bags_sidebar
@@ -42,6 +43,13 @@ local arrivals = recent.new()
 -- It is set by the first PLAYER_ENTERING_WORLD, or at once when Bags is turned on in a session
 -- that is already running. Later loading screens, such as an instance, change nothing.
 local in_world = false
+-- Whether the bank is open, which is the only time its contents can be read.
+local bank_open = false
+local tooltip_hooked = false
+-- The item each tooltip last showed other characters' items for, so a refresh does not add them twice.
+local told = setmetatable({}, { __mode = "k" })
+local clear_hooked = setmetatable({}, { __mode = "k" })
+local MOST_CHARACTERS_NAMED = 5
 -- A slot that is folded away keeps its place at the grid's corner, clear and deaf to the mouse. What it
 -- was before is kept, so it can be put back exactly.
 local parked = setmetatable({}, { __mode = "k" })
@@ -421,6 +429,72 @@ local function bag_totals()
 	return totals
 end
 
+local function current_key()
+	if type(UnitName) ~= "function" or type(GetRealmName) ~= "function" then return nil end
+	return alts.key(UnitName("player"), GetRealmName())
+end
+
+-- Writes down what this character has in its bags and, while the bank is open, in its bank
+-- and the warband bank. A closed bank is left as it was last written.
+local function remember_items()
+	if not in_world or module.get(id, "remember") ~= true then return end
+	local key = current_key()
+	local scanned = key and alts.scan(alts.BAGS)
+	if not scanned then return end
+	local root = alts.data()
+	local entry = root.characters[key] or {}
+	root.characters[key] = entry
+	entry.name, entry.realm = UnitName("player"), GetRealmName()
+	entry.class = type(UnitClass) == "function" and select(2, UnitClass("player")) or entry.class
+	entry.time = type(GetServerTime) == "function" and GetServerTime() or entry.time
+	entry.bags = scanned
+	if bank_open then
+		local bank, warband = alts.scan(alts.CHARACTER_BANK), alts.scan(alts.WARBAND_BANK)
+		if bank then entry.bank = bank end
+		if warband then root.warband = { time = entry.time, bank = warband } end
+	end
+end
+
+local function say_where_else(tooltip, data)
+	if not (module.enabled(id) and module.get(id, "remember") == true) then return end
+	local item_id = data and data.id
+	if not junk.valid(item_id) or told[tooltip] == item_id then return end
+	local others, warband = alts.others(alts.data(), current_key(), item_id)
+	if #others == 0 and warband == 0 then return end
+	told[tooltip] = item_id
+	if type(tooltip.HasScript) == "function" and tooltip:HasScript("OnTooltipCleared") and not clear_hooked[tooltip] then
+		clear_hooked[tooltip] = true
+		tooltip:HookScript("OnTooltipCleared", function(self) told[self] = nil end)
+	end
+	local function line(left, right)
+		if type(tooltip.AddDoubleLine) == "function" then
+			tooltip:AddDoubleLine(left, right, 1, 1, 1, 0.7, 0.7, 0.7)
+		else
+			tooltip:AddLine(left .. ": " .. right)
+		end
+	end
+	for index, other in ipairs(others) do
+		if index > MOST_CHARACTERS_NAMED then
+			tooltip:AddLine("and " .. (#others - MOST_CHARACTERS_NAMED) .. " more")
+			break
+		end
+		local parts = {}
+		if other.bags > 0 then parts[#parts + 1] = other.bags .. " in bags" end
+		if other.bank > 0 then parts[#parts + 1] = other.bank .. " in bank" end
+		line(other.name, table.concat(parts, ", "))
+	end
+	if warband > 0 then line("Warband bank", tostring(warband)) end
+end
+
+local function hook_tooltips()
+	if tooltip_hooked or type(TooltipDataProcessor) ~= "table" or type(TooltipDataProcessor.AddTooltipPostCall) ~= "function"
+		or type(Enum) ~= "table" or type(Enum.TooltipDataType) ~= "table" then
+		return
+	end
+	TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, say_where_else)
+	tooltip_hooked = true
+end
+
 -- Looks at the bags and says whether something arrived since the last look.
 local function look_at_bags()
 	if not in_world or module.get(id, "recent") ~= true then return false end
@@ -433,9 +507,18 @@ local function on_event(event)
 		if not in_world then
 			in_world = true
 			look_at_bags()
+			remember_items()
 		end
 		return
+	elseif event == "BANKFRAME_OPENED" then
+		bank_open = true
+		remember_items()
+		return
+	elseif event == "BANKFRAME_CLOSED" then
+		bank_open = false
+		return
 	end
+	remember_items()
 	if not look_at_bags() then return end
 	local frame = combined_bag()
 	if frame and type(frame.IsShown) == "function" and frame:IsShown() then sort_sections(frame) end
@@ -481,14 +564,16 @@ local function install(frame)
 end
 
 local function apply(enabled)
+	-- Turned on in a running session, the bags can be read now.
+	if enabled and not in_world and type(IsLoggedIn) == "function" and IsLoggedIn() then in_world = true end
+	if enabled then hook_tooltips() end
+	if enabled then remember_items() end
 	local frame = combined_bag()
 	if not frame then return end
 	if enabled then install(frame) end
 	marker.apply(frame, enabled and module.get(id, "junk_marker"))
 	if enabled and wants_clicks() then listen_for_clicks(frame) end
 	if not (enabled and module.get(id, "sidebar") == true) then solo = nil end
-	-- Turned on in a running session, the bags can be read now.
-	if enabled and not in_world and type(IsLoggedIn) == "function" and IsLoggedIn() then in_world = true end
 	if enabled and module.get(id, "recent") == true then
 		look_at_bags()
 	else
@@ -523,6 +608,7 @@ module.register({
 		item_level = { name = "Show item level on gear", default = false, description = "Writes the item level of each weapon and piece of armor, including rings, trinkets and cloaks, at the bottom right of its slot, where a stack count would sit, in the color of its quality. Other items show nothing, and turning this off removes the numbers." },
 		junk_marker = { name = "Mark items as junk", default = false, description = "Adds a coin button to the title row of the combined bag. Click it, then click items to mark or unmark them as junk, and click it again to stop. A marked item shows the junk coin, and every copy of that item is marked. Sell junk can sell marked items at a vendor when you turn that on there. Turning this off hides the button and the coins and keeps your marks." },
 		group = { name = "Group items by type", default = false, description = "Sorts the slots of the combined bag into sections under headers: The Armory for weapons and armor, Adventure Prep for consumables, gems and item enhancements, Professions for trade goods, reagents and recipes, Miscellaneous for the rest, and Junk for grey items and, when Mark items as junk is on, the items you marked. Empty slots wait at the bottom as Free Space. The bag keeps its look, and its search box and sort button work as before, though sorting moves items between slots and the sections follow. Turning this off puts the grid back." },
+		remember = { name = "Remember items on all characters", default = false, description = "Writes down what each character has in its bags and bank, and the warband bank, whenever you log in with this on, change your bags or open the bank, so an item's tooltip can say where else you have it, such as Mage: 7 in bags, 3 in bank, and how many sit in the warband bank. It names the five characters with most and counts the rest. Only item ids and counts are kept, in your saved settings. The bank is written down only while it is open, and turning this off stops writing and keeps what was kept." },
 		scale = { name = "Window scale", default = 100, min = 70, max = 110, step = 5, description = "Makes the combined bag a share of the size the game gives it, in percent. The game still shrinks a bag that does not fit the screen, and this goes on top of that. A hundred is how the game draws it." },
 		expansions = { name = "Nest by expansion", default = false, description = "Splits the Armory, Adventure Prep, Professions and Miscellaneous sections by the expansion their items belong to, the newest first, each with its own header. An item the game cannot place in an expansion stays under the section's own header, after the others. It needs Group items by type to be on, and turning this off makes each of them one section again." },
 		sidebar = { name = "Section list", default = false, description = "Adds a list of the sections to the left of the grouped bag, a row for everything and one for each section with its name and how many slots it holds. Click a row to show only that section, and click it again, or the row for everything, to show them all. The counts do not change with the search box. It needs Group items by type to be on, and turning this off shows every section again." },
@@ -534,7 +620,7 @@ module.register({
 		recent = { name = "Recent items", default = false, description = "Items whose total in your bags goes up, whether looted, bought, taken from the mail or the bank, or taken off your character, wait in a Recent section just below Pinned, the newest first, twelve at most, until you log out or reload. Every copy of such an item is there, and junk and pinned items stay in their own sections. It needs Group items by type to be on, and turning this off puts the items back under their types and forgets the list." },
 		columns = { name = "Columns", default = 10, min = 10, max = 16, step = 1, description = "How many slots sit in each row of the combined bag. Ten is how the game draws it, and more columns make the bag wider and shorter." },
 	},
-	events = { "PLAYER_ENTERING_WORLD", "BAG_UPDATE_DELAYED" },
+	events = { "PLAYER_ENTERING_WORLD", "BAG_UPDATE_DELAYED", "BANKFRAME_OPENED", "BANKFRAME_CLOSED" },
 	on_event = on_event,
 	apply = apply,
 })
