@@ -1325,11 +1325,17 @@ return function(root, check)
 	local text_setting = 4
 	tracker_env.Enum = { EditModeObjectiveTrackerSetting = { TextSize = text_setting } }
 	local tracker = { text_size = 12, line = 12, header = 14 }
-	tracker_env.ObjectiveTrackerLineFont = newproxy(true)
-	getmetatable(tracker_env.ObjectiveTrackerLineFont).__index = {
+	-- Blizzard's SetTextSize sets the two fonts and lays the tracker out again. Called from an
+	-- addon that layout runs tainted, so only Blizzard's own code may call it.
+	tracker.from_addon, tracker.in_blizzard = 0, false
+	for size = 12, 22 do tracker_env["ObjectiveTrackerFont" .. size] = { size = size } end
+	tracker_env.ObjectiveTrackerLineFont = {
 		GetFont = function() return "tracker.ttf", tracker.line, "" end,
+		SetFontObject = function(_, object) tracker.line = object.size end,
 	}
+	tracker_env.ObjectiveTrackerHeaderFont = { SetFontObject = function(_, object) tracker.header = object.size end }
 	tracker_env.ObjectiveTrackerManager = { SetTextSize = function(_, size)
+		if not tracker.in_blizzard then tracker.from_addon = tracker.from_addon + 1 end
 		if size < 12 or size > 20 then return end
 		tracker.line = size
 		tracker.header = size + 2
@@ -1354,7 +1360,9 @@ return function(root, check)
 	function tracker:UpdateSystemSettingTextSize()
 		local size = self:GetSettingValue(text_setting)
 		if size < 12 or size > 20 then return end
+		tracker.in_blizzard = true
 		tracker_env.ObjectiveTrackerManager:SetTextSize(size)
+		tracker.in_blizzard = false
 	end
 	tracker_env.ObjectiveTrackerFrame = tracker
 	check("the quest tracker keeps its text size while the module is off",
@@ -1388,13 +1396,16 @@ return function(root, check)
 	tracker_event("PLAYER_REGEN_ENABLED")
 	check("disabling the tracker restores the current layout size after combat", tracker.line == 15 and tracker.header == 17)
 	tracker_addon.module.set("quest_tracker", "enabled", true)
+	tracker.in_blizzard = true
 	tracker_env.ObjectiveTrackerManager:SetTextSize(17)
+	tracker.in_blizzard = false
 	tracker_addon.module.set("quest_tracker", "enabled", false)
 	check("disabling tracker sizing preserves a later external text size", tracker.line == 17 and tracker.header == 19 and tracker.text_size == 15 and not tracker.dirtied)
 	tracker.line, tracker.header = 24, 26
 	tracker_addon.module.set("quest_tracker", "enabled", true)
 	check("an external tracker size that cannot be restored is left alone", tracker.line == 24 and tracker.header == 26)
 	tracker_addon.module.set("quest_tracker", "enabled", false)
+	check("the quest tracker size never goes through Blizzard's SetTextSize, whose layout would run tainted", tracker.from_addon == 0)
 
 	local posts, lines = {}, {}
 	env2.Enum = { TooltipDataType = { Item = 1, Unit = 2, Spell = 3 } }

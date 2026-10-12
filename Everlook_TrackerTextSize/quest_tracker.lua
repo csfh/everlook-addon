@@ -6,8 +6,8 @@ local previous = {}
 local hooked = {}
 local applying = false
 
--- SetTextSize updates the objective and header fonts without writing the
--- shared Edit Mode layout. Headers use two points more than objective lines.
+-- The objective and header fonts change without writing the shared Edit Mode
+-- layout. Headers use two points more than objective lines.
 local function text_setting()
 	local settings = Enum and Enum.EditModeObjectiveTrackerSetting
 	if type(settings) ~= "table" or type(settings.TextSize) ~= "number" then return end
@@ -22,8 +22,23 @@ local function text_size()
 	return math.floor(value)
 end
 
+-- Blizzard's ObjectiveTrackerManager:SetTextSize sets these two fonts and then
+-- lays the whole tracker out again. Called from an addon, that layout runs
+-- tainted, and the next layout reads what it wrote and fails on a call the game
+-- keeps from tainted code, such as the aura check in the scenario tracker. So
+-- this sets the two fonts itself, which is all that call does to anything an
+-- addon may touch, and the tracker lays itself out at its next update.
+local function set_size(size)
+	local line, header = _G["ObjectiveTrackerFont" .. size], _G["ObjectiveTrackerFont" .. (size + 2)]
+	if not line or not header then return false end
+	if type(ObjectiveTrackerHeaderFont) ~= "table" and type(ObjectiveTrackerHeaderFont) ~= "userdata" then return false end
+	if type(ObjectiveTrackerLineFont.SetFontObject) ~= "function" or type(ObjectiveTrackerHeaderFont.SetFontObject) ~= "function" then return false end
+	ObjectiveTrackerLineFont:SetFontObject(line)
+	ObjectiveTrackerHeaderFont:SetFontObject(header)
+	return true
+end
+
 local function writable(frame, setting)
-	if type(ObjectiveTrackerManager) ~= "table" or type(ObjectiveTrackerManager.SetTextSize) ~= "function" then return false end
 	if type(frame) ~= "table" then return false end
 	if type(frame.IsInitialized) ~= "function" or not frame:IsInitialized() then return false end
 	if type(frame.HasSetting) ~= "function" or not frame:HasSetting(setting) then return false end
@@ -45,7 +60,7 @@ local function update_frame(frame, enabled)
 		previous[frame] = nil
 		if current ~= state.applied then return end
 		applying = true
-		ObjectiveTrackerManager:SetTextSize(state.value)
+		set_size(state.value)
 		applying = false
 		return
 	end
@@ -55,7 +70,7 @@ local function update_frame(frame, enabled)
 	elseif current ~= state.applied then state.value = current end
 	state.applied = text_size()
 	applying = true
-	ObjectiveTrackerManager:SetTextSize(state.applied)
+	set_size(state.applied)
 	applying = false
 end
 
@@ -81,7 +96,7 @@ module.register({
 	addon = addon_name, page = "quests", order = 30,
 	id = id,
 	name = "Quest tracker",
-	description = "Sets the quest tracker objectives to the size on Objective size, from 12 to 20, and keeps the headers two points larger. The change waits until combat ends, the Edit Mode layout stays as it is, a tracker that is missing, not initialized, has no text-size setting, or is already outside that range is left alone, the size does nothing until this is on, and turning this off puts back the size it last took over while the tracker still shows this size.",
+	description = "Sets the quest tracker objectives to the size on Objective size, from 12 to 20, and keeps the headers two points larger. The change waits until combat ends, the Edit Mode layout stays as it is, a tracker that is missing, not initialized, has no text-size setting, or is already outside that range is left alone, the size does nothing until this is on, and turning this off puts back the size it last took over while the tracker still shows this size, and a new size shows fully at the tracker's next update, such as a quest change or a reload.",
 	options = {
 		text_size = { name = "Objective size", default = 16, min = 12, max = 20, step = 1, unit = " pt", description = "Sets the quest tracker objective lines to this many points, from 12 to 20, and the headers stay two points larger. The change waits until combat ends, the Edit Mode layout stays as it is, a tracker that is missing, not initialized, has no text-size setting, or is already outside this size range is left alone, and this number does nothing until Quest tracker is on." },
 	},
