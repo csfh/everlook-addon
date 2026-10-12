@@ -127,12 +127,26 @@ local function build()
 end
 
 -- Timed into the load trace: bytes too, where the client says.
-EventUtil.ContinueOnPlayerLogin(function()
+local built = false
+local function ensure()
+	if built then return end
+	built = true
 	local trace = Everlook.trace
 	if not trace then return build() end
 	local before = collectgarbage and collectgarbage("count")
 	trace.span("settings", build)
 	if before then trace.count("settings_kb", math.floor(collectgarbage("count") - before)) end
+end
+
+-- Nobody opens the page during the loading screen, and building it takes
+-- milliseconds and over a megabyte, so it waits for a coming frame once every
+-- module has registered. Opening the page first builds it on the spot.
+EventUtil.ContinueOnPlayerLogin(function()
+	if Everlook.sched and Everlook.world and Everlook.world.defer then
+		Everlook.world.defer("settings", ensure)
+	else
+		ensure()
+	end
 end)
 
 local function showing_everlook()
@@ -148,6 +162,7 @@ end
 -- The minimap icon and /everlook both come here: open the Everlook page, or
 -- close the settings window if it is already showing Everlook or one of its subpages.
 function Everlook.settings.toggle()
+	ensure()
 	if not category then return end
 	if showing_everlook() then
 		HideUIPanel(SettingsPanel)
