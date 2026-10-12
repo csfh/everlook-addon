@@ -7,7 +7,9 @@ local id = "bags"
 
 -- Stock anchors the grid's bottom right corner 4 pixels above the money frame.
 local GRID_OFFSET_Y = 4
-local LABEL_FONT = "NumberFontNormalSmall"
+-- Stock draws a stack count in this font, 5 pixels in from the bottom right. Gear never
+-- stacks, so the item level takes the same place and cannot collide with a count.
+local LABEL_FONT = "NumberFontNormal"
 
 local hooked = false
 -- The size stock gave the frame on its last layout pass, and whether this
@@ -75,7 +77,7 @@ local function show_labels(frame, wanted)
 			if not text then
 				text = button:CreateFontString(nil, "OVERLAY", LABEL_FONT)
 				text:SetDrawLayer("OVERLAY", 7)
-				text:SetPoint("TOP", button, "TOP", 0, -2)
+				text:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -5, 2)
 				labels[button] = text
 			end
 			local color = ColorManager.GetColorDataForItemQuality(quality)
@@ -137,7 +139,7 @@ module.register({
 	id = id, name = "Bags",
 	description = "Adds to the combined bag, which needs Combine all bags to be on in the game's settings. It keeps the bag's look, and its slots, search box and sort button stay the game's own. Turning this off puts the grid back as the game draws it, and a choice here does nothing until this is on.",
 	options = {
-		item_level = { name = "Show item level on gear", default = false, description = "Writes the item level of each weapon and piece of armor, including rings, trinkets and cloaks, at the top of its slot in the color of its quality. Other items show nothing, and turning this off removes the numbers." },
+		item_level = { name = "Show item level on gear", default = false, description = "Writes the item level of each weapon and piece of armor, including rings, trinkets and cloaks, at the bottom right of its slot, where a stack count would sit, in the color of its quality. Other items show nothing, and turning this off removes the numbers." },
 		columns = { name = "Columns", default = 10, min = 10, max = 16, step = 1, description = "How many slots sit in each row of the combined bag. Ten is how the game draws it, and more columns make the bag wider and shorter." },
 	},
 	apply = apply,

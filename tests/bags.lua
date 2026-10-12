@@ -239,7 +239,10 @@ return function(root, check)
 		check("item level is off by default and adds no text", #frame.buttons[1].texts == 0)
 		addon.module.set("bags", "item_level", true)
 		check("turning item level on labels gear at once", frame.buttons[1].texts[1] and frame.buttons[1].texts[1].content == "276" and frame.buttons[1].texts[1].shown)
-		check("the label uses a stock number font", frame.buttons[1].texts[1].template == "NumberFontNormalSmall")
+		check("the label uses the stock stack count's font", frame.buttons[1].texts[1].template == "NumberFontNormal")
+		local point = frame.buttons[1].texts[1].point
+		check("the label sits where the stack count does, at the bottom right of the slot",
+			point[1] == "BOTTOMRIGHT" and point[2] == frame.buttons[1] and point[3] == "BOTTOMRIGHT" and point[4] == -5 and point[5] == 2)
 		check("the label takes the item's quality colour", frame.buttons[1].texts[1].color[1] == 0.4 and frame.buttons[1].texts[1].color[2] == 0.5)
 		check("an item that is not gear has no label", frame.buttons[2].texts[1] == nil or not frame.buttons[2].texts[1].shown)
 		check("a weapon is labelled", frame.buttons[3].texts[1].content == "201")
