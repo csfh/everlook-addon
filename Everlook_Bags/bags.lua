@@ -45,6 +45,11 @@ local function secret(value)
 	return issecretvalue and issecretvalue(value)
 end
 
+-- The scale the game gave the bag on its last anchoring pass, and whether this module has
+-- changed it since. A share of the game's scale is taken from the first, never from the second.
+local stock_scale
+local scaled = false
+
 local function combined_bag()
 	local frame = _G.ContainerFrameCombinedBags
 	if type(frame) ~= "table" then return nil end
@@ -377,11 +382,34 @@ end
 
 -- The hooks run after stock and cannot be taken off, so they check the
 -- module is on each time. Methods stock owns are never replaced or called.
+local function scale_share()
+	return module.get(id, "scale") / 100
+end
+
+-- Puts the bag at a share of the game's scale, or back at the game's own.
+local function set_scale(frame, share)
+	if not scaled then stock_scale = frame:GetScale() end
+	if type(stock_scale) ~= "number" then return end
+	if share == 1 and not scaled then return end
+	frame:SetScale(stock_scale * share)
+	scaled = share ~= 1
+end
+
+-- The game has just set the bag's scale and anchors, and scale is part of both.
+local function on_anchors()
+	local frame = combined_bag()
+	if not frame or type(frame.GetScale) ~= "function" or type(frame.SetScale) ~= "function" then return end
+	scaled = false
+	if not module.enabled(id) then return end
+	set_scale(frame, scale_share())
+end
+
 local function install(frame)
 	if hooked or type(hooksecurefunc) ~= "function" then return end
 	if type(frame.UpdateItemLayout) ~= "function" or type(frame.UpdateItems) ~= "function" then return end
 	hooksecurefunc(frame, "UpdateItemLayout", on_layout)
 	hooksecurefunc(frame, "UpdateItems", on_items)
+	if type(_G.UpdateContainerFrameAnchors) == "function" then hooksecurefunc("UpdateContainerFrameAnchors", on_anchors) end
 	hooked = true
 end
 
@@ -407,6 +435,9 @@ local function apply(enabled)
 		changed = false
 		return
 	end
+	if type(frame.GetScale) == "function" and type(frame.SetScale) == "function" then
+		set_scale(frame, enabled and scale_share() or 1)
+	end
 	if not changed then remember_stock_size(frame) end
 	local columns = enabled and module.get(id, "columns") or layout.STOCK_COLUMNS
 	local moved = grouped or columns ~= layout.STOCK_COLUMNS
@@ -425,6 +456,7 @@ module.register({
 		item_level = { name = "Show item level on gear", default = false, description = "Writes the item level of each weapon and piece of armor, including rings, trinkets and cloaks, at the bottom right of its slot, where a stack count would sit, in the color of its quality. Other items show nothing, and turning this off removes the numbers." },
 		junk_marker = { name = "Mark items as junk", default = false, description = "Adds a coin button to the title row of the combined bag. Click it, then click items to mark or unmark them as junk, and click it again to stop. A marked item shows the junk coin, and every copy of that item is marked. Sell junk can sell marked items at a vendor when you turn that on there. Turning this off hides the button and the coins and keeps your marks." },
 		group = { name = "Group items by type", default = false, description = "Sorts the slots of the combined bag into sections under headers: The Armory for weapons and armor, Adventure Prep for consumables, gems and item enhancements, Professions for trade goods, reagents and recipes, Miscellaneous for the rest, and Junk for grey items and, when Mark items as junk is on, the items you marked. Empty slots wait at the bottom as Free Space. The bag keeps its look, and its search box and sort button work as before, though sorting moves items between slots and the sections follow. Turning this off puts the grid back." },
+		scale = { name = "Window scale", default = 100, min = 70, max = 110, step = 5, description = "Makes the combined bag a share of the size the game gives it, in percent. The game still shrinks a bag that does not fit the screen, and this goes on top of that. A hundred is how the game draws it." },
 		sidebar = { name = "Section list", default = false, description = "Adds a list of the sections to the left of the grouped bag, a row for everything and one for each section with its name and how many slots it holds. Click a row to show only that section, and click it again, or the row for everything, to show them all. The counts do not change with the search box. It needs Group items by type to be on, and turning this off shows every section again." },
 		fold = { name = "Fold sections", default = false, description = "Click the header of a section in the grouped bag to fold it down to its header, which keeps its count and shows an arrow, and click again to open it. Which sections are folded is saved. It needs Group items by type to be on, and turning this off opens every section and keeps the folds." },
 		pins = { name = "Pinned items", default = false, description = "Middle-click an item in the combined bag to pin it, and middle-click it again to unpin it. Every copy of a pinned item sits in a Pinned section at the top of the bag, and the pin stays after you log out. It needs Group items by type to be on, and turning this off puts the items back under their types and keeps the pins." },

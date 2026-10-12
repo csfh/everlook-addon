@@ -68,6 +68,14 @@ return function(root, check)
 		function tooltip:Hide() self.shown = false end
 		env.GameTooltip = tooltip
 		env.hooksecurefunc = function(target, method, callback)
+			if type(target) == "string" then
+				local original, hook = env[target], method
+				env[target] = function(...)
+					original(...)
+					hook(...)
+				end
+				return
+			end
 			local original = target[method]
 			target[method] = function(self, ...)
 				original(self, ...)
@@ -349,6 +357,8 @@ return function(root, check)
 		check("columns start at the stock ten", columns and columns.default == 10)
 		check("columns run from ten to sixteen", columns and columns.min == 10 and columns.max == 16 and columns.step == 1)
 		check("it names its own addon", found and found.addon == "Everlook_Bags")
+		local scale = found and found.options.scale
+		check("window scale starts at a hundred percent and runs from seventy to a hundred and ten", scale and scale.default == 100 and scale.min == 70 and scale.max == 110 and scale.step == 5)
 		check("pinned items start off", found and found.options.pins and found.options.pins.default == false)
 		check("recent items start off", found and found.options.recent and found.options.recent.default == false)
 		check("it listens for the world loading and for the bags changing", found and found.events and found.events[1] == "PLAYER_ENTERING_WORLD" and found.events[2] == "BAG_UPDATE_DELAYED")
@@ -362,6 +372,8 @@ return function(root, check)
 		function frame:GetFrameLevel() return 5 end
 		function frame:Hide() self.shown_flag = false; if self.hooks.OnHide then self.hooks.OnHide(self) end end
 		function frame:SetSize(width, height) self.width, self.height = width, height end
+		function frame:SetScale(scale) self.scale = scale end
+		function frame:GetScale() return self.scale end
 		function frame:GetWidth() return self.width end
 		function frame:GetHeight() return self.height end
 		function frame:IsShown() return true end
@@ -418,8 +430,11 @@ return function(root, check)
 			local entry = gear and gear[index]
 			if entry then info[index] = { itemID = 1000 + index, hyperlink = "link" .. index, quality = entry.quality, class = entry.class, level = entry.level, stackCount = 1 } end
 		end
+		frame.scale = 0.9
 		local env_extra = {
 			ContainerFrameCombinedBags = frame,
+			-- What stock does on opening: it sets the scale that fits the screen.
+			UpdateContainerFrameAnchors = function() frame.scale = frame.stock_scale or 0.9 end,
 			C_Container = {
 				GetContainerItemInfo = function(bag, slot) if bag == 0 then return info[slot] end end,
 				GetContainerNumSlots = function(bag) return bag == 0 and slot_total or 0 end,
@@ -773,6 +788,40 @@ return function(root, check)
 		addon.module.set("bags", "group", true)
 		addon.module.set("bags", "enabled", false)
 		check("turning the module off hides the list", not list.shown and frame.width == 400)
+	end
+	do
+		-- Window scale: a share of the size the game gives the bag.
+		local frame, extra = stand_in(4)
+		local addon, env, loaded = load_bags(extra)
+		loaded["Everlook_Bags"]()
+		addon.module.set("bags", "enabled", true)
+		check("at a hundred percent the game's scale is left alone", frame.scale == 0.9)
+		addon.module.set("bags", "scale", 80)
+		check("eighty percent makes the open bag eighty percent of the game's scale", math.abs(frame.scale - 0.72) < 1e-9)
+		env.UpdateContainerFrameAnchors()
+		check("when the game sets its scale again, ours goes over it, without piling up", math.abs(frame.scale - 0.72) < 1e-9)
+		frame.stock_scale = 0.5
+		env.UpdateContainerFrameAnchors()
+		check("a different scale from the game is taken as the new base", math.abs(frame.scale - 0.4) < 1e-9)
+		frame.stock_scale = nil
+		env.UpdateContainerFrameAnchors()
+		addon.module.set("bags", "scale", 110)
+		check("a new choice is taken from the game's scale, not the last one", math.abs(frame.scale - 0.99) < 1e-9)
+		addon.module.set("bags", "scale", 100)
+		check("a hundred percent gives the game's scale back", frame.scale == 0.9)
+		addon.module.set("bags", "scale", 70)
+		addon.module.set("bags", "enabled", false)
+		check("turning the module off gives the game's scale back", frame.scale == 0.9)
+		env.UpdateContainerFrameAnchors()
+		check("a disabled module leaves what the game sets", frame.scale == 0.9)
+	end
+	do
+		local frame, extra = stand_in(4)
+		extra.UpdateContainerFrameAnchors = nil
+		local addon, _, loaded = load_bags(extra)
+		loaded["Everlook_Bags"]()
+		addon.module.set("bags", "enabled", true)
+		check("without the game's anchoring function a scale choice does not fail", pcall(addon.module.set, "bags", "scale", 80))
 	end
 	do
 		-- Folding: a click on a header folds its section down to the header.
