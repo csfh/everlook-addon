@@ -197,6 +197,18 @@ return function(root, check, island_world)
 	check("a setting this client does not have is left alone, and the others still apply", cvars.nameplateOverlapV == nil and cvars.nameplateMotion == "1" and cvars.nameplateOverlapH == "0.4")
 	addon.module.set("nameplates", "stacking", false)
 
+	-- A friendly pet is given a plate, and the game's own setting is put back.
+	cvars.nameplateShowFriendlyPets = "0"
+	addon.module.set("nameplates", "pets", false)
+	addon.module.set("nameplates", "pets", true)
+	check("friendly pets turn the game's pet nameplates on and keep what it was",
+		cvars.nameplateShowFriendlyPets == "1" and env.EverlookDB.nameplates_cvars.nameplateShowFriendlyPets == "0")
+	addon.module.set("nameplates", "pets", false)
+	check("turning pets off puts the setting back as it was", cvars.nameplateShowFriendlyPets == "0"
+		and (env.EverlookDB.nameplates_cvars == nil or env.EverlookDB.nameplates_cvars.nameplateShowFriendlyPets == nil))
+	addon.module.set("nameplates", "pets", true)
+	cvars.nameplateShowFriendlyPets = nil
+
 	-- Off puts everything back.
 	addon.module.set("nameplates", "enabled", false)
 	check("turning the view off puts every name back and hides every mark", made.a1.UnitFrame.name.justify == "CENTER" and made.a3.UnitFrame.textures[1].shown == false and made.a1.UnitFrame.lines[1].shown == false)

@@ -331,6 +331,7 @@ local PLAYER_NAMES_CVAR = "nameplateShowOnlyNameForFriendlyPlayerUnits"
 local function wanted_cvars()
 	local wanted = {}
 	if module.get(id, "player_bars") then wanted[PLAYER_NAMES_CVAR] = "0" end
+	if module.get(id, "pets") then wanted.nameplateShowFriendlyPets = "1" end
 	if module.get(id, "stacking") then
 		wanted.nameplateMotion = "1"
 		wanted.nameplateOverlapH = tostring(module.get(id, "spacing_h"))
@@ -377,6 +378,7 @@ module.register({
 		stacking = { name = "Stack overlapping nameplates", default = true, description = "Tells the game to push nameplates apart so they do not sit on top of each other in a crowd. Turning this off, or Nameplates off, puts the game's setting back as it was." },
 		spacing_h = { name = "Space between stacked plates, sideways", default = 0.8, min = 0.2, max = 2, step = 0.1, description = "Sets how much of a plate's width another may overlap before the game moves it, from 0.2 to 2, in steps of 0.1. A smaller number keeps plates farther apart. This does nothing until Stack overlapping nameplates is on, and the game may keep it inside its own limits." },
 		spacing_v = { name = "Space between stacked plates, up and down", default = 1.1, min = 0.5, max = 3, step = 0.1, description = "Sets how far apart stacked plates are pushed up and down, as a multiple of a plate's height, from 0.5 to 3, in steps of 0.1. A larger number keeps plates farther apart. This does nothing until Stack overlapping nameplates is on, and the game may keep it inside its own limits." },
+		pets = { name = "Nameplates on friendly pets", default = true, description = "Turns on the game's setting that gives a friendly pet, such as a hunter's or a warlock's, a nameplate. Without it a pet shows only the game's own name and owner in the world, which an addon cannot restyle. With it a pet gets the same layout as every other plate. Turning this off, or Nameplates off, puts the setting back as it was." },
 		player_bars = { name = "Health bars on friendly players", default = false, description = "Turns off the game's setting that shows a friendly player with only a name, so a friendly player has a health bar like every other plate and the name lines up with it. Turning this off, or Nameplates off, puts the setting back as it was." },
 	},
 	apply = apply_module,
