@@ -105,7 +105,12 @@ return function(root, check)
 				for line in io.lines(root .. "/" .. folder .. "/" .. folder .. ".toc") do
 					local file = line:match("^([%w_]+)%.lua%s*$")
 					if file then
-						local handle = assert(io.open(root .. "/" .. folder .. "/" .. file .. ".lua", "r"))
+						-- sign.lua is generated and Git-ignored, so a fresh checkout has only the template.
+						local handle = io.open(root .. "/" .. folder .. "/" .. file .. ".lua", "r")
+						if not handle and file == "sign" then
+							handle = io.open(root .. "/" .. folder .. "/sign_template.lua", "r")
+						end
+						handle = assert(handle)
 						local text = handle:read("*a")
 						handle:close()
 						if text:find('collectgarbage%("collect"%)') or text:find("collectgarbage%('collect'%)") or text:find("collectgarbage%(%)") then
