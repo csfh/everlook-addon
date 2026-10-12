@@ -50,4 +50,37 @@ function categories.of(class_id, junk, pinned, recent)
 	return preset_of(class_id) or "misc"
 end
 
+-- Sections that split by the expansion their items belong to. Pinned, recent,
+-- junk and free space are about something other than what an item is.
+local NESTED = { armory = true, prep = true, professions = true, misc = true }
+
+local function expansion_valid(expansion)
+	return not secret(expansion) and type(expansion) == "number" and expansion >= 0
+		and expansion < math.huge and expansion == math.floor(expansion)
+end
+
+-- The key of the section for an item of this section's kind from this expansion,
+-- or the section's own key when it does not nest or the expansion is not known.
+function categories.sub_key(key, expansion)
+	if not NESTED[key] or not expansion_valid(expansion) then return key end
+	return key .. ":" .. expansion
+end
+
+-- The title to match, naming the expansion when the game has a name for it.
+function categories.sub_title(key, title, expansion)
+	if not NESTED[key] or not expansion_valid(expansion) then return title end
+	local names = _G
+	local name = type(names) == "table" and names["EXPANSION_NAME" .. expansion]
+	if type(name) ~= "string" or name == "" then return title end
+	return title .. ": " .. name
+end
+
+-- Orders sections of one kind: the newer expansion first, none last.
+function categories.newer_first(first, second)
+	if first == second then return false end
+	if first == nil then return false end
+	if second == nil then return true end
+	return first > second
+end
+
 Everlook.bags_categories = categories

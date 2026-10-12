@@ -259,8 +259,23 @@ return function(root, check)
 		check("junk beats the item's type", categories.of(4, true) == "junk" and categories.of(0, true) == "junk" and categories.of(nil, true) == "junk")
 		check("anything but junk of exactly true is not junk", categories.of(4, nil) == "armory" and categories.of(4, "yes") == "armory" and categories.of(4, 1) == "armory")
 		check("an empty slot is free space", categories.FREE == "free")
+		-- Nesting by expansion.
+		local nest = load_bags({ EXPANSION_NAME0 = "Classic", EXPANSION_NAME9 = "Dragonflight", EXPANSION_NAME10 = "The War Within" }).bags_categories
+		check("a section of a type nests by expansion", nest.sub_key("armory", 9) == "armory:9" and nest.sub_key("misc", 0) == "misc:0")
+		check("pinned, recent, junk and free space do not nest", nest.sub_key("pinned", 9) == "pinned" and nest.sub_key("recent", 9) == "recent"
+			and nest.sub_key("junk", 9) == "junk" and nest.sub_key("free", 9) == "free")
+		for label, bad in pairs({ none = false, negative = -1, fraction = 1.5, text = "9", infinity = math.huge }) do
+			check("an expansion that is " .. label .. " does not nest", nest.sub_key("armory", bad) == "armory")
+		end
+		check("no expansion does not nest", nest.sub_key("armory", nil) == "armory")
+		check("a nested title names the expansion", nest.sub_title("armory", "The Armory", 9) == "The Armory: Dragonflight" and nest.sub_title("professions", "Professions", 10) == "Professions: The War Within")
+		check("an expansion the game has no name for adds nothing", nest.sub_title("armory", "The Armory", 42) == "The Armory" and nest.sub_title("armory", "The Armory", nil) == "The Armory")
+		check("a title that is not nested stays", nest.sub_title("junk", "Junk", 9) == "Junk" and nest.sub_title("free", "Free Space", 9) == "Free Space")
+		check("a newer expansion comes first and none comes last", nest.newer_first(10, 9) == true and nest.newer_first(9, 10) == false and nest.newer_first(9, nil) == true
+			and nest.newer_first(nil, 9) == false and nest.newer_first(nil, nil) == false and nest.newer_first(9, 9) == false)
 		local secret = {}
 		local guarded = load_bags({ issecretvalue = function(value) return value == secret end }).bags_categories
+		check("a secret expansion does not nest", guarded.sub_key("armory", secret) == "armory")
 		check("a secret class is miscellaneous", guarded.of(secret, false) == "misc")
 		check("a secret class that is junk is still junk", guarded.of(secret, true) == "junk")
 		local no_enum = load_bags({ Enum = false }).bags_categories
@@ -428,7 +443,7 @@ return function(root, check)
 		local info = {}
 		for index = 1, slot_total do
 			local entry = gear and gear[index]
-			if entry then info[index] = { itemID = 1000 + index, hyperlink = "link" .. index, quality = entry.quality, class = entry.class, level = entry.level, stackCount = 1 } end
+			if entry then info[index] = { itemID = 1000 + index, hyperlink = "link" .. index, quality = entry.quality, class = entry.class, level = entry.level, expansion = entry.expansion, stackCount = 1 } end
 		end
 		frame.scale = 0.9
 		local env_extra = {
@@ -442,6 +457,10 @@ return function(root, check)
 			NUM_BAG_SLOTS = 4,
 			C_Item = {
 				GetItemInfoInstant = function(item_id) return item_id, "", "", "", 0, info[item_id - 1000].class, 0 end,
+				GetItemInfo = function(item_id)
+					local entry = info[item_id - 1000]
+					return "item", "link", 1, 1, 1, "", "", 1, "", 0, 0, entry.class, 0, 0, entry.expansion
+				end,
 				GetDetailedItemLevelInfo = function(link) return info[tonumber(link:match("%d+"))].level end,
 			},
 			ColorManager = { GetColorDataForItemQuality = function(quality) return { r = quality / 10, g = 0.5, b = 0.25 } end },
@@ -822,6 +841,42 @@ return function(root, check)
 		loaded["Everlook_Bags"]()
 		addon.module.set("bags", "enabled", true)
 		check("without the game's anchoring function a scale choice does not fail", pcall(addon.module.set, "bags", "scale", 80))
+	end
+	do
+		-- Nest by expansion: each type's section splits by the expansion its items belong to, newest first.
+		local entries = {
+			{ class = 4, quality = 4, level = 270, expansion = 10 }, { class = 4, quality = 4, level = 270, expansion = 9 },
+			{ class = 4, quality = 4, level = 270, expansion = 10 }, { class = 0, quality = 1, level = 1, expansion = 0 },
+		}
+		local names = { EXPANSION_NAME0 = "Classic", EXPANSION_NAME9 = "Dragonflight", EXPANSION_NAME10 = "The War Within" }
+		local addon, env, frame, info = group_setup(6, entries, names)
+		addon.module.set("bags", "group", true)
+		check("nest by expansion starts off", (function()
+			for _, module in ipairs(addon.module.modules) do
+				if module.id == "bags" then return module.options.expansions and module.options.expansions.default == false end
+			end
+		end)())
+		check("with it off a type is one section", at(frame.buttons[2], -336, 142) and at(frame.buttons[3], -294, 142) and header_named(env, frame, "The Armory").shown)
+		addon.module.set("bags", "expansions", true)
+		check("the newest expansion's items are on top, in stock order", at(frame.buttons[1], -378, 213) and at(frame.buttons[3], -336, 213))
+		check("the next expansion is below them", at(frame.buttons[2], -378, 142))
+		check("another type follows, and free space is last", at(frame.buttons[4], -378, 71) and at(frame.buttons[5], -378, 0) and at(frame.buttons[6], -336, 0))
+		check("each nested section has its own header and count", header_named(env, frame, "The Armory: The War Within").texts[2].content == "2"
+			and header_named(env, frame, "The Armory: Dragonflight").texts[2].content == "1" and header_named(env, frame, "Adventure Prep: Classic").texts[2].content == "1")
+		check("the one-section header of a type is gone", not (header_named(env, frame, "The Armory") and header_named(env, frame, "The Armory").shown))
+		check("free space keeps its plain title", header_named(env, frame, "Free Space").shown)
+		check("the frame is as tall as the nested sections", frame.height == 600 + 274 - 37)
+		addon.module.set("bags", "expansions", false)
+		check("turning it off makes a type one section again and hides the nested headers",
+			at(frame.buttons[3], -294, 142) and not header_named(env, frame, "The Armory: The War Within").shown and header_named(env, frame, "The Armory").shown)
+
+		-- Items the game cannot place in an expansion stay in the type's own section, after the nested ones.
+		local second, second_env, second_frame = group_setup(2, { { class = 4, quality = 4, level = 270 }, { class = 4, quality = 4, level = 270, expansion = 9 } }, names)
+		second.module.set("bags", "group", true)
+		second.module.set("bags", "expansions", true)
+		check("an item with no expansion sits under the type's own header, last", at(second_frame.buttons[2], -378, 71) and at(second_frame.buttons[1], -378, 0))
+		local third, third_env, third_frame = group_setup(2, { { class = 4, quality = 4, level = 270, expansion = 9 }, { class = 4, quality = 4, level = 270, expansion = 9 } }, { C_Item = false })
+		check("without the item lookup nesting does not fail", pcall(third.module.set, "bags", "group", true) and pcall(third.module.set, "bags", "expansions", true))
 	end
 	do
 		-- Folding: a click on a header folds its section down to the header.

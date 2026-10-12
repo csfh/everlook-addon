@@ -118,6 +118,12 @@ local function section_of(slot, pinned_data)
 	return categories.of(class_id, grey or Everlook.bags.is_junk(item_id), pinned, arrived), item_id
 end
 
+-- The expansion an item belongs to, which only the full item lookup knows, or nil.
+local function expansion_of(item_id)
+	if type(C_Item.GetItemInfo) ~= "function" then return nil end
+	return (select(15, C_Item.GetItemInfo(item_id)))
+end
+
 -- Lays the slots out in sections under headers, in the order stock keeps them
 -- in within each section. It reports whether it could: without the container
 -- API nothing is known about the items, and the caller lays out a flat grid.
@@ -134,10 +140,17 @@ local function place_grouped(frame, columns)
 	local pinned_data = module.get(id, "pins") == true and pins.data() or nil
 	local fold_on = module.get(id, "fold") == true
 	local fold_data = fold_on and folds.data() or nil
+	local nesting = module.get(id, "expansions") == true
 	for index, slot in ipairs(slots) do
 		slot.index = index
-		local key, item_id = section_of(slot, pinned_data)
-		slot.item_id = item_id
+		local base, item_id = section_of(slot, pinned_data)
+		local key = base
+		slot.item_id, slot.base = item_id, base
+		if nesting and item_id then
+			local expansion = expansion_of(item_id)
+			key = categories.sub_key(base, expansion)
+			if key ~= base then slot.expansion = expansion end
+		end
 		members[key] = members[key] or {}
 		members[key][#members[key] + 1] = slot
 	end
@@ -153,11 +166,23 @@ local function place_grouped(frame, columns)
 	-- A section that has emptied out cannot be shown alone, so everything is shown again.
 	if solo and not (members[solo] and #members[solo] > 0) then solo = nil end
 	local shown_alone = list_on and solo or nil
+	-- Each kind of section, and under it the expansions its items come from, newest first.
 	local wanted = {}
 	for _, section in ipairs(categories.SECTIONS) do
-		local state = fold_on and folds.is_folded(fold_data, section.key) and "collapsed" or nil
-		if shown_alone then state = section.key ~= shown_alone and "hidden" or nil end
-		wanted[#wanted + 1] = { key = section.key, title = section.title, count = members[section.key] and #members[section.key] or 0, state = state }
+		local keys = {}
+		for key, list in pairs(members) do
+			if list[1].base == section.key then keys[#keys + 1] = key end
+		end
+		table.sort(keys, function(first, second)
+			return categories.newer_first(members[first][1].expansion, members[second][1].expansion)
+		end)
+		for _, key in ipairs(keys) do
+			local state = fold_on and folds.is_folded(fold_data, key) and "collapsed" or nil
+			if shown_alone then state = key ~= shown_alone and "hidden" or nil end
+			wanted[#wanted + 1] = {
+				key = key, title = categories.sub_title(section.key, section.title, members[key][1].expansion), count = #members[key], state = state,
+			}
+		end
 	end
 	local grouped = layout.grouped(wanted, columns)
 	unpark_all()
@@ -183,12 +208,9 @@ local function place_grouped(frame, columns)
 	local list_rows
 	if list_on then
 		local entries, items = {}, 0
-		for _, section in ipairs(categories.SECTIONS) do
-			local count = members[section.key] and #members[section.key] or 0
-			if count > 0 then
-				entries[#entries + 1] = { key = section.key, title = section.title, count = count }
-				if section.key ~= categories.FREE then items = items + count end
-			end
+		for _, section in ipairs(wanted) do
+			entries[#entries + 1] = { key = section.key, title = section.title, count = section.count }
+			if section.key ~= categories.FREE then items = items + section.count end
 		end
 		table.insert(entries, 1, { key = sidebar.ALL, title = "All Items", count = items })
 		sidebar.show(frame, frame.MoneyFrame, GRID_OFFSET_Y, grouped.width, entries, shown_alone or sidebar.ALL, on_solo)
@@ -457,6 +479,7 @@ module.register({
 		junk_marker = { name = "Mark items as junk", default = false, description = "Adds a coin button to the title row of the combined bag. Click it, then click items to mark or unmark them as junk, and click it again to stop. A marked item shows the junk coin, and every copy of that item is marked. Sell junk can sell marked items at a vendor when you turn that on there. Turning this off hides the button and the coins and keeps your marks." },
 		group = { name = "Group items by type", default = false, description = "Sorts the slots of the combined bag into sections under headers: The Armory for weapons and armor, Adventure Prep for consumables, gems and item enhancements, Professions for trade goods, reagents and recipes, Miscellaneous for the rest, and Junk for grey items and, when Mark items as junk is on, the items you marked. Empty slots wait at the bottom as Free Space. The bag keeps its look, and its search box and sort button work as before, though sorting moves items between slots and the sections follow. Turning this off puts the grid back." },
 		scale = { name = "Window scale", default = 100, min = 70, max = 110, step = 5, description = "Makes the combined bag a share of the size the game gives it, in percent. The game still shrinks a bag that does not fit the screen, and this goes on top of that. A hundred is how the game draws it." },
+		expansions = { name = "Nest by expansion", default = false, description = "Splits the Armory, Adventure Prep, Professions and Miscellaneous sections by the expansion their items belong to, the newest first, each with its own header. An item the game cannot place in an expansion stays under the section's own header, after the others. It needs Group items by type to be on, and turning this off makes each of them one section again." },
 		sidebar = { name = "Section list", default = false, description = "Adds a list of the sections to the left of the grouped bag, a row for everything and one for each section with its name and how many slots it holds. Click a row to show only that section, and click it again, or the row for everything, to show them all. The counts do not change with the search box. It needs Group items by type to be on, and turning this off shows every section again." },
 		fold = { name = "Fold sections", default = false, description = "Click the header of a section in the grouped bag to fold it down to its header, which keeps its count and shows an arrow, and click again to open it. Which sections are folded is saved. It needs Group items by type to be on, and turning this off opens every section and keeps the folds." },
 		pins = { name = "Pinned items", default = false, description = "Middle-click an item in the combined bag to pin it, and middle-click it again to unpin it. Every copy of a pinned item sits in a Pinned section at the top of the bag, and the pin stays after you log out. It needs Group items by type to be on, and turning this off puts the items back under their types and keeps the pins." },
