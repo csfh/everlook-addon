@@ -222,6 +222,22 @@ return function(root, check)
 		check("repeat counts allocate nothing", grown < 2)
 	end
 
+	-- The drop scanner hears the player's own casts and no one else's.
+	do
+		local plain, unit_events = {}, {}
+		load(function(env)
+			local make = env.CreateFrame
+			env.CreateFrame = function()
+				local frame = make()
+				function frame:RegisterEvent(event) plain[event] = true end
+				function frame:RegisterUnitEvent(event, unit) unit_events[event] = unit end
+				return frame
+			end
+		end)
+		check("casts are registered for the player only", unit_events.UNIT_SPELLCAST_SENT == "player" and unit_events.UNIT_SPELLCAST_FAILED == "player"
+			and plain.UNIT_SPELLCAST_SENT == nil and plain.LOOT_OPENED == true)
+	end
+
 	-- The manifest, the digests and the signature agree with the segments.
 	do
 		local first_snapshot = #snapshots

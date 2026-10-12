@@ -174,10 +174,14 @@ end
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("LOOT_OPENED")
-frame:RegisterEvent("UNIT_SPELLCAST_SENT")
-frame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-frame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
-frame:RegisterEvent("UNIT_SPELLCAST_FAILED")
+-- Only the player's own casts matter, so the client sends no one else's.
+for _, event in ipairs({ "UNIT_SPELLCAST_SENT", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED" }) do
+	if frame.RegisterUnitEvent then
+		frame:RegisterUnitEvent(event, "player")
+	else
+		frame:RegisterEvent(event)
+	end
+end
 local CAST_PHASES = {
 	UNIT_SPELLCAST_SENT = "sent",
 	UNIT_SPELLCAST_SUCCEEDED = "landed",
