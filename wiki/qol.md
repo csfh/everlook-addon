@@ -40,7 +40,7 @@ Click the minimap icon or type `/everlook` to open the Everlook page, and again 
 
 Hold Shift when opening a vendor, quest, or loot window, or receiving an invite, to pause the options that act for you. Shift also stops a running junk sale. Each of those options can be turned off on its own.
 
-Font changes wait until combat ends. Turning Fonts off restores the font paths and sizes captured before replacement. Text that inherited a font Fonts had already replaced goes back to the font it inherited. Both fonts ship with their licences in `assets/`.
+Font changes wait until combat ends. Fonts walks every font and frame once for a login or a reload, then once more only after another addon loads, after a pass was held up by combat, or when the size changes, and the passes asked for in the same burst of loads run as one in a coming frame. A zone change or a combat end with nothing held up walks nothing, and text already set to the right font is not set again. Turning Fonts off restores the font paths and sizes captured before replacement. Text that inherited a font Fonts had already replaced goes back to the font it inherited. Both fonts ship with their licences in `assets/`.
 
 ## Wiring
 

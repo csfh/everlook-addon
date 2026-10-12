@@ -1161,6 +1161,50 @@ return function(root, check)
 		regions[#regions + 1] = late_text
 		event2("ADDON_LOADED")
 		check("text that appears later gets Expressway with the adjustment once", late_text.path == expressway and late_text.size == 12)
+		do
+			local walks, enumerate = 0, env2.EnumerateFrames
+			env2.EnumerateFrames = function(previous)
+				if not previous then walks = walks + 1 end
+				return enumerate(previous)
+			end
+			addon2.module.set("fonts", "size_offset", 2)
+			event2("PLAYER_ENTERING_WORLD", false, false)
+			event2("PLAYER_ENTERING_WORLD", false, false)
+			check("a zone change walks no frames again", walks == 0)
+			event2("PLAYER_ENTERING_WORLD", true, false)
+			check("a login or a reload walks them once", walks == 1)
+			walks = 0
+			env2.InCombatLockdown = function() return true end
+			event2("ADDON_LOADED")
+			check("a pass in combat waits", walks == 0)
+			env2.InCombatLockdown = function() return false end
+			event2("PLAYER_REGEN_ENABLED")
+			check("the pass blocked by combat runs when it ends", walks == 1)
+			walks = 0
+			event2("PLAYER_REGEN_ENABLED")
+			event2("PLAYER_REGEN_ENABLED")
+			check("a combat end with nothing blocked walks no frames", walks == 0)
+			local sets = 0
+			local font_set, region_set = font.SetFont, region.SetFont
+			font.SetFont = function(...) sets = sets + 1; return font_set(...) end
+			region.SetFont = function(...) sets = sets + 1; return region_set(...) end
+			event2("PLAYER_ENTERING_WORLD", true, false)
+			check("a second pass sets no font that is already right", sets == 0)
+			font.SetFont, region.SetFont = font_set, region_set
+			-- Loads in one burst are answered by one pass.
+			walks = 0
+			local queued = {}
+			local world = addon2.world
+			addon2.world = { defer = function(key, fn) queued[key] = fn end }
+			event2("ADDON_LOADED")
+			event2("ADDON_LOADED")
+			event2("ADDON_LOADED")
+			check("a burst of loaded addons asks for one pass", walks == 0 and queued.fonts ~= nil)
+			queued.fonts()
+			check("and that pass walks the frames once", walks == 1)
+			addon2.world = world
+			env2.EnumerateFrames = enumerate
+		end
 		env2.PartyFrame:InitializePartyMemberFrames()
 		check("a party member's name uses Manrope", party_member.Name.path == manrope and party_member.PetFrame.Name.path == manrope)
 		hooks.DefaultCompactUnitFrameSetup(compact_frame)

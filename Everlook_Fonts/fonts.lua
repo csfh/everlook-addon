@@ -27,6 +27,11 @@ local constants = {}
 local compact_names = setmetatable({}, { __mode = "k" })
 local hooked = {}
 local applying = false
+-- A full pass walks every font and frame, so it runs only when something may
+-- have changed: another addon loaded, a pass was blocked by combat, the size
+-- changed, or the module was just turned on.
+local stale = true
+local passed_offset
 
 local function font_object_of(object)
 	if type(object.GetFontObject) ~= "function" then return nil end
@@ -58,6 +63,7 @@ local function replace(object, font, offset)
 	local path, size, flags = object:GetFont()
 	if not path or not size then return end
 	local original = originals[object]
+	local seen_before = original ~= nil
 	if not original then
 		original = original_of(object, path, size, flags)
 		originals[object] = original
@@ -66,6 +72,8 @@ local function replace(object, font, offset)
 	end
 	original.font = font
 	original.last_size = math.max(6, original[2] + offset)
+	-- A later pass leaves text it already set where it is.
+	if seen_before and path == font and size == original.last_size then return end
 	object:SetFont(font, original.last_size, flags)
 end
 
@@ -128,7 +136,10 @@ local function ready()
 end
 
 local function refresh_names()
-	if not ready() then return end
+	if not ready() then
+		stale = true
+		return
+	end
 	local offset = module.get(id, "size_offset")
 	for _, text in ipairs(name_texts()) do replace(text, people_font, offset) end
 end
@@ -144,7 +155,7 @@ local function hook_name_frames()
 		hooksecurefunc("DefaultCompactUnitFrameSetup", function(frame)
 			if type(frame) ~= "table" or type(frame.name) ~= "table" then return end
 			compact_names[frame.name] = true
-			if ready() then replace(frame.name, people_font, module.get(id, "size_offset")) end
+			if ready() then replace(frame.name, people_font, module.get(id, "size_offset")) else stale = true end
 		end)
 		hooked.compact = true
 	end
@@ -170,16 +181,22 @@ local function restore()
 end
 
 local function run(enabled)
-	if applying or (InCombatLockdown and InCombatLockdown()) then return end
+	if applying or (InCombatLockdown and InCombatLockdown()) then
+		stale = true
+		return
+	end
 	if enabled and GetLocale and unsupported_locales[GetLocale()] then return end
 	applying = true
 	if not enabled then
 		restore()
+		stale, passed_offset = true, nil
 		applying = false
 		return
 	end
+	stale = false
 	hook_name_frames()
 	local offset = module.get(id, "size_offset")
+	passed_offset = offset
 	set_globals(interface_globals, interface_font)
 	set_globals(name_globals, people_font)
 	local people_fonts = {}
@@ -229,11 +246,34 @@ local function run(enabled)
 end
 
 -- How often this runs, and what it costs, goes in the load trace.
-local function apply(enabled)
+local function pass()
+	if not module.enabled(id) then return end
 	local trace = Everlook.trace
-	if not trace then return run(enabled) end
+	if not trace then return run(true) end
 	trace.count("fonts_passes")
-	return trace.span("fonts_pass", run, enabled)
+	return trace.span("fonts_pass", run, true)
+end
+
+-- Turning off puts the fonts back at once. Turning on, a new size, a loaded
+-- addon or a blocked pass asks for a pass, and the passes asked for in the same
+-- burst of loads run as one, in a coming frame.
+local function apply(enabled)
+	if not enabled then return run(false) end
+	if not stale and passed_offset == module.get(id, "size_offset") then return end
+	local world = Everlook.world
+	if world and world.defer then
+		world.defer("fonts", pass)
+	else
+		pass()
+	end
+end
+
+-- Zone changes and instance loading screens add no text this module has not
+-- seen, so only a login or a reload walks everything again.
+local function on_event(event, first, second)
+	if event == "PLAYER_ENTERING_WORLD" and first == false and second == false then return end
+	stale = true
+	apply(true)
 end
 
 module.register({
@@ -241,5 +281,5 @@ module.register({
 	id = id, name = "Fonts", description = "Sets chat, chat bubbles, nameplates, the names on unit frames, party frames, and raid-style frames, and the name at the top of a tooltip in Manrope, and the rest of the interface in Expressway. It waits while you are in combat. Text in another alphabet, such as Korean or Chinese, keeps the game's font for that alphabet, and a Korean or Chinese client keeps all of its fonts. Turning this off puts the previous fonts back once you are out of combat. A font the client forbids stays as it is, quest tracker lines and headers keep their shared font so Objective size still changes them, and names and damage text the engine draws in the world change after you log in again.",
 	options = { size_offset = { name = "Font size adjustment", default = 0, min = -4, max = 8, step = 1, unit = " pt", description = "Adds this many points to each font this replaces, on top of that font's own size. Chat windows keep the size set on their tab. The shared line and header fonts are not given their own size, the tracker sizes they follow include this addition, and nothing is set under six points. The change waits until combat ends, and this number does nothing until Fonts is on." } },
 	apply = apply, out_of_combat = true,
-	events = { "ADDON_LOADED", "PLAYER_ENTERING_WORLD" }, on_event = function() apply(true) end,
+	events = { "ADDON_LOADED", "PLAYER_ENTERING_WORLD" }, on_event = on_event,
 })
