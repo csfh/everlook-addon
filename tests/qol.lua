@@ -1191,18 +1191,33 @@ return function(root, check)
 			event2("PLAYER_ENTERING_WORLD", true, false)
 			check("a second pass sets no font that is already right", sets == 0)
 			font.SetFont, region.SetFont = font_set, region_set
-			-- Loads in one burst are answered by one pass.
+			-- Loads in one burst are answered by one pass, a slice at a time.
 			walks = 0
-			local queued = {}
-			local world = addon2.world
-			addon2.world = { defer = function(key, fn) queued[key] = fn end }
+			local steps, wakes, step = 0, 0, nil
+			local sched_before, profile_before, frame_before = addon2.sched, env2.debugprofilestop, env2.CreateFrame
+			addon2.sched = { task = function(_, opts) step = opts.step return { wake = function() wakes = wakes + 1 end } end }
+			env2.debugprofilestop = function() steps = steps + 1 return steps * 5 end
+			env2.CreateFrame = env2.CreateFrame or function() end
+			local many, index_of = {}, {}
+			for index = 1, 100 do
+				many[index] = { GetRegions = function() end }
+				index_of[many[index]] = index
+			end
+			local counted = env2.EnumerateFrames
+			env2.EnumerateFrames = function(previous)
+				if not previous then walks = walks + 1 end
+				return many[previous and index_of[previous] + 1 or 1]
+			end
 			event2("ADDON_LOADED")
 			event2("ADDON_LOADED")
 			event2("ADDON_LOADED")
-			check("a burst of loaded addons asks for one pass", walks == 0 and queued.fonts ~= nil)
-			queued.fonts()
-			check("and that pass walks the frames once", walks == 1)
-			addon2.world = world
+			check("a burst of loaded addons wakes the task and walks nothing yet", wakes == 3 and walks == 0 and step ~= nil)
+			local slices = 0
+			while step(1.5) and slices < 100 do slices = slices + 1 end
+			check("the pass is cut into slices and walks the frames once", slices >= 2 and walks == 1)
+			check("and nothing is left to do after it", step(1.5) == false and walks == 1)
+			addon2.sched, env2.debugprofilestop, env2.CreateFrame = sched_before, profile_before, frame_before
+			env2.EnumerateFrames = counted
 			env2.EnumerateFrames = enumerate
 		end
 		env2.PartyFrame:InitializePartyMemberFrames()

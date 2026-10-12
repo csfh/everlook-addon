@@ -26,7 +26,6 @@ local originals = setmetatable({}, { __mode = "k" })
 local constants = {}
 local compact_names = setmetatable({}, { __mode = "k" })
 local hooked = {}
-local applying = false
 -- A full pass walks every font and frame, so it runs only when something may
 -- have changed: another addon loaded, a pass was blocked by combat, the size
 -- changed, or the module was just turned on.
@@ -180,23 +179,35 @@ local function restore()
 	constants = {}
 end
 
-local function run(enabled)
-	if applying or (InCombatLockdown and InCombatLockdown()) then
-		stale = true
-		return
+-- A pass over every frame is about thirteen thousand frames and close to a
+-- hundred milliseconds, which would stall one frame. It runs as a scheduler
+-- task in slices, `job` holding where it is. A slice may take a little more
+-- than the scheduler's share, because the text is only wrong until it is done.
+local SLICE_MS = 4
+local job
+local task
+
+local function clock()
+	if type(debugprofilestop) == "function" then return debugprofilestop() end
+end
+
+local function restyle_regions(frame, kept, people_fonts, names, offset, ...)
+	for index = 1, select("#", ...) do
+		local region = select(index, ...)
+		if region.GetObjectType and region:GetObjectType() == "FontString"
+			and not follows(region, kept) and not follows(region, people_fonts) then
+			replace(region, names[region] and people_font or interface_font, offset)
+			names[region] = nil
+		end
 	end
-	if enabled and GetLocale and unsupported_locales[GetLocale()] then return end
-	applying = true
-	if not enabled then
-		restore()
-		stale, passed_offset = true, nil
-		applying = false
-		return
-	end
-	stale = false
+end
+
+-- Sets the globals and the font objects, which is quick, and returns the pass.
+local function begin_pass()
 	hook_name_frames()
 	local offset = module.get(id, "size_offset")
 	passed_offset = offset
+	stale = false
 	set_globals(interface_globals, interface_font)
 	set_globals(name_globals, people_font)
 	local people_fonts = {}
@@ -222,49 +233,94 @@ local function run(enabled)
 	end
 	local names = {}
 	for _, text in ipairs(name_texts()) do names[text] = true end
-	local walked = 0
-	if EnumerateFrames then
-		local frame = EnumerateFrames()
-		while frame do
-			walked = walked + 1
-			if not frame.IsForbidden or not frame:IsForbidden() then
-				for _, region in ipairs({ frame:GetRegions() }) do
-					if region.GetObjectType and region:GetObjectType() == "FontString"
-						and not follows(region, kept) and not follows(region, people_fonts) then
-						replace(region, names[region] and people_font or interface_font, offset)
-						names[region] = nil
-					end
-				end
-			end
-			frame = EnumerateFrames(frame)
-		end
-	end
-	-- Party members and raid-style frames hang under frames this walk can miss.
-	for text in pairs(names) do replace(text, people_font, offset) end
-	if Everlook.trace then Everlook.trace.count("fonts_frames", walked) end
-	applying = false
+	local trace = Everlook.trace
+	if trace then trace.count("fonts_passes") end
+	return { offset = offset, kept = kept, people_fonts = people_fonts, names = names, walked = 0, frame = false }
 end
 
--- How often this runs, and what it costs, goes in the load trace.
-local function pass()
-	if not module.enabled(id) then return end
+-- Walks frames until `limit_ms` is up, and says whether any are left.
+local function walk(pass, limit_ms)
+	if not EnumerateFrames then return false end
+	local began = clock()
+	local frame
+	if pass.frame == false then frame = EnumerateFrames() else frame = EnumerateFrames(pass.frame) end
+	local count = 0
+	while frame do
+		pass.walked = pass.walked + 1
+		count = count + 1
+		if not frame.IsForbidden or not frame:IsForbidden() then
+			restyle_regions(frame, pass.kept, pass.people_fonts, pass.names, pass.offset, frame:GetRegions())
+		end
+		pass.frame = frame
+		frame = EnumerateFrames(frame)
+		if frame and began and count % 32 == 0 and clock() - began >= limit_ms then
+			return true
+		end
+	end
+	pass.frame = nil
+	return false
+end
+
+local function finish(pass)
+	-- Party members and raid-style frames hang under frames this walk can miss.
+	for text in pairs(pass.names) do replace(text, people_font, pass.offset) end
+	if Everlook.trace then Everlook.trace.count("fonts_frames", pass.walked) end
+end
+
+-- One slice of the pass. True while frames are left. Another request that
+-- came in during the pass starts the next one when this one ends.
+local function slice(limit_ms)
+	if not module.enabled(id) or (GetLocale and unsupported_locales[GetLocale()]) then
+		job = nil
+		return false
+	end
+	if InCombatLockdown and InCombatLockdown() then
+		return true
+	end
+	if not job then
+		if not stale and passed_offset == module.get(id, "size_offset") then return false end
+		job = begin_pass()
+	end
+	if walk(job, math.max(limit_ms or 0, SLICE_MS)) then return true end
+	finish(job)
+	job = nil
+	return stale or passed_offset ~= module.get(id, "size_offset")
+end
+
+local function timed_slice(limit_ms)
 	local trace = Everlook.trace
-	if not trace then return run(true) end
-	trace.count("fonts_passes")
-	return trace.span("fonts_pass", run, true)
+	if not trace then return slice(limit_ms) end
+	return trace.span("fonts_pass", slice, limit_ms)
+end
+
+local function run_now()
+	local guard = 0
+	while timed_slice(1e9) and guard < 1000 and not (InCombatLockdown and InCombatLockdown()) do guard = guard + 1 end
+end
+
+local function restore_all()
+	job = nil
+	if InCombatLockdown and InCombatLockdown() then
+		stale = true
+		return
+	end
+	restore()
+	stale, passed_offset = true, nil
 end
 
 -- Turning off puts the fonts back at once. Turning on, a new size, a loaded
--- addon or a blocked pass asks for a pass, and the passes asked for in the same
--- burst of loads run as one, in a coming frame.
+-- addon or a blocked pass asks for a pass, and the requests in one burst of
+-- loads are answered by one pass, a few milliseconds a frame.
 local function apply(enabled)
-	if not enabled then return run(false) end
-	if not stale and passed_offset == module.get(id, "size_offset") then return end
-	local world = Everlook.world
-	if world and world.defer then
-		world.defer("fonts", pass)
+	if not enabled then return restore_all() end
+	if enabled and GetLocale and unsupported_locales[GetLocale()] then return end
+	if not stale and passed_offset == module.get(id, "size_offset") and not job then return end
+	stale = stale or passed_offset ~= module.get(id, "size_offset")
+	if Everlook.sched and Everlook.sched.task and type(CreateFrame) == "function" and type(debugprofilestop) == "function" then
+		task = task or Everlook.sched.task("fonts", { step = timed_slice, combat = "pause" })
+		task.wake()
 	else
-		pass()
+		run_now()
 	end
 end
 
