@@ -1208,16 +1208,18 @@ return function(root, check)
 				if not previous then walks = walks + 1 end
 				return many[previous and index_of[previous] + 1 or 1]
 			end
+			for index = 1, 300 do env2["junk_global_" .. index] = { GetObjectType = function() return "Frame" end } end
 			event2("ADDON_LOADED")
 			event2("ADDON_LOADED")
 			event2("ADDON_LOADED")
 			check("a burst of loaded addons wakes the task and walks nothing yet", wakes == 3 and walks == 0 and step ~= nil)
 			local slices = 0
 			while step(1.5) and slices < 100 do slices = slices + 1 end
-			check("the pass is cut into slices and walks the frames once", slices >= 2 and walks == 1)
+			check("the pass is cut into slices, in the globals as well as the frames, and walks the frames once", slices >= 6 and walks == 1)
 			check("and nothing is left to do after it", step(1.5) == false and walks == 1)
 			addon2.sched, env2.debugprofilestop, env2.CreateFrame = sched_before, profile_before, frame_before
 			env2.EnumerateFrames = counted
+			for index = 1, 300 do env2["junk_global_" .. index] = nil end
 			env2.EnumerateFrames = enumerate
 		end
 		env2.PartyFrame:InitializePartyMemberFrames()

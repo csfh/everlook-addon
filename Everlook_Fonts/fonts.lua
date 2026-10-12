@@ -225,17 +225,37 @@ local function begin_pass()
 		local own = font_object_of(frame)
 		if own and not people_fonts[own] then kept[own] = true end
 	end
+	-- The globals are only listed here. Asking each one what it is takes most
+	-- of the time, so that happens in the slices.
+	local candidates = {}
 	for _, object in pairs(_G) do
-		if (type(object) == "table" or type(object) == "userdata") and object.GetObjectType
-			and (not object.IsForbidden or not object:IsForbidden()) and object:GetObjectType() == "Font" and not follows(object, kept) then
-			replace(object, people_fonts[object] and people_font or interface_font, offset)
-		end
+		local kind = type(object)
+		if kind == "table" or kind == "userdata" then candidates[#candidates + 1] = object end
 	end
 	local names = {}
 	for _, text in ipairs(name_texts()) do names[text] = true end
 	local trace = Everlook.trace
 	if trace then trace.count("fonts_passes") end
-	return { offset = offset, kept = kept, people_fonts = people_fonts, names = names, walked = 0, frame = false }
+	return { offset = offset, kept = kept, people_fonts = people_fonts, names = names, walked = 0, frame = false, candidates = candidates, at = 0 }
+end
+
+-- Replaces the font objects among the listed globals until `limit_ms` is up,
+-- and says whether any are left.
+local function walk_fonts(pass, limit_ms)
+	local began = clock()
+	local candidates, count = pass.candidates, 0
+	while pass.at < #candidates do
+		pass.at = pass.at + 1
+		local object = candidates[pass.at]
+		if object.GetObjectType and (not object.IsForbidden or not object:IsForbidden()) and object:GetObjectType() == "Font"
+			and not follows(object, pass.kept) then
+			replace(object, pass.people_fonts[object] and people_font or interface_font, pass.offset)
+		end
+		count = count + 1
+		if began and count % 64 == 0 and clock() - began >= limit_ms then return true end
+	end
+	pass.candidates = nil
+	return false
 end
 
 -- Walks frames until `limit_ms` is up, and says whether any are left.
@@ -281,7 +301,10 @@ local function slice(limit_ms)
 		if not stale and passed_offset == module.get(id, "size_offset") then return false end
 		job = begin_pass()
 	end
-	if walk(job, math.max(limit_ms or 0, SLICE_MS)) then return true end
+	local limit = math.max(limit_ms or 0, SLICE_MS)
+	local began = clock()
+	if job.candidates and walk_fonts(job, limit) then return true end
+	if walk(job, began and math.max(0, limit - (clock() - began)) or limit) then return true end
 	finish(job)
 	job = nil
 	return stale or passed_offset ~= module.get(id, "size_offset")
