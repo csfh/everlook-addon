@@ -5355,6 +5355,34 @@ return function(root, check)
 				local quests = addon.smart_island.view().quests
 				check("pin from the next-quest notice sticks", quests.pinned == 22 and quests.current.id == 22)
 			end
+			-- A new quest is offered once. The pin offer, the suggestion and the ready notice
+			-- all point at the same quest, so only the first of them speaks.
+			local function new_quest_world(ready)
+				local addon, env, event, state = quest_world()
+				state.quests[3].ready = false
+				for _, name in ipairs({ "feed_quest_ready", "feed_quest_next", "quest_context", "quest_plan" }) do
+					addon.module.set("smart_island", name, true)
+				end
+				table.insert(state.quests, { questID = 25, title = "A fresh errand", level = 12, distance = 5, ready = ready,
+					objectives = { { text = "Fetch", numFulfilled = 0, numRequired = 3, finished = false } } })
+				state.time = state.time + 100
+				event("QUEST_ACCEPTED", 25)
+				event("QUEST_LOG_UPDATE")
+				return addon
+			end
+			do
+				local addon = new_quest_world(false)
+				local offer = notice_key(addon, "pin-suggest")
+				check("a new quest is offered for pinning", offer and offer.text == "Pin A fresh errand?")
+				check("and is not suggested next as well", notice_key(addon, "next-quest") == nil)
+			end
+			do
+				local addon = new_quest_world(true)
+				local ready = notice_key(addon, "ready")
+				check("a new quest that is already ready says so", ready and ready.text == "A fresh errand")
+				check("and is not offered for pinning as well", notice_key(addon, "pin-suggest") == nil)
+				check("nor suggested next as well", notice_key(addon, "next-quest") == nil)
+			end
 			do
 				local addon, env, event, state, _, _, frames = quest_world()
 				addon.module.set("smart_island", "feed_quest_next", true)
