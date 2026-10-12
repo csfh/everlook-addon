@@ -3,6 +3,8 @@ local Everlook = Everlook
 local module = Everlook.module
 local layout = Everlook.bags_layout
 local item_level = Everlook.bags_item_level
+local junk = Everlook.bags_junk
+local marker = Everlook.bags_marker
 local id = "bags"
 
 -- Stock anchors the grid's bottom right corner 4 pixels above the money frame.
@@ -102,7 +104,9 @@ end
 
 -- Stock has refreshed what the slots hold, which is when a label can change.
 local function on_items(frame)
-	if module.enabled(id) then show_labels(frame, module.get(id, "item_level")) end
+	if not module.enabled(id) then return end
+	show_labels(frame, module.get(id, "item_level"))
+	marker.apply(frame, module.get(id, "junk_marker"))
 end
 
 -- The hooks run after stock and cannot be taken off, so they check the
@@ -119,6 +123,7 @@ local function apply(enabled)
 	local frame = combined_bag()
 	if not frame then return end
 	if enabled then install(frame) end
+	marker.apply(frame, enabled and module.get(id, "junk_marker"))
 	local shown = type(frame.IsShown) == "function" and frame:IsShown()
 	if not shown then
 		-- A closed bag is laid out from scratch by stock when it opens.
@@ -140,7 +145,17 @@ module.register({
 	description = "Adds to the combined bag, which needs Combine all bags to be on in the game's settings. It keeps the bag's look, and its slots, search box and sort button stay the game's own. Turning this off puts the grid back as the game draws it, and a choice here does nothing until this is on.",
 	options = {
 		item_level = { name = "Show item level on gear", default = false, description = "Writes the item level of each weapon and piece of armor, including rings, trinkets and cloaks, at the bottom right of its slot, where a stack count would sit, in the color of its quality. Other items show nothing, and turning this off removes the numbers." },
+		junk_marker = { name = "Mark items as junk", default = false, description = "Adds a coin button to the title row of the combined bag. Click it, then click items to mark or unmark them as junk, and click it again to stop. A marked item shows the junk coin, and every copy of that item is marked. Sell junk can sell marked items at a vendor when you turn that on there. Turning this off hides the button and the coins and keeps your marks." },
 		columns = { name = "Columns", default = 10, min = 10, max = 16, step = 1, description = "How many slots sit in each row of the combined bag. Ten is how the game draws it, and more columns make the bag wider and shorter." },
 	},
 	apply = apply,
 })
+
+-- What another addon may ask of Bags. Only a marked item, while Bags and the
+-- marker are both on, is junk. Anything else, including a bad id, is false.
+Everlook.bags = {
+	is_junk = function(item_id)
+		if not (module.enabled(id) and module.get(id, "junk_marker") == true) then return false end
+		return junk.is_marked(junk.data(), item_id)
+	end,
+}

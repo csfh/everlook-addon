@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: |cffffd100Everlook|r |cff66bbffBags|r
-## Notes: Lays the combined bag out in a different number of columns and shows an item level on gear, with the stock look.
+## Notes: Lays the combined bag out in a different number of columns, shows an item level on gear, and lets you mark items as junk, with the stock look.
 ## Author: Christoffer Hallas
 ## Dependencies: Everlook
 ## Group: Everlook
@@ -8,4 +8,6 @@
 
 bags_layout.lua
 bags_item_level.lua
+bags_junk.lua
+bags_marker.lua
 bags.lua

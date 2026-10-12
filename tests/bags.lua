@@ -12,12 +12,46 @@ return function(root, check)
 		env.IsShiftKeyDown = function() return false end
 		local loaded = {}
 		env.EventUtil = { ContinueOnAddOnLoaded = function(name, callback) loaded[name] = callback end }
-		env.CreateFrame = function()
-			local frame = { events = {} }
-			function frame:RegisterEvent(event) self.events[event] = true end
-			function frame:SetScript() end
-			return frame
+		-- Every widget made through CreateFrame, so a test can find what the module added.
+		local created = {}
+		env.created = created
+		env.CreateFrame = function(kind, _, parent)
+			local widget = { kind = kind, parent = parent, events = {}, scripts = {}, hooks = {}, points = {}, textures = {}, shown = true, locked = false, level = 1 }
+			function widget:RegisterEvent(event) self.events[event] = true end
+			function widget:SetScript(name, callback) self.scripts[name] = callback end
+			function widget:HookScript(name, callback) self.hooks[name] = callback end
+			function widget:SetSize(width, height) self.width, self.height = width, height end
+			function widget:SetPoint(...) self.points[#self.points + 1] = { ... } end
+			function widget:SetAllPoints(target) self.all_points = target end
+			function widget:SetFrameLevel(level) self.level = level end
+			function widget:GetFrameLevel() return self.level end
+			function widget:RegisterForClicks(...) self.clicks = { ... } end
+			function widget:SetHighlightTexture(path) self.highlight = path end
+			function widget:LockHighlight() self.locked = true end
+			function widget:UnlockHighlight() self.locked = false end
+			function widget:Show() self.shown = true end
+			function widget:Hide() self.shown = false end
+			function widget:IsShown() return self.shown end
+			function widget:CreateTexture(_, layer, _, sublevel)
+				local texture = { layer = layer, sublevel = sublevel, shown = true }
+				function texture:SetAtlas(atlas, use_size) self.atlas, self.use_size = atlas, use_size end
+				function texture:SetPoint(...) self.point = { ... } end
+				function texture:Show() self.shown = true end
+				function texture:Hide() self.shown = false end
+				self.textures[#self.textures + 1] = texture
+				return texture
+			end
+			created[#created + 1] = widget
+			return widget
 		end
+		local tooltip = { lines = {}, shown = false }
+		function tooltip:SetOwner(owner, anchor) self.owner, self.anchor, self.lines, self.shown = owner, anchor, {}, false end
+		function tooltip:SetText(text) self.lines[#self.lines + 1] = text end
+		function tooltip:AddLine(text) self.lines[#self.lines + 1] = text end
+		function tooltip:SetBagItem(bag, slot) self.bag_item = { bag, slot }; return true end
+		function tooltip:Show() self.shown = true end
+		function tooltip:Hide() self.shown = false end
+		env.GameTooltip = tooltip
 		env.hooksecurefunc = function(target, method, callback)
 			local original = target[method]
 			target[method] = function(self, ...)
@@ -30,7 +64,7 @@ return function(root, check)
 		local addon = {}
 		-- world.lua shares the namespace as the global Everlook.
 		env.Everlook = addon
-		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags" }) do
+		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_marker", "bags" }) do
 			local chunk = assert(loadfile(source(file)))
 			setfenv(chunk, env)
 			chunk(file == "bags" and "Everlook_Bags" or "Everlook", addon)
@@ -125,7 +159,10 @@ return function(root, check)
 	-- Applying and undoing, on a stand-in for the stock frame.
 	local function stand_in(slot_total, gear)
 		local points_log = {}
-		local frame = { MoneyFrame = { name = "money" }, width = 400, height = 600, buttons = {}, layouts = 0 }
+		local frame = { MoneyFrame = { name = "money" }, CloseButton = { name = "close" }, width = 400, height = 600, buttons = {}, layouts = 0, hooks = {} }
+		function frame:HookScript(name, callback) self.hooks[name] = callback end
+		function frame:GetFrameLevel() return 5 end
+		function frame:Hide() self.shown_flag = false; if self.hooks.OnHide then self.hooks.OnHide(self) end end
 		function frame:SetSize(width, height) self.width, self.height = width, height end
 		function frame:GetWidth() return self.width end
 		function frame:GetHeight() return self.height end
@@ -136,6 +173,17 @@ return function(root, check)
 			function button:GetBagID() return 0 end
 			function button:GetID() return self.slot end
 			function button:IsExtended() return false end
+			function button:GetFrameLevel() return 10 end
+			function button:CreateTexture(_, layer, _, sublevel)
+				local texture = { layer = layer, sublevel = sublevel, shown = true }
+				function texture:SetAtlas(atlas, use_size) self.atlas, self.use_size = atlas, use_size end
+				function texture:SetPoint(...) self.point = { ... } end
+				function texture:Show() self.shown = true end
+				function texture:Hide() self.shown = false end
+				self.textures = self.textures or {}
+				self.textures[#self.textures + 1] = texture
+				return texture
+			end
 			function button:ClearAllPoints() self.points = {} end
 			function button:SetPoint(...) self.points[#self.points + 1] = { ... } end
 			function button:CreateFontString(_, _, template)
@@ -280,5 +328,166 @@ return function(root, check)
 		second.module.set("bags", "enabled", true)
 		check("without the container API the item level option does not fail", pcall(second.module.set, "bags", "item_level", true))
 		check("the layout still works without the container API", pcall(function() second_frame:UpdateItemLayout() end))
+	end
+
+	-- The junk store: item ids the player marked, kept in the saved settings.
+	do
+		local addon = load_bags()
+		local junk = addon.bags_junk
+		local data = {}
+		check("marking an item says it is now marked", junk.toggle(data, 2589) == true and junk.is_marked(data, 2589))
+		check("marking it again unmarks it", junk.toggle(data, 2589) == false and not junk.is_marked(data, 2589))
+		check("an unmarked item is not in the store", next(data) == nil)
+		check("an item that was never marked is not marked", not junk.is_marked(data, 6948))
+		for label, bad in pairs({ none = false, zero = 0, negative = -5, fraction = 1.5, text = "2589", infinity = math.huge, table = {} }) do
+			local before = junk.toggle(data, bad)
+			check("an id that is " .. label .. " marks nothing", before == nil and next(data) == nil and not junk.is_marked(data, bad))
+		end
+		check("a missing id marks nothing", junk.toggle(data, nil) == nil and not junk.is_marked(data, nil))
+		local secret = {}
+		local guarded = load_bags({ issecretvalue = function(value) return value == secret end })
+		check("a secret id marks nothing", guarded.bags_junk.toggle({}, secret) == nil and not guarded.bags_junk.is_marked({ [secret] = true }, secret))
+		local first = junk.data()
+		check("asking for the saved table again gives the same table", first == addon.bags_junk.data())
+	end
+	do
+		local addon, env = load_bags()
+		local data = addon.bags_junk.data()
+		check("the junk table lives with the Bags settings and survives being asked for again",
+			data == env.EverlookDB.qol.bags.junk and addon.bags_junk.data() == data)
+	end
+
+	-- Registration of the marker option.
+	do
+		local addon = load_bags()
+		local found
+		for _, module in ipairs(addon.module.modules) do
+			if module.id == "bags" then found = module end
+		end
+		check("the junk marker is an option that starts off", found.options.junk_marker and found.options.junk_marker.default == false)
+	end
+
+	-- Mark mode, on a stand-in for the stock frame.
+	local function buttons_with(created, parent)
+		local found = {}
+		for _, widget in ipairs(created) do
+			if widget.parent == parent then found[#found + 1] = widget end
+		end
+		return found
+	end
+	local function junk_coin(button)
+		for _, texture in ipairs(button.textures or {}) do
+			if texture.atlas == "bags-junkcoin" and texture.shown then return texture end
+		end
+	end
+	local function marker_setup(options)
+		local gear = { { class = 0, quality = 1, level = 1 }, { class = 0, quality = 1, level = 1 }, { class = 4, quality = 4, level = 270 } }
+		local frame, extra = stand_in(4, gear)
+		if options and options.no_close_button then frame.CloseButton = nil end
+		local addon, env, loaded = load_bags(extra)
+		loaded["Everlook_Bags"]()
+		addon.module.set("bags", "enabled", true)
+		return addon, env, frame
+	end
+	do
+		local addon, env, frame = marker_setup()
+		check("turning the module on adds no button while the marker is off", #buttons_with(env.created, frame) == 0)
+		addon.module.set("bags", "junk_marker", true)
+		local coin_buttons = buttons_with(env.created, frame)
+		check("turning the marker on adds one coin button to the bag", #coin_buttons == 1)
+		local coin = coin_buttons[1]
+		local point = coin.points[1]
+		check("the coin button sits in the title row, just left of the close button",
+			point[1] == "RIGHT" and point[2] == frame.CloseButton and point[3] == "LEFT" and point[4] == -2 and point[5] == 0)
+		check("the coin button is a small square", coin.width == 22 and coin.height == 22)
+		check("the coin button sits well above the bag's own children, so the title bar's menu button cannot take its click", coin.level == 25)
+		check("the coin button draws the game's junk coin", coin.textures[1] and coin.textures[1].atlas == "bags-junkcoin")
+		check("there are no click overlays until mark mode is on", #buttons_with(env.created, frame.buttons[1]) == 0)
+		check("the coin button is not pressed until it is clicked", coin.locked == false)
+
+		coin.scripts.OnClick(coin)
+		check("clicking the coin starts mark mode and shows it pressed", coin.locked == true)
+		for index, button in ipairs(frame.buttons) do
+			local overlays = buttons_with(env.created, button)
+			check("slot " .. index .. " gets one click overlay in mark mode", #overlays == 1 and overlays[1].shown and overlays[1].all_points == button)
+		end
+		check("an overlay sits above its slot", buttons_with(env.created, frame.buttons[1])[1].level == 15)
+
+		local first = buttons_with(env.created, frame.buttons[1])[1]
+		check("a slot with an item has no coin until it is marked", junk_coin(frame.buttons[1]) == nil and not addon.bags.is_junk(1001))
+		first.scripts.OnClick(first)
+		check("clicking an overlay marks that item", addon.bags.is_junk(1001) == true)
+		local mark = junk_coin(frame.buttons[1])
+		check("a marked item shows the junk coin in the top left", mark ~= nil and mark.point[1] == "TOPLEFT" and mark.point[2] == frame.buttons[1] and mark.point[4] == 1)
+		check("the other items stay unmarked", junk_coin(frame.buttons[2]) == nil and not addon.bags.is_junk(1002))
+		first.scripts.OnClick(first)
+		check("clicking again unmarks it and takes the coin off", not addon.bags.is_junk(1001) and junk_coin(frame.buttons[1]) == nil)
+
+		local empty = buttons_with(env.created, frame.buttons[4])[1]
+		empty.scripts.OnClick(empty)
+		check("clicking an empty slot marks nothing", next(env.EverlookDB.qol.bags.junk) == nil)
+
+		first.scripts.OnClick(first)
+		first.scripts.OnEnter(first)
+		check("hovering an overlay shows that item's own tooltip with what a click does",
+			env.GameTooltip.bag_item[1] == 0 and env.GameTooltip.bag_item[2] == 1 and env.GameTooltip.owner == first
+			and env.GameTooltip.shown and env.GameTooltip.lines[#env.GameTooltip.lines]:find("not junk", 1, true) ~= nil)
+		first.scripts.OnLeave(first)
+		check("leaving it hides the tooltip", not env.GameTooltip.shown)
+
+		coin.scripts.OnClick(coin)
+		check("clicking the coin again ends mark mode", coin.locked == false)
+		for index, button in ipairs(frame.buttons) do
+			check("slot " .. index .. "'s overlay is hidden when the mode ends", not buttons_with(env.created, button)[1].shown)
+		end
+		check("the marked item keeps its coin after the mode ends", junk_coin(frame.buttons[1]) ~= nil)
+
+		coin.scripts.OnClick(coin)
+		frame:Hide()
+		check("closing the bag ends mark mode", coin.locked == false and not buttons_with(env.created, frame.buttons[2])[1].shown)
+
+		-- A marked item moved to another slot: the coin follows it on the next refresh.
+		frame.buttons[1].moved = true
+		env.C_Container.GetContainerItemInfo = function(bag, slot)
+			if bag ~= 0 then return nil end
+			if slot == 2 then return { itemID = 1001, hyperlink = "link1", quality = 1 } end
+			if slot == 1 then return nil end
+			if slot == 3 then return { itemID = 1003, hyperlink = "link3", quality = 4 } end
+		end
+		frame:UpdateItems()
+		check("the coin follows a marked item to the slot it moved to", junk_coin(frame.buttons[2]) ~= nil and junk_coin(frame.buttons[1]) == nil)
+
+		addon.module.set("bags", "junk_marker", false)
+		check("turning the marker off hides the coin button, the coins and any overlay", coin.shown == false and junk_coin(frame.buttons[2]) == nil)
+		check("turning the marker off keeps what was marked", env.EverlookDB.qol.bags.junk[1001] == true)
+		check("with the marker off nothing counts as junk", addon.bags.is_junk(1001) == false)
+		addon.module.set("bags", "junk_marker", true)
+		check("turning it back on brings the button, the coins and the marks back", coin.shown == true and junk_coin(frame.buttons[2]) ~= nil and addon.bags.is_junk(1001) == true)
+
+		addon.module.set("bags", "enabled", false)
+		check("turning the module off hides the button and the coins", coin.shown == false and junk_coin(frame.buttons[2]) == nil)
+		check("with the module off nothing counts as junk, though the marks are kept", addon.bags.is_junk(1001) == false and env.EverlookDB.qol.bags.junk[1001] == true)
+	end
+	do
+		-- Mark mode must not outlive the option that turns it on.
+		local addon, env, frame = marker_setup()
+		addon.module.set("bags", "junk_marker", true)
+		local coin = buttons_with(env.created, frame)[1]
+		coin.scripts.OnClick(coin)
+		addon.module.set("bags", "junk_marker", false)
+		check("turning the marker off ends mark mode", coin.locked == false and not buttons_with(env.created, frame.buttons[1])[1].shown)
+	end
+	do
+		local addon, env, frame = marker_setup({ no_close_button = true })
+		check("a bag with no close button gets no coin button and no error", pcall(addon.module.set, "bags", "junk_marker", true) and #buttons_with(env.created, frame) == 0)
+	end
+	do
+		-- The public lookup other addons use.
+		local addon = marker_setup()
+		check("is_junk is false for an item nobody marked", addon.bags.is_junk(1001) == false)
+		for label, bad in pairs({ none = false, text = "1001", zero = 0 }) do
+			check("is_junk is false for an id that is " .. label, addon.bags.is_junk(bad) == false)
+		end
+		check("is_junk with no argument is false", addon.bags.is_junk() == false)
 	end
 end
