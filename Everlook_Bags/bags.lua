@@ -7,6 +7,7 @@ local junk = Everlook.bags_junk
 local categories = Everlook.bags_categories
 local pins = Everlook.bags_pins
 local recent = Everlook.bags_recent
+local folds = Everlook.bags_folds
 local headers = Everlook.bags_headers
 local marker = Everlook.bags_marker
 local id = "bags"
@@ -31,6 +32,9 @@ local arrivals = recent.new()
 -- It is set by the first PLAYER_ENTERING_WORLD, or at once when Bags is turned on in a session
 -- that is already running. Later loading screens, such as an instance, change nothing.
 local in_world = false
+-- A slot that is folded away keeps its place at the grid's corner, clear and deaf to the mouse. What it
+-- was before is kept, so it can be put back exactly.
+local parked = setmetatable({}, { __mode = "k" })
 -- Slots that already listen for a middle-click. A listener cannot be taken off, so it checks the settings.
 local listening = setmetatable({}, { __mode = "k" })
 
@@ -61,8 +65,25 @@ end
 
 -- Lays the grid out in the given number of columns, anchored where stock
 -- anchors it. At the stock column count this is the layout stock draws.
+local function unpark_all()
+	for button, was in pairs(parked) do
+		button:SetAlpha(was.alpha)
+		button:EnableMouse(true)
+		parked[button] = nil
+	end
+end
+
+local function park(button, frame)
+	if not parked[button] then parked[button] = { alpha = button:GetAlpha() } end
+	button:SetAlpha(0)
+	button:EnableMouse(false)
+	button:ClearAllPoints()
+	button:SetPoint("BOTTOMRIGHT", frame.MoneyFrame, "TOPRIGHT", 0, GRID_OFFSET_Y)
+end
+
 local function place_flat(frame, columns)
 	headers.hide_all()
+	unpark_all()
 	local slots = layout.order(slots_of(frame))
 	local grid = layout.grid(#slots, columns)
 	for index, slot in ipairs(slots) do
@@ -91,6 +112,9 @@ end
 -- Lays the slots out in sections under headers, in the order stock keeps them
 -- in within each section. It reports whether it could: without the container
 -- API nothing is known about the items, and the caller lays out a flat grid.
+-- A click on a section's header, set once regroup exists.
+local on_fold
+
 local function place_grouped(frame, columns)
 	if type(C_Container) ~= "table" or type(C_Container.GetContainerItemInfo) ~= "function"
 		or type(C_Item) ~= "table" or type(C_Item.GetItemInfoInstant) ~= "function" then
@@ -99,6 +123,8 @@ local function place_grouped(frame, columns)
 	local slots = layout.order(slots_of(frame))
 	local members = {}
 	local pinned_data = module.get(id, "pins") == true and pins.data() or nil
+	local fold_on = module.get(id, "fold") == true
+	local fold_data = fold_on and folds.data() or nil
 	for index, slot in ipairs(slots) do
 		slot.index = index
 		local key, item_id = section_of(slot, pinned_data)
@@ -116,17 +142,23 @@ local function place_grouped(frame, columns)
 	end
 	local wanted = {}
 	for _, section in ipairs(categories.SECTIONS) do
-		wanted[#wanted + 1] = { key = section.key, title = section.title, count = members[section.key] and #members[section.key] or 0 }
+		local state = fold_on and folds.is_folded(fold_data, section.key) and "collapsed" or nil
+		wanted[#wanted + 1] = { key = section.key, title = section.title, count = members[section.key] and #members[section.key] or 0, state = state }
 	end
 	local grouped = layout.grouped(wanted, columns)
+	unpark_all()
 	for _, section in ipairs(grouped.sections) do
 		for index, slot in ipairs(members[section.key]) do
 			local position = section.positions[index]
-			slot.button:ClearAllPoints()
-			slot.button:SetPoint("BOTTOMRIGHT", frame.MoneyFrame, "TOPRIGHT", position.x, GRID_OFFSET_Y + position.y)
+			if position then
+				slot.button:ClearAllPoints()
+				slot.button:SetPoint("BOTTOMRIGHT", frame.MoneyFrame, "TOPRIGHT", position.x, GRID_OFFSET_Y + position.y)
+			else
+				park(slot.button, frame)
+			end
 		end
 	end
-	headers.show(frame, frame.MoneyFrame, GRID_OFFSET_Y, grouped)
+	headers.show(frame, frame.MoneyFrame, GRID_OFFSET_Y, grouped, fold_on and on_fold or nil)
 	frame:SetSize(layout.grouped_size(stock_width, stock_height, #slots, grouped))
 	return true
 end
@@ -176,6 +208,13 @@ end
 local function regroup(frame)
 	changed = true
 	place(frame, module.get(id, "columns"), true)
+end
+
+on_fold = function(key)
+	if not (module.enabled(id) and module.get(id, "fold") == true and grouping()) then return end
+	local frame = combined_bag()
+	if not frame or folds.toggle(folds.data(), key) == nil then return end
+	if type(frame.IsShown) == "function" and frame:IsShown() then regroup(frame) end
 end
 
 local function pointer_on_slot(frame)
@@ -345,6 +384,7 @@ module.register({
 		item_level = { name = "Show item level on gear", default = false, description = "Writes the item level of each weapon and piece of armor, including rings, trinkets and cloaks, at the bottom right of its slot, where a stack count would sit, in the color of its quality. Other items show nothing, and turning this off removes the numbers." },
 		junk_marker = { name = "Mark items as junk", default = false, description = "Adds a coin button to the title row of the combined bag. Click it, then click items to mark or unmark them as junk, and click it again to stop. A marked item shows the junk coin, and every copy of that item is marked. Sell junk can sell marked items at a vendor when you turn that on there. Turning this off hides the button and the coins and keeps your marks." },
 		group = { name = "Group items by type", default = false, description = "Sorts the slots of the combined bag into sections under headers: The Armory for weapons and armor, Adventure Prep for consumables, gems and item enhancements, Professions for trade goods, reagents and recipes, Miscellaneous for the rest, and Junk for grey items and, when Mark items as junk is on, the items you marked. Empty slots wait at the bottom as Free Space. The bag keeps its look, and its search box and sort button work as before, though sorting moves items between slots and the sections follow. Turning this off puts the grid back." },
+		fold = { name = "Fold sections", default = false, description = "Click the header of a section in the grouped bag to fold it down to its header, which keeps its count and shows an arrow, and click again to open it. Which sections are folded is saved. It needs Group items by type to be on, and turning this off opens every section and keeps the folds." },
 		pins = { name = "Pinned items", default = false, description = "Middle-click an item in the combined bag to pin it, and middle-click it again to unpin it. Every copy of a pinned item sits in a Pinned section at the top of the bag, and the pin stays after you log out. It needs Group items by type to be on, and turning this off puts the items back under their types and keeps the pins." },
 		recent = { name = "Recent items", default = false, description = "Items whose total in your bags goes up, whether looted, bought, taken from the mail or the bank, or taken off your character, wait in a Recent section just below Pinned, the newest first, twelve at most, until you log out or reload. Every copy of such an item is there, and junk and pinned items stay in their own sections. It needs Group items by type to be on, and turning this off puts the items back under their types and forgets the list." },
 		columns = { name = "Columns", default = 10, min = 10, max = 16, step = 1, description = "How many slots sit in each row of the combined bag. Ten is how the game draws it, and more columns make the bag wider and shorter." },

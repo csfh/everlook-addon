@@ -43,28 +43,33 @@ layout.HEADER_HEIGHT = 20
 local HEADER_GAP = 4
 local SECTION_GAP = 10
 
+-- A section is open, "collapsed" to its header alone, or "hidden" without even that.
 function layout.grouped(sections, columns)
 	local placed = {}
-	local last = #sections
 	local bottom, height = 0, 0
-	for index = last, 1, -1 do
+	for index = #sections, 1, -1 do
 		local section = sections[index]
-		if section.count > 0 then
-			local rows = math.ceil(section.count / columns)
-			local rows_height = span(rows)
-			local positions = {}
-			for slot = 1, section.count do
-				local row_from_top = math.floor((slot - 1) / columns)
-				positions[slot] = {
-					x = 0 - (columns - 1 - (slot - 1) % columns) * STEP,
-					y = bottom + (rows - 1 - row_from_top) * STEP,
-				}
+		if section.count > 0 and section.state ~= "hidden" then
+			local entry = { key = section.key, title = section.title, count = section.count, positions = {} }
+			local section_height
+			if section.state == "collapsed" then
+				entry.collapsed = true
+				entry.header_y = bottom
+				section_height = layout.HEADER_HEIGHT
+			else
+				local rows = math.ceil(section.count / columns)
+				local rows_height = span(rows)
+				for slot = 1, section.count do
+					local row_from_top = math.floor((slot - 1) / columns)
+					entry.positions[slot] = {
+						x = 0 - (columns - 1 - (slot - 1) % columns) * STEP,
+						y = bottom + (rows - 1 - row_from_top) * STEP,
+					}
+				end
+				entry.header_y = bottom + rows_height + HEADER_GAP
+				section_height = layout.HEADER_HEIGHT + HEADER_GAP + rows_height
 			end
-			local section_height = layout.HEADER_HEIGHT + HEADER_GAP + rows_height
-			table.insert(placed, 1, {
-				key = section.key, title = section.title, count = section.count,
-				header_y = bottom + rows_height + HEADER_GAP, positions = positions,
-			})
+			table.insert(placed, 1, entry)
 			height = bottom + section_height
 			bottom = height + SECTION_GAP
 		end

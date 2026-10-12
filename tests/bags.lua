@@ -29,6 +29,7 @@ return function(root, check)
 				local text = { layer = layer, template = template, shown = true, points = {} }
 				function text:SetPoint(...) self.points[#self.points + 1] = { ... } end
 				function text:SetText(content) self.content = content end
+				function text:ClearAllPoints() self.points = {} end
 				function text:Show() self.shown = true end
 				function text:Hide() self.shown = false end
 				self.texts = self.texts or {}
@@ -81,7 +82,7 @@ return function(root, check)
 		local addon = {}
 		-- world.lua shares the namespace as the global Everlook.
 		env.Everlook = addon
-		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_categories", "bags_pins", "bags_recent", "bags_headers", "bags_marker", "bags" }) do
+		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_categories", "bags_pins", "bags_recent", "bags_folds", "bags_headers", "bags_marker", "bags" }) do
 			local chunk = assert(loadfile(source(file)))
 			setfenv(chunk, env)
 			chunk(file == "bags" and "Everlook_Bags" or "Everlook", addon)
@@ -168,6 +169,20 @@ return function(root, check)
 		check("grouping grows the frame by what headers and gaps add to the rows", width == 400 and height == 600 + 174 - 79)
 		local wide_width, wide_height = layout.grouped_size(400, 600, 14, wide_grouped)
 		check("twelve grouped columns widen the frame", wide_width == 400 + 84 and wide_height == 600 + (20 + 4 + 79) - 79)
+
+		-- A folded section keeps its header and gives up its rows. A hidden one gives up everything.
+		local folded = layout.grouped({
+			{ key = "armory", title = "The Armory", count = 12 },
+			{ key = "prep", title = "Adventure Prep", count = 5, state = "collapsed" },
+			{ key = "junk", title = "Junk", count = 3, state = "hidden" },
+			{ key = "free", title = "Free Space", count = 2 },
+		}, 10)
+		check("a hidden section is left out and a folded one stays", #folded.sections == 3 and folded.sections[2].key == "prep" and folded.sections[3].key == "free")
+		check("a folded section has no slots to place but keeps its count and says it is folded",
+			#folded.sections[2].positions == 0 and folded.sections[2].count == 5 and folded.sections[2].collapsed == true)
+		check("a folded section's header sits at its bottom, and it is one header tall", folded.sections[2].header_y == 61 + 10 and folded.sections[3].collapsed ~= true)
+		check("the section above a folded one clears the header, and a hidden section adds no gap",
+			folded.sections[1].positions[11].y == 61 + 10 + 20 + 10 and folded.height == 61 + 10 + 20 + 10 + 103)
 	end
 
 	-- The item level label: gear only, in the item's quality.
@@ -291,6 +306,25 @@ return function(root, check)
 		check("an id that is not a whole positive number is ignored", guard:observe({ [0] = 1, [-3] = 1, [1.5] = 1 }) == false and #guard:items() == 0)
 	end
 
+	-- The fold store: section keys the player folded, kept in the saved settings.
+	do
+		local addon, env = load_bags()
+		local folds = addon.bags_folds
+		local data = {}
+		check("folding a section says it is folded", folds.toggle(data, "junk") == true and folds.is_folded(data, "junk"))
+		check("folding it again opens it and leaves nothing behind", folds.toggle(data, "junk") == false and not folds.is_folded(data, "junk") and next(data) == nil)
+		check("a section never folded is open", not folds.is_folded(data, "misc"))
+		for label, bad in pairs({ none = false, number = 4, empty = "", table = {}, long = string.rep("x", 40) }) do
+			check("a key that is " .. label .. " folds nothing", folds.toggle(data, bad) == nil and next(data) == nil and not folds.is_folded(data, bad))
+		end
+		check("a missing key folds nothing", folds.toggle(data, nil) == nil)
+		local secret = {}
+		local guarded = load_bags({ issecretvalue = function(value) return value == secret end }).bags_folds
+		check("a secret key folds nothing", guarded.toggle({}, secret) == nil)
+		local saved = folds.data()
+		check("the fold table lives with the Bags settings and survives being asked for again", saved == env.EverlookDB.qol.bags.folded and folds.data() == saved)
+	end
+
 	-- Registration.
 	do
 		local addon = load_bags()
@@ -329,6 +363,9 @@ return function(root, check)
 			function button:GetID() return self.slot end
 			function button:IsExtended() return false end
 			function button:IsMouseOver() return self.mouse_over == true end
+			function button:SetAlpha(alpha) self.alpha = alpha end
+			function button:GetAlpha() return self.alpha or 1 end
+			function button:EnableMouse(enabled) self.mouse = enabled end
 			function button:HookScript(name, callback) self.hooks = self.hooks or {}; self.hooks[name] = callback end
 			function button:GetFrameLevel() return 10 end
 			function button:CreateTexture(_, layer, _, sublevel)
@@ -384,7 +421,10 @@ return function(root, check)
 				GetDetailedItemLevelInfo = function(link) return info[tonumber(link:match("%d+"))].level end,
 			},
 			ColorManager = { GetColorDataForItemQuality = function(quality) return { r = quality / 10, g = 0.5, b = 0.25 } end },
-			C_Texture = { GetAtlasInfo = function(atlas) if atlas == "Options_HorizontalDivider" then return { width = 330, height = 3 } end end },
+			C_Texture = { GetAtlasInfo = function(atlas)
+				if atlas == "Options_HorizontalDivider" then return { width = 330, height = 3 } end
+				if atlas == "campaign_headericon_open" or atlas == "campaign_headericon_closed" then return { width = 14, height = 14 } end
+			end },
 		}
 		return frame, env_extra, points_log, info
 	end
@@ -506,7 +546,7 @@ return function(root, check)
 	local function headers_of(env, frame)
 		local found = {}
 		for _, widget in ipairs(env.created) do
-			if widget.parent == frame and widget.kind == "Frame" then found[#found + 1] = widget end
+			if widget.parent == frame and widget.kind == "Button" and widget.texts then found[#found + 1] = widget end
 		end
 		return found
 	end
@@ -554,7 +594,7 @@ return function(root, check)
 		check("a header sits above its section, over the grid's width",
 			point[1] == "BOTTOMRIGHT" and point[2] == frame.MoneyFrame and point[3] == "TOPRIGHT" and point[4] == 0 and point[5] == 4 + 213 + 37 + 4
 			and armory.width == 415 and armory.height == 20)
-		check("a header lets mouse clicks through to the slots", armory.mouse == false)
+		check("a header lets mouse clicks through to the slots while sections cannot be folded", armory.mouse == false)
 		check("the title is in the game's gold heading font", armory.texts[1].template == "GameFontNormal")
 		check("the count is in the game's small highlight font", armory.texts[2].template == "GameFontHighlightSmall")
 		check("the rule under a header is the game's divider", armory.textures[1] and armory.textures[1].atlas == "Options_HorizontalDivider" and armory.textures[1].height == 3)
@@ -632,6 +672,58 @@ return function(root, check)
 		frame.buttons[3].mouse_over = false
 		watcher.scripts.OnUpdate(watcher)
 		check("a wait that ends after grouping was turned off leaves the stock grid alone", at(frame.buttons[2], -42, 0) and at(frame.buttons[4], -126, 0))
+	end
+	do
+		-- Folding: a click on a header folds its section down to the header.
+		local entries = {
+			{ class = 4, quality = 4, level = 270 }, { class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 },
+			{ class = 15, quality = 0, level = 1 },
+		}
+		local addon, env, frame = group_setup(6, entries)
+		addon.module.set("bags", "group", true)
+		local prep = header_named(env, frame, "Adventure Prep")
+		check("fold sections starts off", (function()
+			for _, module in ipairs(addon.module.modules) do
+				if module.id == "bags" then return module.options.fold and module.options.fold.default == false end
+			end
+		end)())
+		check("without the option a header is not clickable and shows no arrow", prep.mouse == false and #(prep.textures or {}) <= 1)
+		addon.module.set("bags", "fold", true)
+		check("with the option a header takes clicks", prep.mouse == true and prep.scripts.OnClick ~= nil)
+		check("each header shows the open arrow while its section is open", (function()
+			local arrow
+			for _, texture in ipairs(prep.textures) do if texture.atlas == "campaign_headericon_open" then arrow = texture end end
+			return arrow ~= nil and arrow.shown
+		end)())
+		frame.buttons[3].alpha = 0.6
+		prep.scripts.OnClick(prep)
+		check("a click folds the section and the choice is saved", env.EverlookDB.qol.bags.folded.prep == true)
+		check("the folded slot is parked at the grid corner, clear and not clickable",
+			at(frame.buttons[3], 0, 0) and frame.buttons[3].alpha == 0 and frame.buttons[3].mouse == false)
+		check("the sections below and above close up, the folded header between them",
+			at(frame.buttons[5], -378, 0) and at(frame.buttons[4], -378, 71) and at(frame.buttons[1], -378, 172))
+		check("the frame is as tall as the folded sections", frame.height == 600 + 233 - 37)
+		check("the folded header still shows its count and the closed arrow", prep.shown and prep.texts[2].content == "1" and (function()
+			for _, texture in ipairs(prep.textures) do if texture.atlas == "campaign_headericon_closed" and texture.shown then return true end end
+		end)())
+		check("the folded header sits at the bottom of its place", prep.points[1][5] == 4 + 142)
+		prep.scripts.OnClick(prep)
+		check("a second click opens it and the slot is back, solid and clickable",
+			at(frame.buttons[3], -378, 142) and frame.buttons[3].alpha == 0.6 and frame.buttons[3].mouse == true and next(env.EverlookDB.qol.bags.folded) == nil)
+
+		prep.scripts.OnClick(prep)
+		addon.module.set("bags", "fold", false)
+		check("turning folding off opens every section, keeps the fold and stops the header taking clicks",
+			at(frame.buttons[3], -378, 142) and frame.buttons[3].alpha == 0.6 and env.EverlookDB.qol.bags.folded.prep == true and prep.mouse == false)
+		prep.scripts.OnClick(prep)
+		check("a click that still arrives with folding off does nothing", env.EverlookDB.qol.bags.folded.prep == true)
+		addon.module.set("bags", "fold", true)
+		check("turning it back on brings the fold back", at(frame.buttons[3], 0, 0))
+		addon.module.set("bags", "group", false)
+		check("turning grouping off brings a folded slot back to the stock grid", at(frame.buttons[3], -84, 0) and frame.buttons[3].alpha == 0.6 and frame.buttons[3].mouse == true)
+		addon.module.set("bags", "group", true)
+		addon.module.set("bags", "enabled", false)
+		check("turning the module off brings it back too", at(frame.buttons[3], -84, 0) and frame.buttons[3].alpha == 0.6)
 	end
 	do
 		-- Pinned items: a middle-click pins the item, and every copy of it sits in the Pinned section.
@@ -769,7 +861,7 @@ return function(root, check)
 		check("a marked item moves into junk, below the sections of its type", at(frame.buttons[2], -378, 0) and at(frame.buttons[3], -378, 71) and at(frame.buttons[1], -378, 142))
 
 		local coin
-		for _, widget in ipairs(env.created) do if widget.parent == frame and widget.kind == "Button" then coin = widget end end
+		for _, widget in ipairs(env.created) do if widget.parent == frame and widget.kind == "Button" and not widget.texts then coin = widget end end
 		coin.scripts.OnClick(coin)
 		local overlay
 		for _, widget in ipairs(env.created) do if widget.parent == frame.buttons[3] and widget.kind == "Button" then overlay = widget end end
