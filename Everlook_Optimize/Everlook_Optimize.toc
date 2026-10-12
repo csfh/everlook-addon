@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffOptimize|r
+## Notes: Holds Lua's garbage collector while the game loads, so a login or a reload spends less of its loading screen collecting.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+optimize.lua

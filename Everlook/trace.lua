@@ -35,6 +35,10 @@ local ledger = {
 	marks = {},
 	spans = {},
 	counts = {},
+	-- What the Lua heap held, in kilobytes, at each mark, and what a module said
+	-- about this load, such as that the collector was held.
+	memory = {},
+	notes = {},
 }
 M.ledger = ledger
 
@@ -54,6 +58,9 @@ function M.stamp(label)
 	end
 	seen[label] = at
 	ledger.marks[#ledger.marks + 1] = { label, at }
+	if type(collectgarbage) == "function" then
+		ledger.memory[label] = floor(collectgarbage("count"))
+	end
 	return at
 end
 
@@ -79,6 +86,11 @@ end
 function M.span(label, fn, ...)
 	local started = clock()
 	return finish_span(started, label, fn(...))
+end
+
+-- Says something about this load that a later comparison should know.
+function M.note(key, value)
+	ledger.notes[key] = value
 end
 
 -- Counts something that is expensive in numbers, such as frames walked.
@@ -108,6 +120,7 @@ local function summary(reload)
 		done = marks.loading_done,
 		modules = tenths(modules),
 		settings = settings and settings.ms or nil,
+		gc = ledger.notes.gc,
 	}
 end
 

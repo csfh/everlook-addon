@@ -133,6 +133,11 @@ local function startup()
 		local pass = ledger.spans.fonts_pass
 		line("Fonts", passes .. (passes == 1 and " pass" or " passes") .. (pass and (", " .. ms(pass.ms)) or "") .. (frames and (", " .. whole(frames) .. " frames walked") or ""))
 	end
+	local memory = ledger.memory
+	if type(memory) == "table" and memory.core_files and memory.loading_done then
+		local held = ledger.notes and ledger.notes.gc
+		line("Lua memory, KB", whole(memory.core_files) .. " at the start, " .. whole(memory.loading_done) .. " at the end" .. (held and (", collector held until " .. tostring(held)) or ""))
+	end
 	line("Loading screen ended", marks.loading_done and (whole(marks.loading_done) .. " ms after Everlook began") or "not yet")
 	local history = EverlookDB and EverlookDB.loadTraceHistory
 	if type(history) == "table" and #history > 0 then
@@ -140,7 +145,7 @@ local function startup()
 		for index = math.max(1, #history - 5), #history do
 			local entry = history[index]
 			if entry.done then
-				done[#done + 1] = whole(entry.done) .. (entry.reload and " (reload)" or "")
+				done[#done + 1] = whole(entry.done) .. (entry.reload and " (reload)" or "") .. (entry.gc and " (collector held)" or "")
 			end
 		end
 		line("Recent loads, in ms", table.concat(done, ", "))

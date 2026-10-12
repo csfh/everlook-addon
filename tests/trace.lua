@@ -72,6 +72,8 @@ return function(root, check)
 		trace.count("fonts_passes")
 		check("a count adds up", trace.ledger.counts.fonts_frames == 42 and trace.ledger.counts.fonts_passes == 1)
 
+		check("a mark carries what the Lua heap held", type(trace.ledger.memory.core_files) == "number" and trace.ledger.memory.core_files > 0)
+		trace.note("gc", "loading_done")
 		game.now = 30
 		game.fire("PLAYER_LOGIN")
 		game.now = 40
@@ -83,6 +85,7 @@ return function(root, check)
 		local line = history[1]
 		check("it says how long each step took", line.reload == true and line.saved == 4 and line.login > 0 and line.enter > line.login and line.done > line.enter)
 		check("it adds up what the modules spent starting, and the settings", line.modules == 5 and line.settings == 2.5)
+		check("it says when a module held the collector", line.gc == "loading_done")
 		game.fire("LOADING_SCREEN_DISABLED")
 		game.fire("PLAYER_ENTERING_WORLD", false, false)
 		check("a later zone change is not another load", #env.EverlookDB.loadTraceHistory == 1 and line.reload == true)

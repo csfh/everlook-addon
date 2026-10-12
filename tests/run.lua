@@ -2628,6 +2628,7 @@ end)()
 
 assert(loadfile(root .. "/tests/trace.lua"))()(root, check)
 assert(loadfile(root .. "/tests/sched.lua"))()(root, check)
+assert(loadfile(root .. "/tests/optimize.lua"))()(root, check)
 assert(loadfile(root .. "/tests/segments.lua"))()(root, check)
 assert(loadfile(root .. "/tests/module.lua"))()(root, check)
 assert(loadfile(root .. "/tests/qol.lua"))()(root, check)
