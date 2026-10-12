@@ -11,6 +11,7 @@ bags_item_level.lua
 bags_junk.lua
 bags_categories.lua
 bags_pins.lua
+bags_assign.lua
 bags_recent.lua
 bags_folds.lua
 bags_headers.lua

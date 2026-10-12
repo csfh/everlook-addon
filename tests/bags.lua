@@ -90,7 +90,7 @@ return function(root, check)
 		local addon = {}
 		-- world.lua shares the namespace as the global Everlook.
 		env.Everlook = addon
-		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_categories", "bags_pins", "bags_recent", "bags_folds", "bags_headers", "bags_sidebar", "bags_marker", "bags" }) do
+		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_categories", "bags_pins", "bags_assign", "bags_recent", "bags_folds", "bags_headers", "bags_sidebar", "bags_marker", "bags" }) do
 			local chunk = assert(loadfile(source(file)))
 			setfenv(chunk, env)
 			chunk(file == "bags" and "Everlook_Bags" or "Everlook", addon)
@@ -235,9 +235,15 @@ return function(root, check)
 			keys[#keys + 1] = section.key
 			titles[#titles + 1] = section.title
 		end
-		check("sections run from pinned down to free space, junk just above it", table.concat(keys, " ") == "pinned recent armory prep professions misc junk free")
+		check("sections run from pinned down to free space, junk just above it",
+			table.concat(keys, " ") == "pinned recent custom1 custom2 custom3 armory prep professions misc junk free")
 		check("sections carry the preset names",
-			table.concat(titles, "|") == "Pinned|Recent|The Armory|Adventure Prep|Professions|Miscellaneous|Junk|Free Space")
+			table.concat(titles, "|") == "Pinned|Recent|Custom 1|Custom 2|Custom 3|The Armory|Adventure Prep|Professions|Miscellaneous|Junk|Free Space")
+		check("an item in a custom section is in it whatever its type", categories.of(4, false, false, false, "custom2") == "custom2")
+		check("a custom section beats junk and recent", categories.of(4, true, false, true, "custom1") == "custom1")
+		check("a pin beats a custom section", categories.of(4, false, true, false, "custom3") == "pinned")
+		check("only a custom section's own key counts", categories.of(4, false, false, false, "armory") == "armory" and categories.of(0, false, false, false, "junk") == "prep"
+			and categories.of(4, false, false, false, "custom9") == "armory" and categories.of(4, false, false, false, 2) == "armory")
 		check("a pinned item is in pinned whatever its type", categories.of(4, false, true, false) == "pinned" and categories.of(nil, false, true, true) == "pinned")
 		check("a pinned item that is junk stays pinned", categories.of(4, true, true, false) == "pinned")
 		check("a recent item is in recent whatever its type", categories.of(4, false, false, true) == "recent" and categories.of(nil, false, false, true) == "recent")
@@ -301,6 +307,31 @@ return function(root, check)
 		check("the pin table lives with the Bags settings and survives being asked for again",
 			saved == env.EverlookDB.qol.bags.pinned and pins.data() == saved)
 		check("pins and junk marks are kept apart", env.EverlookDB.qol.bags.junk == nil or env.EverlookDB.qol.bags.junk ~= saved)
+	end
+
+	-- The custom section store: which custom section an item was put in.
+	do
+		local addon, env = load_bags()
+		local assign = addon.bags_assign
+		local data = {}
+		check("the first click puts an item in the first section that is in use", assign.cycle(data, 6948, { 1, 3 }) == 1 and assign.of(data, 6948) == 1)
+		check("the next click moves it to the next section in use", assign.cycle(data, 6948, { 1, 3 }) == 3 and assign.of(data, 6948) == 3)
+		check("after the last it is in none, and nothing is left behind", assign.cycle(data, 6948, { 1, 3 }) == nil and assign.of(data, 6948) == nil and next(data) == nil)
+		check("one section in use is a toggle", assign.cycle(data, 6948, { 2 }) == 2 and assign.cycle(data, 6948, { 2 }) == nil)
+		data[6948] = 2
+		check("an item in a section no longer in use goes to the first one that is", assign.cycle(data, 6948, { 1, 3 }) == 1)
+		check("with no section in use a click changes nothing", assign.cycle(data, 6948, {}) == 1 and assign.of(data, 6948) == 1)
+		check("an item that was never assigned is in none", assign.of(data, 2589) == nil)
+		for label, bad in pairs({ none = false, zero = 0, negative = -5, fraction = 1.5, text = "6948", infinity = math.huge }) do
+			check("an id that is " .. label .. " is put nowhere", assign.cycle({}, bad, { 1 }) == nil)
+		end
+		local secret = {}
+		local guarded = load_bags({ issecretvalue = function(value) return value == secret end }).bags_assign
+		check("a secret id is put nowhere", guarded.cycle({}, secret, { 1 }) == nil)
+		data[1111] = 7
+		check("a saved section that does not exist is in none", assign.of(data, 1111) == nil)
+		local saved = assign.data()
+		check("the table lives with the Bags settings and survives being asked for again", saved == env.EverlookDB.qol.bags.assigned and assign.data() == saved)
 	end
 
 	-- The recent list: what arrived in the bags this session, from the item totals now and before.
@@ -375,6 +406,10 @@ return function(root, check)
 		local scale = found and found.options.scale
 		check("window scale starts at a hundred percent and runs from seventy to a hundred and ten", scale and scale.default == 100 and scale.min == 70 and scale.max == 110 and scale.step == 5)
 		check("pinned items start off", found and found.options.pins and found.options.pins.default == false)
+		for number = 1, 3 do
+			local custom = found and found.options["custom" .. number]
+			check("custom section " .. number .. " starts off and offers names to choose from", custom and custom.default == "off" and #custom.choices >= 3 and custom.choices[1][1] == "off")
+		end
 		check("recent items start off", found and found.options.recent and found.options.recent.default == false)
 		check("it listens for the world loading and for the bags changing", found and found.events and found.events[1] == "PLAYER_ENTERING_WORLD" and found.events[2] == "BAG_UPDATE_DELAYED")
 	end
@@ -877,6 +912,67 @@ return function(root, check)
 		check("an item with no expansion sits under the type's own header, last", at(second_frame.buttons[2], -378, 71) and at(second_frame.buttons[1], -378, 0))
 		local third, third_env, third_frame = group_setup(2, { { class = 4, quality = 4, level = 270, expansion = 9 }, { class = 4, quality = 4, level = 270, expansion = 9 } }, { C_Item = false })
 		check("without the item lookup nesting does not fail", pcall(third.module.set, "bags", "group", true) and pcall(third.module.set, "bags", "expansions", true))
+	end
+	do
+		-- Custom sections: Ctrl and a middle-click moves an item through the sections in use.
+		local entries = { { class = 4, quality = 4, level = 270 }, { class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 } }
+		local ctrl = false
+		local addon, env, frame = group_setup(5, entries, { IsControlKeyDown = function() return ctrl end })
+		local function middle_click(button) button.hooks.OnMouseUp(button, "MiddleButton") end
+		addon.module.set("bags", "group", true)
+		check("with no custom section in use no slot listens", frame.buttons[3].hooks == nil)
+		addon.module.set("bags", "custom1", "keep")
+		check("naming a custom section makes every slot listen", frame.buttons[3].hooks and frame.buttons[3].hooks.OnMouseUp ~= nil)
+		check("a middle-click without Ctrl assigns nothing", (function() middle_click(frame.buttons[3]) return next(env.EverlookDB.qol.bags.assigned or {}) == nil end)())
+		ctrl = true
+		middle_click(frame.buttons[3])
+		check("Ctrl and a middle-click puts the item in the first custom section in use, saved by item id", env.EverlookDB.qol.bags.assigned[1003] == 1)
+		check("the item moves to its own section above the types", at(frame.buttons[3], -378, 142) and at(frame.buttons[1], -378, 71) and at(frame.buttons[4], -378, 0))
+		check("the section is named by the choice", header_named(env, frame, "Keep").shown and header_named(env, frame, "Keep").texts[2].content == "1")
+		middle_click(frame.buttons[3])
+		check("with one section in use the next click takes the item out again", next(env.EverlookDB.qol.bags.assigned) == nil and at(frame.buttons[3], -378, 71))
+
+		addon.module.set("bags", "custom3", "sell")
+		middle_click(frame.buttons[3])
+		middle_click(frame.buttons[3])
+		check("the next click goes to the next section in use, skipping the one that is off", env.EverlookDB.qol.bags.assigned[1003] == 3 and header_named(env, frame, "Sell").shown and not header_named(env, frame, "Keep").shown)
+		middle_click(frame.buttons[3])
+		check("after the last it is in none again", next(env.EverlookDB.qol.bags.assigned) == nil)
+
+		middle_click(frame.buttons[3])
+		addon.module.set("bags", "custom1", "off")
+		check("a section turned off hands its items back to their types and keeps the assignment", at(frame.buttons[3], -378, 142) == false and env.EverlookDB.qol.bags.assigned[1003] == 1 and at(frame.buttons[3], -378, 71))
+		addon.module.set("bags", "custom1", "keep")
+		check("turning it back on brings them back", at(frame.buttons[3], -378, 142))
+
+		addon.module.set("bags", "pins", true)
+		ctrl = false
+		middle_click(frame.buttons[1])
+		check("a plain middle-click still pins", env.EverlookDB.qol.bags.pinned[1001] == true)
+		ctrl = true
+		middle_click(frame.buttons[2])
+		check("with Ctrl it assigns, not pins", env.EverlookDB.qol.bags.assigned[1002] == 1 and env.EverlookDB.qol.bags.pinned[1002] == nil)
+		check("a pinned item stays pinned over a custom section", (function()
+			middle_click(frame.buttons[1])
+			return env.EverlookDB.qol.bags.assigned[1001] == 1 and header_named(env, frame, "Pinned").shown
+		end)())
+
+		addon.module.set("bags", "custom1", "off")
+		addon.module.set("bags", "custom3", "off")
+		middle_click(frame.buttons[2])
+		check("with every section off Ctrl and a middle-click does nothing", env.EverlookDB.qol.bags.assigned[1002] == 1)
+		addon.module.set("bags", "custom1", "keep")
+		addon.module.set("bags", "group", false)
+		middle_click(frame.buttons[3])
+		check("with grouping off Ctrl and a middle-click does nothing", env.EverlookDB.qol.bags.assigned[1003] == 1 and not header_named(env, frame, "Keep").shown)
+	end
+	do
+		-- No way to tell if Ctrl is down: nothing is assigned.
+		local entries = { { class = 4, quality = 4, level = 270 } }
+		local addon, env, frame = group_setup(3, entries, { IsControlKeyDown = false })
+		addon.module.set("bags", "group", true)
+		addon.module.set("bags", "custom1", "keep")
+		check("without a way to read Ctrl a middle-click assigns nothing", pcall(frame.buttons[1].hooks.OnMouseUp, frame.buttons[1], "MiddleButton") and next(env.EverlookDB.qol.bags.assigned or {}) == nil)
 	end
 	do
 		-- Folding: a click on a header folds its section down to the header.

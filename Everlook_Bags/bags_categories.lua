@@ -9,6 +9,9 @@ local categories = { FREE = "free" }
 categories.SECTIONS = {
 	{ key = "pinned", title = "Pinned" },
 	{ key = "recent", title = "Recent" },
+	{ key = "custom1", title = "Custom 1" },
+	{ key = "custom2", title = "Custom 2" },
+	{ key = "custom3", title = "Custom 3" },
 	{ key = "armory", title = "The Armory" },
 	{ key = "prep", title = "Adventure Prep" },
 	{ key = "professions", title = "Professions" },
@@ -39,11 +42,14 @@ local function preset_of(class_id)
 	end
 end
 
+local CUSTOM = { custom1 = true, custom2 = true, custom3 = true }
+
 -- The section of an item of this class. A pin of exactly true puts it in pinned, whatever
--- else it is. Otherwise junk of exactly true is junk, then a recent item of exactly true is
+-- else it is, then a custom section's own key puts it there. Otherwise junk of exactly true is junk, then a recent item of exactly true is
 -- recent, and any other item goes by its class.
-function categories.of(class_id, junk, pinned, recent)
+function categories.of(class_id, junk, pinned, recent, custom)
 	if pinned == true then return "pinned" end
+	if CUSTOM[custom] then return custom end
 	if junk == true then return "junk" end
 	if recent == true then return "recent" end
 	if secret(class_id) or type(class_id) ~= "number" then return "misc" end

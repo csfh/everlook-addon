@@ -6,6 +6,7 @@ local item_level = Everlook.bags_item_level
 local junk = Everlook.bags_junk
 local categories = Everlook.bags_categories
 local pins = Everlook.bags_pins
+local assign = Everlook.bags_assign
 local recent = Everlook.bags_recent
 local folds = Everlook.bags_folds
 local sidebar = Everlook.bags_sidebar
@@ -18,6 +19,14 @@ local GRID_OFFSET_Y = 4
 -- Stock draws a stack count in this font, 5 pixels in from the bottom right. Gear never
 -- stacks, so the item level takes the same place and cannot collide with a count.
 local LABEL_FONT = "NumberFontNormal"
+
+-- The names a custom section can be given. There is no way to type one, so each section takes
+-- one of these, and "off" leaves the section unused.
+local CUSTOM_NAMES = {
+	{ "off", "Off" }, { "keep", "Keep" }, { "sell", "Sell" }, { "mail", "Mail" }, { "bank", "Bank" },
+	{ "crafting", "Crafting" }, { "swaps", "Gear Swaps" }, { "quests", "Quests" }, { "food", "Food and Drink" }, { "potions", "Potions" },
+}
+local CUSTOM_COUNT = 3
 
 local hooked = false
 -- The size stock gave the frame on its last layout pass, and whether this
@@ -106,7 +115,22 @@ end
 -- The section a slot belongs to: its item's type, junk ahead of it, or free
 -- space when it holds nothing. A grey item is junk, and so is a marked one
 -- while the marker is on.
-local function section_of(slot, pinned_data)
+-- The custom sections the player has named, by number, and the numbers in order.
+local function custom_in_use()
+	local labels, numbers = {}, {}
+	for number = 1, CUSTOM_COUNT do
+		local chosen = module.get(id, "custom" .. number)
+		for _, name in ipairs(CUSTOM_NAMES) do
+			if name[1] == chosen and chosen ~= "off" then
+				labels[number] = name[2]
+				numbers[#numbers + 1] = number
+			end
+		end
+	end
+	return labels, numbers
+end
+
+local function section_of(slot, pinned_data, assigned_data, labels)
 	local info = C_Container.GetContainerItemInfo(slot.bag, slot.slot)
 	if type(info) ~= "table" then return categories.FREE end
 	local item_id, quality = info.itemID, info.quality
@@ -115,7 +139,9 @@ local function section_of(slot, pinned_data)
 	local grey = not secret(quality) and quality == 0
 	local pinned = pinned_data ~= nil and pins.is_pinned(pinned_data, item_id)
 	local arrived = module.get(id, "recent") == true and arrivals:has(item_id)
-	return categories.of(class_id, grey or Everlook.bags.is_junk(item_id), pinned, arrived), item_id
+	local number = assigned_data and assign.of(assigned_data, item_id)
+	local custom = number and labels[number] and "custom" .. number or nil
+	return categories.of(class_id, grey or Everlook.bags.is_junk(item_id), pinned, arrived, custom), item_id
 end
 
 -- The expansion an item belongs to, which only the full item lookup knows, or nil.
@@ -141,9 +167,11 @@ local function place_grouped(frame, columns)
 	local fold_on = module.get(id, "fold") == true
 	local fold_data = fold_on and folds.data() or nil
 	local nesting = module.get(id, "expansions") == true
+	local labels, numbers = custom_in_use()
+	local assigned_data = #numbers > 0 and assign.data() or nil
 	for index, slot in ipairs(slots) do
 		slot.index = index
-		local base, item_id = section_of(slot, pinned_data)
+		local base, item_id = section_of(slot, pinned_data, assigned_data, labels)
 		local key = base
 		slot.item_id, slot.base = item_id, base
 		if nesting and item_id then
@@ -179,9 +207,10 @@ local function place_grouped(frame, columns)
 		for _, key in ipairs(keys) do
 			local state = fold_on and folds.is_folded(fold_data, key) and "collapsed" or nil
 			if shown_alone then state = key ~= shown_alone and "hidden" or nil end
-			wanted[#wanted + 1] = {
-				key = key, title = categories.sub_title(section.key, section.title, members[key][1].expansion), count = #members[key], state = state,
-			}
+			local title = categories.sub_title(section.key, section.title, members[key][1].expansion)
+			local number = tonumber(key:match("^custom(%d)$"))
+			if number and labels[number] then title = labels[number] end
+			wanted[#wanted + 1] = { key = key, title = title, count = #members[key], state = state }
 		end
 	end
 	local grouped = layout.grouped(wanted, columns)
@@ -327,22 +356,38 @@ local function sort_sections(frame)
 	end
 end
 
--- A middle-click on a slot pins its item, or unpins it. The slot moves at once, though the
--- pointer is on it: the click asked for that.
-local function pin_clicked(button, mouse_button)
+-- A middle-click on a slot pins its item, or unpins it, and with Ctrl moves it to the next custom
+-- section in use. The slot moves at once, though the pointer is on it: the click asked for that.
+local function slot_clicked(button, mouse_button)
 	if mouse_button ~= "MiddleButton" then return end
-	if not (module.enabled(id) and module.get(id, "pins") == true and grouping()) then return end
+	if not (module.enabled(id) and grouping()) then return end
 	local frame = combined_bag()
 	if not frame or type(C_Container) ~= "table" or type(C_Container.GetContainerItemInfo) ~= "function" then return end
 	local info = C_Container.GetContainerItemInfo(button:GetBagID(), button:GetID())
-	if type(info) ~= "table" or pins.toggle(pins.data(), info.itemID) == nil then return end
+	if type(info) ~= "table" then return end
+	local with_ctrl = type(IsControlKeyDown) == "function" and IsControlKeyDown() == true
+	if with_ctrl then
+		local _, numbers = custom_in_use()
+		if #numbers == 0 or not junk.valid(info.itemID) then return end
+		assign.cycle(assign.data(), info.itemID, numbers)
+	elseif module.get(id, "pins") == true then
+		if pins.toggle(pins.data(), info.itemID) == nil then return end
+	else
+		return
+	end
 	if type(frame.IsShown) == "function" and frame:IsShown() then regroup(frame) end
 end
 
-local function listen_for_pins(frame)
+local function wants_clicks()
+	if module.get(id, "pins") == true then return true end
+	local _, numbers = custom_in_use()
+	return #numbers > 0
+end
+
+local function listen_for_clicks(frame)
 	for _, button in frame:EnumerateValidItems() do
 		if not listening[button] and type(button.HookScript) == "function" then
-			button:HookScript("OnMouseUp", pin_clicked)
+			button:HookScript("OnMouseUp", slot_clicked)
 			listening[button] = true
 		end
 	end
@@ -353,7 +398,7 @@ local function on_items(frame)
 	if not module.enabled(id) then return end
 	show_labels(frame, module.get(id, "item_level"))
 	marker.apply(frame, module.get(id, "junk_marker"))
-	if module.get(id, "pins") == true then listen_for_pins(frame) end
+	if wants_clicks() then listen_for_clicks(frame) end
 	sort_sections(frame)
 end
 
@@ -440,7 +485,7 @@ local function apply(enabled)
 	if not frame then return end
 	if enabled then install(frame) end
 	marker.apply(frame, enabled and module.get(id, "junk_marker"))
-	if enabled and module.get(id, "pins") == true then listen_for_pins(frame) end
+	if enabled and wants_clicks() then listen_for_clicks(frame) end
 	if not (enabled and module.get(id, "sidebar") == true) then solo = nil end
 	-- Turned on in a running session, the bags can be read now.
 	if enabled and not in_world and type(IsLoggedIn) == "function" and IsLoggedIn() then in_world = true end
@@ -482,6 +527,9 @@ module.register({
 		expansions = { name = "Nest by expansion", default = false, description = "Splits the Armory, Adventure Prep, Professions and Miscellaneous sections by the expansion their items belong to, the newest first, each with its own header. An item the game cannot place in an expansion stays under the section's own header, after the others. It needs Group items by type to be on, and turning this off makes each of them one section again." },
 		sidebar = { name = "Section list", default = false, description = "Adds a list of the sections to the left of the grouped bag, a row for everything and one for each section with its name and how many slots it holds. Click a row to show only that section, and click it again, or the row for everything, to show them all. The counts do not change with the search box. It needs Group items by type to be on, and turning this off shows every section again." },
 		fold = { name = "Fold sections", default = false, description = "Click the header of a section in the grouped bag to fold it down to its header, which keeps its count and shows an arrow, and click again to open it. Which sections are folded is saved. It needs Group items by type to be on, and turning this off opens every section and keeps the folds." },
+		custom1 = { name = "Custom section 1", default = "off", choices = CUSTOM_NAMES, description = "Gives the grouped bag a section of your own, named from this list. Hold Ctrl and middle-click an item to put it in the next of your custom sections that is in use, and again to move it on, and out of them all after the last. Every copy of the item goes with it, and it stays in the section after you log out. The section sits under Recent and over the types, and an item pinned stays pinned. It needs Group items by type to be on, and Off leaves the section unused and its items under their types." },
+		custom2 = { name = "Custom section 2", default = "off", choices = CUSTOM_NAMES, description = "A second section of your own. See Custom section 1." },
+		custom3 = { name = "Custom section 3", default = "off", choices = CUSTOM_NAMES, description = "A third section of your own. See Custom section 1." },
 		pins = { name = "Pinned items", default = false, description = "Middle-click an item in the combined bag to pin it, and middle-click it again to unpin it. Every copy of a pinned item sits in a Pinned section at the top of the bag, and the pin stays after you log out. It needs Group items by type to be on, and turning this off puts the items back under their types and keeps the pins." },
 		recent = { name = "Recent items", default = false, description = "Items whose total in your bags goes up, whether looted, bought, taken from the mail or the bank, or taken off your character, wait in a Recent section just below Pinned, the newest first, twelve at most, until you log out or reload. Every copy of such an item is there, and junk and pinned items stay in their own sections. It needs Group items by type to be on, and turning this off puts the items back under their types and forgets the list." },
 		columns = { name = "Columns", default = 10, min = 10, max = 16, step = 1, description = "How many slots sit in each row of the combined bag. Ten is how the game draws it, and more columns make the bag wider and shorter." },
