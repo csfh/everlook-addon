@@ -2,6 +2,7 @@ local addon_name = ...
 local Everlook = Everlook
 local module = Everlook.module
 local layouts = Everlook.bar_layouts
+local settings = Everlook.blizzard_settings
 local id = "action_bar_slots"
 
 -- The game already has this setting: Always Show Buttons, per bar, in Edit Mode. A preset
@@ -39,9 +40,11 @@ end
 
 local function switch_on()
 	local all, guid = records("switched")
-	if not all or all[guid] then return end
+	if not all then return end
 	local c, info, presets = ready()
 	if not c then return end
+	-- Done once. A way back with no layout behind it, left by an earlier version, is not done.
+	if all[guid] and layouts.ours(info, presets) then return end
 	local result = layouts.prepare(info, presets, c)
 	if not result then return end
 	if result.created and C_EditMode.IsValidLayoutName(layouts.NAME) ~= true then return end
@@ -70,61 +73,27 @@ local function switch_off()
 	if target then C_EditMode.SetActiveLayout(target) end
 end
 
--- Action Bar 2 and 3 are switched on in the game's settings, Gameplay, Action Bars. The calls
--- are the ones that page makes: GetActionBarToggles gives a boolean for each of Action Bar 2
--- to 8 in turn, and SetActionBarToggles takes them all back. The game says its values are
--- wrong until the client has them from the server, so nothing is read or written for a few
--- seconds after login, and every value is passed back as it was read.
-local TOGGLES = { 1, 2 }
-local toggles_retry = false
+-- Action Bar 2 and 3 have to be switched on in the game's settings, or there is nothing to
+-- hide the slots on. The core helper does that, waits out the first seconds after login, and
+-- puts back only what it turned on.
+local BARS = { "action_bar_2", "action_bar_3" }
+local retry_queued = false
 local apply
-local SETTLE = 5
-local loaded_at = type(GetTime) == "function" and GetTime() or nil
-
-local function toggles()
-	if type(GetActionBarToggles) ~= "function" or type(SetActionBarToggles) ~= "function" or type(GetTime) ~= "function" or not loaded_at then return nil end
-	if type(InCombatLockdown) ~= "function" or InCombatLockdown() then return nil end
-	if GetTime() - loaded_at < SETTLE then
-		if type(C_Timer) == "table" and type(C_Timer.After) == "function" and not toggles_retry then
-			toggles_retry = true
-			C_Timer.After(SETTLE, function()
-				toggles_retry = false
-				apply(module.enabled(id))
-			end)
-		end
-		return nil
-	end
-	local values = { GetActionBarToggles() }
-	for _, index in ipairs(TOGGLES) do
-		if type(values[index]) ~= "boolean" then return nil end
-	end
-	return values
-end
 
 local function bars(enabled)
-	local all, guid = records("bars_on")
-	if not all then return end
-	if enabled then
-		local values = toggles()
-		if not values then return end
-		local turned = {}
-		for _, index in ipairs(TOGGLES) do
-			if values[index] == false then values[index], turned[index] = true, true end
-		end
-		if next(turned) == nil then return end
-		-- Written first, as with the layout.
-		all[guid] = turned
-		SetActionBarToggles(unpack(values, 1, 7))
-	elseif all[guid] then
-		local values = toggles()
-		if not values then return end
-		local turned = all[guid]
-		all[guid] = nil
-		local changed = false
-		for _, index in ipairs(TOGGLES) do
-			if turned[index] and values[index] == true then values[index], changed = false, true end
-		end
-		if changed then SetActionBarToggles(unpack(values, 1, 7)) end
+	local waiting = false
+	for _, key in ipairs(BARS) do
+		local ok, why
+		if enabled then ok, why = settings.ensure(key, true) else ok, why = settings.release(key) end
+		if not ok and why == "waiting" then waiting = true end
+	end
+	-- After combat this runs again on its own, and after login it waits for the game to settle.
+	if waiting and not retry_queued then
+		retry_queued = true
+		settings.when_settled(function()
+			retry_queued = false
+			apply(module.enabled(id))
+		end)
 	end
 end
 

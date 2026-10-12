@@ -54,7 +54,7 @@ return function(root, check)
 		for key, value in pairs(extra or {}) do env[key] = value end
 		local addon = {}
 		env.Everlook = addon
-		for _, file in ipairs({ "module", "bar_layouts", "bar_slots" }) do
+		for _, file in ipairs({ "module", "blizzard_settings", "bar_layouts", "bar_slots" }) do
 			local chunk = assert(loadfile(source(file)))
 			setfenv(chunk, env)
 			chunk(file == "bar_slots" and "Everlook_ActionBarSlots" or "Everlook", addon)
@@ -182,6 +182,8 @@ return function(root, check)
 		for key, value in pairs(options.extra or {}) do extra[key] = value end
 		addon, env, loaded, fire = load_module(extra)
 		loaded["Everlook_ActionBarSlots"]()
+		-- The character enters the world after the module has loaded, as in the game.
+		if options.bars then fire("PLAYER_ENTERING_WORLD") end
 		return addon, env, state, fire
 	end
 	local function layout_named(state, name)
@@ -283,11 +285,40 @@ return function(root, check)
 		addon, _, state = world({ bars = { false, "secret", false, false, false, false, false } })
 		state.time = 110
 		addon.module.set("action_bar_slots", "enabled", true)
-		check("values that are not plain on or off stop it", state.bars[1] == false)
+		check("a value that is not plain on or off is left as it is, and the other bar is still turned on", state.bars[1] == true and state.bars[2] == "secret")
 
 		addon, _, state = world({ bars = off, extra = { SetActionBarToggles = false } })
 		state.time = 110
 		check("a client without the toggle calls changes no bars and does not fail", pcall(addon.module.set, "action_bar_slots", "enabled", true) and state.bars[1] == false)
+	end
+
+	do
+		-- Logging in with the module already on sets everything up, with nothing to switch off and on.
+		local db = { qol = { action_bar_slots = { enabled = true } } }
+		local _, _, state = world({ db = db, bars = { false, false, false, false, false, false, false } })
+		check("the layout is made and switched to as the module starts", state.calls[1] == "save" and state.active == 5)
+		check("the bars wait for the game to settle", state.bars[1] == false and #state.timers == 1)
+		state.time = state.time + 6
+		for _, timer in ipairs(state.timers) do timer.callback() end
+		check("and are then turned on without anyone touching the option", state.bars[1] == true and state.bars[2] == true)
+
+		-- A later login finds the layout done and a bar the player turned off, and turns it on again.
+		state.bars[2] = false
+		local _, _, later = world({ db = db, bars = state.bars, saved = state.saved, active = state.active })
+		later.time = later.time + 6
+		for _, timer in ipairs(later.timers) do timer.callback() end
+		check("a later login turns on a bar that has been switched off", later.bars[2] == true and later.bars[1] == true)
+		local layout_calls = 0
+		for _, call in ipairs(later.calls) do if call ~= "bars" then layout_calls = layout_calls + 1 end end
+		check("and leaves the layout alone", layout_calls == 0)
+	end
+
+	do
+		-- A way back left by an earlier version, with no Everlook Slots layout to go with it, starts again.
+		local db = { qol = { action_bar_slots = { enabled = true, switched = { ["Player-1"] = { name = "Modern", type = PRESET } } } } }
+		local _, _, state = world({ db = db, saved = { layout("Everlook", ACCOUNT, 1) }, active = 4 })
+		check("the layout is made when the record has none behind it", layout_named(state, "Everlook Slots") ~= nil and state.active == 5)
+		check("the player's own Everlook layout is the way back", db.qol.action_bar_slots.switched["Player-1"].name == "Everlook")
 	end
 
 	do
