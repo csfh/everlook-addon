@@ -331,7 +331,7 @@ local PLAYER_NAMES_CVAR = "nameplateShowOnlyNameForFriendlyPlayerUnits"
 local function wanted_cvars()
 	local wanted = {}
 	if module.get(id, "player_bars") then wanted[PLAYER_NAMES_CVAR] = "0" end
-	if module.get(id, "pets") then wanted.nameplateShowFriendlyPets = "1" end
+	if module.get(id, "pets") then wanted.nameplateShowFriendlyPlayerPets = "1" end
 	if module.get(id, "stacking") then
 		wanted.nameplateMotion = "1"
 		wanted.nameplateOverlapH = tostring(module.get(id, "spacing_h"))
