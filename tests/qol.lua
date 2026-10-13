@@ -1792,8 +1792,8 @@ return function(root, check)
 	env2.CreateSettingsListSectionHeaderInitializer = function(name)
 		return { name = name }
 	end
-	env2.CreateSettingsButtonInitializer = function(name, _, click, tooltip, search)
-		assert(search ~= nil); return { name = name, click = click, tooltip = tooltip }
+	env2.CreateSettingsButtonInitializer = function(name, _, click, _, search)
+		assert(search ~= nil); return { name = name, click = click }
 	end
 	env2.EventUtil.ContinueOnAddOnLoaded = function(_, callback) callback() end
 	env2.EventUtil.ContinueOnPlayerLogin = function(callback) callback() end
@@ -1831,20 +1831,6 @@ return function(root, check)
 		and page_of_variable.Everlook_QoL_camera_enabled == "Screen and camera"
 		and page_of_variable.Everlook_QoL_quest_automation_enabled == "Quests" and page_of_variable.Everlook_QoL_smart_island_enabled == "Smart island"
 		and page_of_variable.Everlook_QoL_mail_enabled == "Loot and mail")
-	do
-		local index_rows = {}
-		for _, row in ipairs(rows) do
-			if row.click and row.name ~= "Eager scan" then index_rows[row.name] = row end
-		end
-		local indexed = true
-		for _, name in ipairs(subpage_names) do indexed = indexed and index_rows[name] ~= nil end
-		check("the Everlook page lists every subject page", indexed and index_rows["Collected data"] ~= nil and index_rows["Performance"] ~= nil)
-		local nameplates_page
-		for _, page in ipairs(subpages) do if page.name == "Nameplates" then nameplates_page = page end end
-		index_rows["Nameplates"].click()
-		check("a row on the Everlook page opens its subject page", nameplates_page and opened == nameplates_page.GetID())
-		check("a row names the modules on its page", index_rows["Nameplates"].tooltip:find("NPC names on nameplates", 1, true) and index_rows["Nameplates"].tooltip:find("Quest marks on nameplates", 1, true))
-	end
 	local module_count = #addon2.module.modules
 	local last = addon2.module.modules[module_count]
 	local function has_header(name)
@@ -1916,7 +1902,7 @@ return function(root, check)
 	check("/everlook is the only command and it toggles the page",
 		env2.SLASH_EVERLOOK1 == "/everlook" and env2.SLASH_EVERLOOK2 == nil and env2.SLASH_EVERLOOKQOL1 == nil
 		and env2.SlashCmdList.EVERLOOK == addon2.settings.toggle and env2.SlashCmdList.EVERLOOKQOL == nil)
-	check("the Everlook page opens with the eager scan and then the index, with no data button", rows[1].name == "Eager scan" and rows[2].name == "Features" and rows[3].click)
+	check("the Everlook page keeps only the eager scan, with no data button", rows[1].name == "Eager scan" and rows[2] == nil)
 	rows[1].click()
 	check("the eager scan button scans", scanned == 1)
 	local addon3, env3, _, _, _, frames3 = load_qol()

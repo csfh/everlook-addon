@@ -53,12 +53,6 @@ local function add_option(page, page_layout, module, key, toggle)
 end
 
 local subpages = {}
--- One row per page for the Everlook page: its name, the page, and what it holds.
-local index = {}
-
-local function add_to_index(name, page, description, about_everlook)
-	index[#index + 1] = { name = name, page = page, description = description, about_everlook = about_everlook == true }
-end
 
 -- The game's own switch for logging taint is its console variable. The log
 -- helps when chasing a blocked action, but at level 2 calls to methods that
@@ -79,30 +73,8 @@ local function add_debug_page()
 	if not present or current == nil then return end
 	local page, page_layout = Settings.RegisterVerticalLayoutSubcategory(category, "Debug")
 	subpages[#subpages + 1] = page
-	add_to_index("Debug", page, "The game's taint log, turned off.", true)
 	page_layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Taint log", TAINT_LOG_HELP))
 	page_layout:AddInitializer(CreateSettingsButtonInitializer("Taint log", "Turn off", turn_taint_log_off, TAINT_LOG_HELP, true))
-end
-
--- The Everlook page lists every page below it. A button opens that page, and the
--- rows are searchable, so a setting's page can be found from here. Subject pages
--- come first, then the pages about Everlook itself.
-
-local function add_index(layout)
-	if not Settings.OpenToCategory then return end
-	for _, tools in ipairs({ false, true }) do
-		local first = true
-		for _, entry in ipairs(index) do
-			if entry.about_everlook == tools then
-				if first then
-					layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(tools and "Tools" or "Features"))
-					first = false
-				end
-				layout:AddInitializer(CreateSettingsButtonInitializer(entry.name, "Open",
-					function() Settings.OpenToCategory(entry.page:GetID()) end, entry.description, true))
-			end
-		end
-	end
 end
 
 -- Module addons load after Everlook, so the page waits for login, when all of
@@ -127,9 +99,6 @@ local function build()
 		if #modules > 0 then
 			local page, page_layout = Settings.RegisterVerticalLayoutSubcategory(category, labels[group])
 			subpages[#subpages + 1] = page
-			local names = {}
-			for _, module in ipairs(modules) do names[#names + 1] = module.name end
-			add_to_index(labels[group], page, table.concat(names, ", ") .. ".")
 			for _, module in ipairs(modules) do
 				page_layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(module.name, module.description))
 				local toggle = setting(page, module, "enabled")
@@ -173,16 +142,11 @@ local function build()
 			end
 		end
 	end
-	local collected = Settings.RegisterCanvasLayoutSubcategory(category, Everlook.collected.page(), "Collected data")
-	subpages[#subpages + 1] = collected
-	add_to_index("Collected data", collected, "What Everlook has read from your game, to browse.", true)
+	subpages[#subpages + 1] = Settings.RegisterCanvasLayoutSubcategory(category, Everlook.collected.page(), "Collected data")
 	if Everlook.sched and Everlook.sched.page then
-		local performance = Settings.RegisterCanvasLayoutSubcategory(category, Everlook.sched.page(), "Performance")
-		subpages[#subpages + 1] = performance
-		add_to_index("Performance", performance, "How long Everlook took to load, and when.", true)
+		subpages[#subpages + 1] = Settings.RegisterCanvasLayoutSubcategory(category, Everlook.sched.page(), "Performance")
 	end
 	add_debug_page()
-	add_index(layout)
 	Settings.RegisterAddOnCategory(category)
 end
 
