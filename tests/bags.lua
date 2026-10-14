@@ -223,6 +223,76 @@ return function(root, check)
 		check("a folded section's header sits at its bottom, and it is one header tall", folded.sections[2].header_y == 61 + 10 and folded.sections[3].collapsed ~= true)
 		check("the section above a folded one clears the header, and a hidden section adds no gap",
 			folded.sections[1].positions[11].y == 61 + 10 + 20 + 10 and folded.height == 61 + 10 + 20 + 10 + 103)
+
+		-- Small sections share a band when asked, side by side in stock order with a slot's width between them.
+		-- A section is as wide as its slots or its header, whichever is more, and a header is
+		-- cut to its section's width. Sections that do not pack are as they were.
+		check("packing is asked for from twelve columns", layout.PACK_COLUMNS == 12 and layout.packs(12) and layout.packs(16) and not layout.packs(11) and not layout.packs(10))
+		local small = {
+			{ key = "armory", title = "The Armory", count = 30 },
+			{ key = "prep", title = "Adventure Prep", count = 3, header_width = 100 },
+			{ key = "junk", title = "Junk", count = 2, header_width = 40 },
+			{ key = "free", title = "Free Space", count = 14, visible = 1, header_width = 70 },
+		}
+		local alone = layout.grouped(small, 12)
+		check("without packing each section keeps its own row and a full width header",
+			alone.sections[2].header_y ~= alone.sections[3].header_y and alone.sections[3].header_x == 0 and alone.sections[3].header_width == 12 * 42 - 5)
+		local packed = layout.grouped(small, 12, true)
+		local big, prep, junk, free = packed.sections[1], packed.sections[2], packed.sections[3], packed.sections[4]
+		check("packing leaves the sections in stock order", big.key == "armory" and prep.key == "prep" and junk.key == "junk" and free.key == "free")
+		check("small sections that fit share one row, their headers at one height", prep.header_y == 41 and junk.header_y == 41 and free.header_y == 41)
+		check("the first section of a band is at the left and the rest follow with a slot's width between",
+			prep.positions[1].x == -11 * 42 and prep.positions[3].x == -9 * 42 and junk.positions[1].x == -7 * 42 and free.positions[1].x == -4 * 42)
+		check("every slot of a band sits on the band's row", prep.positions[1].y == 0 and junk.positions[2].y == 0 and free.positions[1].y == 0)
+		check("a header is as wide as its section and sits over it",
+			prep.header_x == -9 * 42 and prep.header_width == 3 * 42 - 5
+			and junk.header_x == -6 * 42 and junk.header_width == 2 * 42 - 5
+			and free.header_x == -3 * 42 and free.header_width == 2 * 42 - 5)
+		check("a header wider than its slots makes its section as wide as the header", free.header_width == 79 and #free.positions == 1)
+		check("a section of several rows is a band of its own, over the packed row, with a full width header",
+			big.header_x == 0 and big.header_width == 12 * 42 - 5 and big.positions[1].y == 71 + 2 * 42 and big.header_y == 71 + 121 + 4)
+		check("packing makes the grid shorter than the stack", packed.height == 71 + 121 + 4 + 20 and alone.height > packed.height and packed.width == alone.width)
+
+		local mixed = layout.grouped({
+			{ key = "a", title = "A", count = 2, header_width = 20 },
+			{ key = "b", title = "B", count = 2, header_width = 20 },
+			{ key = "c", title = "C", count = 30 },
+			{ key = "d", title = "D", count = 2, header_width = 20 },
+			{ key = "e", title = "E", count = 2, header_width = 20 },
+		}, 12, true)
+		check("a section of several rows ends a band and starts the next", mixed.sections[1].header_y == mixed.sections[2].header_y and mixed.sections[1].header_y > mixed.sections[3].header_y
+			and mixed.sections[4].header_y == mixed.sections[5].header_y and mixed.sections[4].header_y < mixed.sections[3].header_y)
+		local crowded = layout.grouped({
+			{ key = "a", title = "A", count = 8 },
+			{ key = "b", title = "B", count = 4 },
+			{ key = "c", title = "C", count = 4 },
+		}, 12, true)
+		check("a section that does not fit beside the one before starts a new row, and the next may join it",
+			crowded.sections[1].header_y > crowded.sections[2].header_y and crowded.sections[2].header_y == crowded.sections[3].header_y
+			and crowded.sections[3].positions[1].x == -6 * 42)
+		check("a lone small section keeps a full width header", crowded.sections[1].header_x == 0 and crowded.sections[1].header_width == 12 * 42 - 5)
+		local capped = layout.grouped({
+			{ key = "a", title = "A", count = 2, header_width = 900 },
+			{ key = "b", title = "B", count = 2 },
+		}, 12, true)
+		check("a header wider than the grid takes the grid, and nothing joins it", capped.sections[1].header_width == 12 * 42 - 5 and capped.sections[1].header_y ~= capped.sections[2].header_y)
+
+		-- A folded section is its header and nothing more, as wide as the header, and it packs.
+		local folded_band = layout.grouped({
+			{ key = "prep", title = "Adventure Prep", count = 40, state = "collapsed", header_width = 130 },
+			{ key = "junk", title = "Junk", count = 2, header_width = 40 },
+		}, 12, true)
+		local fold, open = folded_band.sections[1], folded_band.sections[2]
+		check("a folded section shares a band, as wide as its header", fold.collapsed and #fold.positions == 0 and fold.header_width == 4 * 42 - 5 and fold.header_x == -8 * 42)
+		check("its header sits level with its neighbour's", fold.header_y == open.header_y and open.header_y == 41 and open.positions[1].x == -6 * 42)
+		check("a band of folded sections is one header tall", layout.grouped({
+			{ key = "a", title = "A", count = 5, state = "collapsed", header_width = 40 },
+			{ key = "b", title = "B", count = 5, state = "collapsed", header_width = 40 },
+		}, 12, true).height == 20)
+		check("a hidden section takes no room in a band", #layout.grouped({
+			{ key = "a", title = "A", count = 2, header_width = 20 },
+			{ key = "b", title = "B", count = 2, state = "hidden" },
+		}, 12, true).sections == 1)
 	end
 
 	-- The item level label: gear only, in the item's quality.
@@ -1482,6 +1552,45 @@ return function(root, check)
 		check("the header spans twelve columns", header_named(env, frame, "The Armory").width == 12 * 37 + 11 * 5)
 		addon.module.set("bags", "group", false)
 		check("ungrouped again, twelve columns are still twelve", at(frame.buttons[13], 0, 42) and frame.width == 400 + 84)
+	end
+	do
+		-- Packing: from twelve columns the small sections share a row, side by side in stock order.
+		local entries = {
+			{ class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 }, { class = 2, quality = 3, level = 200 },
+			{ class = 15, quality = 0, level = 1 },
+		}
+		local addon, env, frame = group_setup(6, entries)
+		addon.module.set("bags", "all_free", false)
+		check("packing starts on, and is only used from twelve columns", (function()
+			for _, module in ipairs(addon.module.modules) do
+				if module.id == "bags" then return module.options.pack and module.options.pack.default == true end
+			end
+		end)())
+		addon.module.set("bags", "columns", 11)
+		addon.module.set("bags", "group", true)
+		check("under twelve columns every section has its row", at(frame.buttons[1], -10 * 42, 213) and at(frame.buttons[5], -10 * 42, 0))
+		addon.module.set("bags", "columns", 12)
+		check("at twelve the sections share a row, each as wide as its header or slots",
+			at(frame.buttons[1], -11 * 42, 0) and at(frame.buttons[3], -10 * 42, 0) and at(frame.buttons[2], -8 * 42, 0)
+			and at(frame.buttons[4], -4 * 42, 0) and at(frame.buttons[5], -42, 0))
+		check("the parked free slot is still parked", frame.buttons[6].alpha == 0 and frame.buttons[6].mouse == false)
+		local armory, free = header_named(env, frame, "The Armory"), header_named(env, frame, "Free Space")
+		check("a header sits over its section and is as wide as it",
+			armory.points[1][4] == -10 * 42 and armory.width == 2 * 42 - 5 and free.points[1][4] == 0 and free.width == 2 * 42 - 5
+			and armory.points[1][5] == free.points[1][5])
+		check("the frame is one row and a header tall, and twelve columns wide", frame.height == 600 + 61 - 37 and frame.width == 400 + 84)
+		addon.module.set("bags", "fold", true)
+		check("a header's arrow is room it needs, so a section that no longer fits moves to its own row",
+			at(frame.buttons[5], -11 * 42, 0) and at(frame.buttons[4], -3 * 42, 71) and at(frame.buttons[1], -11 * 42, 71))
+		addon.module.set("bags", "fold", false)
+		addon.module.set("bags", "pack", false)
+		check("turning packing off gives every section its row", at(frame.buttons[1], -11 * 42, 213) and at(frame.buttons[2], -11 * 42, 142)
+			and at(frame.buttons[4], -11 * 42, 71) and at(frame.buttons[5], -11 * 42, 0) and armory.width == 12 * 42 - 5 and armory.points[1][4] == 0)
+		addon.module.set("bags", "pack", true)
+		addon.module.set("bags", "sidebar", true)
+		check("with chips the headers carry no count, and the sections still share a row", at(frame.buttons[1], -11 * 42, 0) and at(frame.buttons[2], -8 * 42, 0))
+		addon.module.set("bags", "group", false)
+		check("ungrouped again, twelve columns are a flat grid", at(frame.buttons[2], -42, 0) and not armory.shown)
 	end
 	do
 		-- A locked slot sits last among the empty ones.

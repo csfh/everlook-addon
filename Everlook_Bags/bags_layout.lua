@@ -53,38 +53,97 @@ layout.HEADER_HEIGHT = 20
 local HEADER_GAP = 4
 local SECTION_GAP = 10
 
+-- From this many columns small sections can share a row, because a row is wide enough
+-- for several of them and their headers.
+layout.PACK_COLUMNS = 12
+
+function layout.packs(columns)
+	return columns >= layout.PACK_COLUMNS
+end
+
+-- How many slot widths a section is as wide as: its slots in one row, or its header, which
+-- the caller measures in pixels, when that is wider. A section of more than one row, and
+-- one wider than the grid, is the whole grid. A hidden section is nothing.
+local function cells_of(section, drawn, columns)
+	local wanted = section.state == "collapsed" and 0 or drawn
+	if section.header_width then
+		wanted = math.max(wanted, math.ceil((section.header_width + SPACING) / STEP))
+	end
+	return math.min(wanted, columns)
+end
+
+-- The rows of sections stacked top to bottom, each a header over its own slots. With
+-- `pack`, consecutive sections of one row go side by side, in stock order and a slot's
+-- width apart, for as long as they fit, and every other section is a row of its own.
+local function bands_of(entries, columns, pack)
+	local bands = {}
+	for _, entry in ipairs(entries) do
+		local band = bands[#bands]
+		local joins = pack and band ~= nil and entry.single and band.single
+			and band.cells + 1 + entry.cells <= columns
+		if not joins then
+			band = { members = {}, cells = 0, single = pack and entry.single }
+			bands[#bands + 1] = band
+		end
+		entry.start = band.cells > 0 and band.cells + 1 or 0
+		band.cells = entry.start + entry.cells
+		band.members[#band.members + 1] = entry
+	end
+	return bands
+end
+
 -- A section is open, "collapsed" to its header alone, or "hidden" without even that. An
 -- open one draws `visible` of its slots when that is less than its count, and its count stays.
-function layout.grouped(sections, columns)
+-- Sections that share a row have their headers on one level, as wide as the section.
+function layout.grouped(sections, columns, pack)
+	local entries = {}
+	for _, section in ipairs(sections) do
+		if section.count > 0 and section.state ~= "hidden" then
+			local collapsed = section.state == "collapsed"
+			local drawn = collapsed and 0 or math.min(section.visible or section.count, section.count)
+			local rows = math.ceil(drawn / columns)
+			local cells = rows > 1 and columns or cells_of(section, drawn, columns)
+			entries[#entries + 1] = {
+				section = section, collapsed = collapsed, drawn = drawn, rows = rows, cells = cells,
+				single = rows <= 1,
+			}
+		end
+	end
+	local bands = bands_of(entries, columns, pack)
 	local placed = {}
 	local bottom, height = 0, 0
-	for index = #sections, 1, -1 do
-		local section = sections[index]
-		if section.count > 0 and section.state ~= "hidden" then
-			local entry = { key = section.key, title = section.title, count = section.count, positions = {} }
-			local section_height
-			if section.state == "collapsed" then
-				entry.collapsed = true
-				entry.header_y = bottom
-				section_height = layout.HEADER_HEIGHT
-			else
-				local drawn = math.min(section.visible or section.count, section.count)
-				local rows = math.ceil(drawn / columns)
-				local rows_height = span(rows)
-				for slot = 1, drawn do
-					local row_from_top = math.floor((slot - 1) / columns)
-					entry.positions[slot] = {
-						x = 0 - (columns - 1 - (slot - 1) % columns) * STEP,
-						y = bottom + (rows - 1 - row_from_top) * STEP,
-					}
-				end
-				entry.header_y = bottom + rows_height + HEADER_GAP
-				section_height = layout.HEADER_HEIGHT + HEADER_GAP + rows_height
-			end
-			table.insert(placed, 1, entry)
-			height = bottom + section_height
-			bottom = height + SECTION_GAP
+	for index = #bands, 1, -1 do
+		local band = bands[index]
+		local rows_height = 0
+		for _, entry in ipairs(band.members) do
+			if entry.rows > 0 then rows_height = math.max(rows_height, span(entry.rows)) end
 		end
+		local header_y = bottom + (rows_height > 0 and rows_height + HEADER_GAP or 0)
+		local alone = #band.members == 1
+		local group = {}
+		for _, entry in ipairs(band.members) do
+			local section = entry.section
+			local result = { key = section.key, title = section.title, count = section.count, positions = {}, header_y = header_y }
+			if entry.collapsed then result.collapsed = true end
+			local first = alone and 0 or entry.start
+			for slot = 1, entry.drawn do
+				local row_from_top = math.floor((slot - 1) / columns)
+				local column = alone and (slot - 1) % columns or first + slot - 1
+				result.positions[slot] = {
+					x = 0 - (columns - 1 - column) * STEP,
+					y = bottom + (entry.rows - 1 - row_from_top) * STEP,
+				}
+			end
+			if alone then
+				result.header_x, result.header_width = 0, span(columns)
+			else
+				result.header_x, result.header_width = 0 - (columns - first - entry.cells) * STEP, span(entry.cells)
+			end
+			group[#group + 1] = result
+		end
+		for member = #group, 1, -1 do table.insert(placed, 1, group[member]) end
+		height = header_y + layout.HEADER_HEIGHT
+		bottom = height + SECTION_GAP
 	end
 	return { sections = placed, width = span(columns), height = height }
 end
