@@ -29,6 +29,7 @@ return function(root, check)
 				local text = { layer = layer, template = template, shown = true, points = {} }
 				function text:SetPoint(...) self.points[#self.points + 1] = { ... } end
 				function text:SetText(content) self.content = content end
+				function text:GetStringWidth() return #(self.content or "") * 6 end
 				function text:ClearAllPoints() self.points = {} end
 				function text:Show() self.shown = true end
 				function text:Hide() self.shown = false end
@@ -52,6 +53,8 @@ return function(root, check)
 				function texture:SetPoint(...) self.point = { ... } end
 				function texture:SetHeight(height) self.height = height end
 				function texture:SetSize(width, height) self.width, self.height = width, height end
+				function texture:SetAllPoints(target) self.all_points = target end
+				function texture:SetColorTexture(r, g, b, a) self.color = { r, g, b, a } end
 				function texture:Show() self.shown = true end
 				function texture:Hide() self.shown = false end
 				self.textures[#self.textures + 1] = texture
@@ -91,7 +94,7 @@ return function(root, check)
 		local addon = {}
 		-- world.lua shares the namespace as the global Everlook.
 		env.Everlook = addon
-		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_categories", "bags_pins", "bags_assign", "bags_alts", "bags_recent", "bags_folds", "bags_headers", "bags_sidebar", "bags_marker", "bags" }) do
+		for _, file in ipairs({ "module", "bags_layout", "bags_item_level", "bags_junk", "bags_categories", "bags_pins", "bags_assign", "bags_alts", "bags_recent", "bags_folds", "bags_headers", "bags_chips", "bags_search", "bags_marker", "bags" }) do
 			local chunk = assert(loadfile(source(file)))
 			setfenv(chunk, env)
 			chunk(file == "bags" and "Everlook_Bags" or "Everlook", addon)
@@ -179,15 +182,26 @@ return function(root, check)
 		local wide_width, wide_height = layout.grouped_size(400, 600, 14, wide_grouped)
 		check("twelve grouped columns widen the frame", wide_width == 400 + 84 and wide_height == 600 + (20 + 4 + 79) - 79)
 
-		-- A list of sections on the left widens the frame and, when it has more rows than the grid, makes it taller.
-		check("the list is 130 wide with a gap of 8 and its rows are 22 tall", layout.SIDEBAR_WIDTH == 130 and layout.SIDEBAR_GAP == 8 and layout.SIDEBAR_ROW_HEIGHT == 22)
-		width, height = layout.grouped_size(400, 600, 15, grouped, 3)
-		check("a list adds its width and its gap to the frame", width == 400 + 130 + 8)
-		check("a short list leaves the height to the grid", height == 600 + 174 - 79)
-		width, height = layout.grouped_size(400, 600, 15, grouped, 9)
-		check("a long list sets the height", height == 600 + 9 * 22 - 79)
-		width, height = layout.grouped_size(400, 600, 15, grouped, nil)
-		check("no list adds nothing", width == 400 and height == 600 + 174 - 79)
+		-- Chips for the sections wrap in rows over the grid, and the frame grows by their height and the margin below them.
+		check("a chip is 22 tall with 6 between chips and 8 between the chips and the first section",
+			layout.CHIP_HEIGHT == 22 and layout.CHIP_GAP == 6 and layout.CHIPS_MARGIN == 8)
+		local chips = layout.chips({ 60, 80, 90 }, 200)
+		check("chips fill a row from the left with a gap between them", chips.items[1].x == 0 and chips.items[2].x == 66 and chips.items[1].row == 1 and chips.items[2].row == 1)
+		check("a chip that does not fit wraps to the next row, at the left", chips.items[3].x == 0 and chips.items[3].row == 2)
+		check("chips keep the widths they were given", chips.items[1].width == 60 and chips.items[3].width == 90)
+		check("two rows are two chips tall and a gap", chips.rows == 2 and chips.height == 22 + 6 + 22)
+		check("a chip that fits exactly stays on its row", layout.chips({ 97, 97 }, 200).items[2].row == 1)
+		check("a chip wider than the room takes a row to itself, cut to the room", (function()
+			local wide = layout.chips({ 40, 250, 40 }, 200)
+			return wide.items[2].row == 2 and wide.items[2].width == 200 and wide.items[1].row == 1 and wide.items[3].row == 3 and wide.rows == 3
+		end)())
+		check("no chips take no room", layout.chips({}, 200).rows == 0 and layout.chips({}, 200).height == 0)
+		width, height = layout.grouped_size(400, 600, 15, grouped, 50)
+		check("chips add their height and a margin to the frame and nothing to its width", width == 400 and height == 600 + 174 + 50 + 8 - 79)
+		width, height = layout.grouped_size(400, 600, 15, grouped, 0)
+		check("no chips add nothing", width == 400 and height == 600 + 174 - 79)
+		width, height = layout.grouped_size(400, 600, 15, grouped)
+		check("an absent chip height adds nothing either", width == 400 and height == 600 + 174 - 79)
 		-- A folded section keeps its header and gives up its rows. A hidden one gives up everything.
 		local folded = layout.grouped({
 			{ key = "armory", title = "The Armory", count = 12 },
@@ -471,7 +485,18 @@ return function(root, check)
 	-- Applying and undoing, on a stand-in for the stock frame.
 	local function stand_in(slot_total, gear)
 		local points_log = {}
-		local frame = { MoneyFrame = { name = "money" }, CloseButton = { name = "close" }, width = 400, height = 600, buttons = {}, layouts = 0, hooks = {} }
+		local frame = { MoneyFrame = { name = "money", GetRight = function() return 993 end }, CloseButton = { name = "close" }, width = 400, height = 600, buttons = {}, layouts = 0, hooks = {} }
+		function frame:GetRight() return 1000 end
+		-- The game's one search box, put on a bag by UpdateSearchBox with the bag's own point and width.
+		local box = { points = {}, width = 330 }
+		function box:ClearAllPoints() self.points = {} end
+		function box:SetPoint(...) self.points[#self.points + 1] = { ... } end
+		function box:GetPoint(index) local point = self.points[index]; if point then return unpack(point) end end
+		function box:SetWidth(width) self.width = width end
+		function frame:SetSearchBoxPoint(target) target:SetPoint("TOPLEFT", self, "TOPLEFT", 62, -37); target:SetWidth(330) end
+		function frame:UpdateSearchBox() box:ClearAllPoints(); self:SetSearchBoxPoint(box); box.anchorBag = self end
+		frame:UpdateSearchBox()
+		frame.search_box = box
 		function frame:HookScript(name, callback) self.hooks[name] = callback end
 		function frame:GetFrameLevel() return 5 end
 		function frame:Hide() self.shown_flag = false; if self.hooks.OnHide then self.hooks.OnHide(self) end end
@@ -544,6 +569,7 @@ return function(root, check)
 		frame.scale = 0.9
 		local env_extra = {
 			ContainerFrameCombinedBags = frame,
+			BagItemSearchBox = box,
 			-- What stock does on opening: it sets the scale that fits the screen.
 			UpdateContainerFrameAnchors = function() frame.scale = frame.stock_scale or 0.9 end,
 			C_Container = {
@@ -834,7 +860,7 @@ return function(root, check)
 		check("a wait that ends after grouping was turned off leaves the stock grid alone", at(frame.buttons[2], -42, 0) and at(frame.buttons[4], -126, 0))
 	end
 	do
-		-- The section list: a click on a row shows that section alone.
+		-- The section chips: a click on a chip shows that section alone.
 		local entries = {
 			{ class = 4, quality = 4, level = 270 }, { class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 },
 			{ class = 15, quality = 0, level = 1 },
@@ -853,27 +879,34 @@ return function(root, check)
 			end
 			return found
 		end
-		check("the section list starts off", (function()
+		check("the section chips start off", (function()
 			for _, module in ipairs(addon.module.modules) do
 				if module.id == "bags" then return module.options.sidebar and module.options.sidebar.default == false end
 			end
 		end)())
-		check("with the list off there is none and the frame is as wide as before", list_of() == nil and frame.width == 400)
+		check("with the chips off there are none and the frame is as it was", list_of() == nil and frame.width == 400 and frame.height == 600 + 274 - 37)
+		check("with the chips off a header shows its count beside the title", header_named(env, frame, "The Armory").texts[2].shown == true)
 		addon.module.set("bags", "sidebar", true)
 		local list = list_of()
-		check("the list is a child of the bag, left of the grid and level with its bottom",
+		check("the chips sit in a frame over the grid's top section, as wide as the grid",
 			list ~= nil and list.points[1][1] == "BOTTOMRIGHT" and list.points[1][2] == frame.MoneyFrame and list.points[1][3] == "TOPRIGHT"
-			and list.points[1][4] == -(415 + 8) and list.points[1][5] == 4)
-		check("the list is 130 wide and as tall as its rows", list.width == 130 and list.height == 5 * 22)
-		check("the list does not take the mouse itself", list.mouse == false)
+			and list.points[1][4] == 0 and list.points[1][5] == 4 + 274 + 8)
+		check("the frame is as wide as the grid and as tall as the chips need", list.width == 415 and list.height == 22 + 6 + 22)
+		check("the chips frame does not take the mouse itself", list.mouse == false)
 		local rows = rows_of(list)
 		local names = {}
 		for _, row in ipairs(rows) do names[#names + 1] = row.texts[1].content .. " " .. row.texts[2].content end
-		check("a row for everything and one per section that has slots, with counts",
+		check("a chip for everything and one per section that has slots, with counts",
 			table.concat(names, "|") == "All Items 4|The Armory 2|Adventure Prep 1|Junk 1|Free Space 2")
-		check("rows stack from the top of the list", rows[1].points[1][1] == "TOPLEFT" and rows[1].points[1][5] == 0 and rows[3].points[1][5] == -2 * 22)
-		check("the row for everything is the one marked", rows[1].locked == true and rows[3].locked == false)
-		check("the frame is wider by the list and its gap", frame.width == 400 + 138 and frame.height == 600 + 274 - 37)
+		check("a chip is as wide as its text and padding, and 22 tall", rows[1].width == 8 + 54 + 4 + 6 + 8 and rows[1].height == 22)
+		check("chips fill a row from the left with a gap between them", rows[1].points[1][1] == "TOPLEFT" and rows[1].points[1][2] == list
+			and rows[1].points[1][4] == 0 and rows[1].points[1][5] == 0 and rows[2].points[1][4] == 80 + 6)
+		check("the chip that does not fit wraps to a second row", rows[5].points[1][4] == 0 and rows[5].points[1][5] == -(22 + 6))
+		check("a chip's name is bright and its count dim", rows[1].texts[1].template == "GameFontHighlightSmall" and rows[1].texts[2].template == "GameFontDisableSmall")
+		check("the chip for everything is the one marked, and its fill is lit", rows[1].locked == true and rows[3].locked == false
+			and rows[1].textures[1].color[4] > rows[3].textures[1].color[4])
+		check("with the chips on a header shows no count, the chip has it", header_named(env, frame, "The Armory").texts[2].shown == false)
+		check("the frame is the grid's width and taller by the chips and their margin", frame.width == 400 and frame.height == 600 + 274 + 50 + 8 - 37)
 		check("grouping itself is unchanged", at(frame.buttons[1], -378, 213) and at(frame.buttons[3], -378, 142))
 
 		rows[3].scripts.OnClick(rows[3])
@@ -887,8 +920,8 @@ return function(root, check)
 		end)())
 		check("only that section keeps its header", header_named(env, frame, "Adventure Prep").shown and not header_named(env, frame, "The Armory").shown
 			and not header_named(env, frame, "Junk").shown and not header_named(env, frame, "Free Space").shown)
-		check("the frame is as tall as the list needs", frame.height == 600 + 5 * 22 - 37)
-		check("the chosen row is marked and the others are not", rows[3].locked == true and rows[1].locked == false)
+		check("the frame is as tall as the section and the chips need", frame.height == 600 + 61 + 50 + 8 - 37)
+		check("the chosen chip is marked and the others are not", rows[3].locked == true and rows[1].locked == false)
 		check("the counts do not change", rows[2].texts[2].content == "2" and rows[1].texts[2].content == "4")
 
 		rows[3].scripts.OnClick(rows[3])
@@ -916,7 +949,7 @@ return function(root, check)
 
 		rows[3].scripts.OnClick(rows[3])
 		addon.module.set("bags", "sidebar", false)
-		check("turning the list off hides it, shows everything and shrinks the frame", not list.shown and at(frame.buttons[1], -378, 213) and frame.buttons[1].alpha == 1 and frame.width == 400)
+		check("turning the chips off hides them, shows everything and the counts, and shrinks the frame", not list.shown and at(frame.buttons[1], -378, 213) and frame.buttons[1].alpha == 1 and frame.height == 600 + 274 - 37 and header_named(env, frame, "The Armory").texts[2].shown == true)
 		addon.module.set("bags", "sidebar", true)
 		check("turning it back on starts with everything shown", list.shown and at(frame.buttons[1], -378, 213) and rows[1].locked == true)
 		addon.module.set("bags", "group", false)
@@ -924,6 +957,36 @@ return function(root, check)
 		addon.module.set("bags", "group", true)
 		addon.module.set("bags", "enabled", false)
 		check("turning the module off hides the list", not list.shown and frame.width == 400)
+	end
+	do
+		-- The search box: stock sizes it for its own grid, so it is widened to meet the grid's right edge.
+		local entries = { { class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 } }
+		local addon, env, frame = group_setup(4, entries)
+		local box = frame.search_box
+		check("the search box is left as stock sizes it until the layout changes", box.width == 330 and #box.points == 1)
+		addon.module.set("bags", "group", true)
+		check("grouped, the search box is as wide as the frame less its left offset and the grid's inset from the frame's edge", box.width == 400 - 62 - 7)
+		check("it keeps the game's anchor, clear of the portrait", #box.points == 1 and box.points[1][1] == "TOPLEFT" and box.points[1][2] == frame and box.points[1][4] == 62 and box.points[1][5] == -37)
+		addon.module.set("bags", "columns", 14)
+		check("more columns widen the frame and the search box with it", box.width == 400 + 168 - 62 - 7)
+		frame:UpdateSearchBox()
+		check("when the game puts the box on the bag again it is widened again", box.width == 400 + 168 - 62 - 7 and #box.points == 1)
+		box.anchorBag, box.width = {}, 111
+		addon.module.set("bags", "columns", 12)
+		check("a box that is on another bag is not touched", box.width == 111)
+		box.anchorBag = frame
+		addon.module.set("bags", "group", false)
+		addon.module.set("bags", "columns", 10)
+		check("back to the stock layout the box is as the game sizes it, with the game's own anchor", box.width == 330 and #box.points == 1 and box.points[1][4] == 62)
+		addon.module.set("bags", "group", true)
+		addon.module.set("bags", "enabled", false)
+		check("turning the module off puts the box back too", box.width == 330 and #box.points == 1)
+
+		-- A client that cannot say where the grid ends leaves the box alone.
+		local second_frame_addon, _, second_frame = group_setup(4, entries)
+		second_frame.GetRight = nil
+		second_frame_addon.module.set("bags", "group", true)
+		check("without the frame's edge the box is left as it is", second_frame.search_box.width == 330)
 	end
 	do
 		-- Window scale: a share of the size the game gives the bag.
@@ -1419,6 +1482,24 @@ return function(root, check)
 		addon.module.set("bags", "group", true)
 		addon.module.set("bags", "enabled", false)
 		check("turning the module off with the bag closed hides the headers", not header_named(env, frame, "The Armory").shown)
+	end
+	do
+		-- The chips are the same: with the bag closed they must not be left over the grid stock draws.
+		local function chips_frame(env, frame)
+			for _, widget in ipairs(env.created) do
+				if widget.parent == frame and widget.kind == "Frame" then return widget end
+			end
+		end
+		local addon, env, frame = group_setup(4, { { class = 4, quality = 4, level = 270 } })
+		addon.module.set("bags", "group", true)
+		addon.module.set("bags", "sidebar", true)
+		check("the chips are shown while the bag is open", chips_frame(env, frame).shown)
+		frame.IsShown = function() return false end
+		addon.module.set("bags", "group", false)
+		check("turning grouping off with the bag closed hides the chips", not chips_frame(env, frame).shown)
+		addon.module.set("bags", "group", true)
+		addon.module.set("bags", "enabled", false)
+		check("turning the module off with the bag closed hides the chips", not chips_frame(env, frame).shown)
 	end
 	do
 		-- One hook however often it is applied.
