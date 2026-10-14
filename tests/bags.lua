@@ -51,6 +51,7 @@ return function(root, check)
 				function texture:SetAtlas(atlas, use_size) self.atlas, self.use_size = atlas, use_size end
 				function texture:SetPoint(...) self.point = { ... } end
 				function texture:SetHeight(height) self.height = height end
+				function texture:SetSize(width, height) self.width, self.height = width, height end
 				function texture:Show() self.shown = true end
 				function texture:Hide() self.shown = false end
 				self.textures[#self.textures + 1] = texture
@@ -502,6 +503,7 @@ return function(root, check)
 				local texture = { layer = layer, sublevel = sublevel, shown = true }
 				function texture:SetAtlas(atlas, use_size) self.atlas, self.use_size = atlas, use_size end
 				function texture:SetPoint(...) self.point = { ... } end
+				function texture:SetSize(width, height) self.width, self.height = width, height end
 				function texture:Show() self.shown = true end
 				function texture:Hide() self.shown = false end
 				self.textures = self.textures or {}
@@ -749,7 +751,12 @@ return function(root, check)
 			and armory.width == 415 and armory.height == 20)
 		check("a header lets mouse clicks through to the slots while sections cannot be folded", armory.mouse == false)
 		check("the title is in the game's gold heading font", armory.texts[1].template == "GameFontNormal")
-		check("the count is in the game's small highlight font", armory.texts[2].template == "GameFontHighlightSmall")
+		check("the count is in the game's small dim font", armory.texts[2].template == "GameFontDisableSmall")
+		local title_point, count_point = armory.texts[1].points[1], armory.texts[2].points[1]
+		check("the title is centred in the room above the rule, at the header's leading edge",
+			title_point[1] == "LEFT" and title_point[2] == armory and title_point[3] == "LEFT" and title_point[4] == 2 and title_point[5] == 1.5)
+		check("the count follows the title, a few pixels after it, not at the far edge",
+			count_point[1] == "LEFT" and count_point[2] == armory.texts[1] and count_point[3] == "RIGHT" and count_point[4] == 6 and count_point[5] == 0)
 		check("the rule under a header is the game's divider", armory.textures[1] and armory.textures[1].atlas == "Options_HorizontalDivider" and armory.textures[1].height == 3)
 
 		-- Things change in the bag: a weapon lands in the first empty slot.
@@ -1164,6 +1171,20 @@ return function(root, check)
 			for _, texture in ipairs(prep.textures) do if texture.atlas == "campaign_headericon_open" then arrow = texture end end
 			return arrow ~= nil and arrow.shown
 		end)())
+		check("the arrow is drawn at the atlas's own size, as the game's reputation headers draw it", (function()
+			for _, texture in ipairs(prep.textures) do
+				if texture.atlas == "campaign_headericon_open" then return texture.use_size == true end
+			end
+		end)())
+		check("the arrow sits at the leading edge, centred on the header's text", (function()
+			for _, texture in ipairs(prep.textures) do
+				if texture.atlas == "campaign_headericon_open" then
+					return texture.point[1] == "LEFT" and texture.point[2] == prep and texture.point[3] == "LEFT" and texture.point[4] == 2 and texture.point[5] == 1.5
+				end
+			end
+		end)())
+		check("the title starts after the arrow's own width with a gap, so the two cannot overlap",
+			prep.texts[1].points[1][1] == "LEFT" and prep.texts[1].points[1][3] == "LEFT" and prep.texts[1].points[1][4] == 2 + 14 + 4)
 		frame.buttons[3].alpha = 0.6
 		prep.scripts.OnClick(prep)
 		check("a click folds the section and the choice is saved", env.EverlookDB.qol.bags.folded.prep == true)
@@ -1186,8 +1207,13 @@ return function(root, check)
 			at(frame.buttons[3], -378, 142) and frame.buttons[3].alpha == 0.6 and env.EverlookDB.qol.bags.folded.prep == true and prep.mouse == false)
 		prep.scripts.OnClick(prep)
 		check("a click that still arrives with folding off does nothing", env.EverlookDB.qol.bags.folded.prep == true)
+		check("with folding off the title goes back to the header's edge and the arrow is hidden", prep.texts[1].points[1][4] == 2 and (function()
+			for _, texture in ipairs(prep.textures) do if texture.atlas == "campaign_headericon_open" and texture.shown then return false end end
+			return true
+		end)())
 		addon.module.set("bags", "fold", true)
 		check("turning it back on brings the fold back", at(frame.buttons[3], 0, 0))
+		check("and the title moves out past the arrow again", prep.texts[1].points[1][4] == 2 + 14 + 4)
 		addon.module.set("bags", "group", false)
 		check("turning grouping off brings a folded slot back to the stock grid", at(frame.buttons[3], -84, 0) and frame.buttons[3].alpha == 0.6 and frame.buttons[3].mouse == true)
 		addon.module.set("bags", "group", true)
