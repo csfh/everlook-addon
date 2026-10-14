@@ -780,6 +780,21 @@ for i = 1, #handoff_quests do
 	end
 end
 check("a later quest does not keep a stale turn-in link", stale == false)
+do
+clock.now = 2000
+handoff.quests.note_turned_in(500, "npc:10")
+check("a follow-up from another giver is not a link", handoff.quests.followup_requires(501, "npc:11") == nil)
+clock.now = 2001
+handoff.quests.note_turned_in(500, "npc:10")
+local same = handoff.quests.followup_requires(501, "npc:10")
+check("a follow-up from the same giver is a link", same and same[1] == 500)
+handoff.quests.note_turned_in(502, "npc:10")
+local unnamed = handoff.quests.followup_requires(503, nil)
+check("a follow-up with no giver to name still links", unnamed and unnamed[1] == 502)
+handoff.quests.note_turned_in(504, "npc:10")
+handoff.quests.note_turned_in(504)
+check("a repeat turn-in keeps who gave it", handoff.quests.followup_requires(505, "npc:12") == nil)
+end
 _G.GetTime = nil
 
 _G.C_Map = {
