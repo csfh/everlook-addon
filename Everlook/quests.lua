@@ -477,14 +477,30 @@ end
 
 -- The next quest offered right after a turn-in continues the chain. Classic
 -- does not return quest lines from C_QuestLine, so the handoff is the link.
+-- A neighbour at the same camp offers unrelated quests just as fast, so when
+-- both the turn-in and the offer name who stood in front of the player, they
+-- must be the same one. A start with no one to name, such as a dropped item or
+-- an object, still links.
 local handoff_id
 local handoff_at
+local handoff_giver
 local HANDOFF_WINDOW = 20
 
-function Everlook.quests.note_turned_in(id)
+-- Who the player is talking to, as a key that is the same for the same creature or object.
+local function giver_key()
+	local who = npc_here() or object_here()
+	return who and (who.type .. ":" .. who.id) or nil
+end
+
+function Everlook.quests.note_turned_in(id, giver)
 	id = public(id)
 	if type(id) ~= "number" or id <= 0 then
 		return
+	end
+	if type(giver) == "string" then
+		handoff_giver = giver
+	elseif id ~= handoff_id then
+		handoff_giver = nil
 	end
 	handoff_id = id
 	if type(GetTime) == "function" then
@@ -494,7 +510,7 @@ function Everlook.quests.note_turned_in(id)
 	end
 end
 
-function Everlook.quests.followup_requires(id)
+function Everlook.quests.followup_requires(id, giver)
 	id = public(id)
 	local previous = handoff_id
 	if type(previous) ~= "number" or type(id) ~= "number" or previous == id then
@@ -508,7 +524,12 @@ function Everlook.quests.followup_requires(id)
 		handoff_id = nil
 		return nil
 	end
+	local from = handoff_giver
 	handoff_id = nil
+	handoff_giver = nil
+	if type(from) == "string" and type(giver) == "string" and from ~= giver then
+		return nil
+	end
 	return { previous }
 end
 
@@ -1214,7 +1235,7 @@ frame:SetScript("OnEvent", function(_, event, first, second)
 	end
 	local id = public(GetQuestID and GetQuestID())
 	if event == "QUEST_TURNED_IN" then
-		Everlook.quests.note_turned_in(first)
+		Everlook.quests.note_turned_in(first, giver_key())
 		return
 	end
 	if event == "QUEST_ACCEPTED" then
@@ -1223,7 +1244,7 @@ frame:SetScript("OnEvent", function(_, event, first, second)
 			location = here(ROLE_ACCEPTED),
 			giverId = npc_here() and npc_here().id or nil,
 		}
-		extra.requires = Everlook.quests.followup_requires(id)
+		extra.requires = Everlook.quests.followup_requires(id, giver_key())
 		Everlook.quests.record(id, "accepted", extra)
 		return
 	end
@@ -1232,7 +1253,7 @@ frame:SetScript("OnEvent", function(_, event, first, second)
 	end
 	if event == "QUEST_DETAIL" then
 		local extra = detail_extra(ROLE_GIVER, "description", GetQuestText and GetQuestText())
-		extra.requires = Everlook.quests.followup_requires(id)
+		extra.requires = Everlook.quests.followup_requires(id, giver_key())
 		Everlook.quests.record(id, "giver", extra)
 		if GetObjectiveText then
 			Everlook.quests.record(id, "giver", { objectiveText = GetObjectiveText() })
@@ -1241,6 +1262,6 @@ frame:SetScript("OnEvent", function(_, event, first, second)
 		Everlook.quests.record(id, "progress", detail_extra(ROLE_ENDER, "progressText", GetProgressText and GetProgressText()))
 	elseif event == "QUEST_COMPLETE" then
 		Everlook.quests.record(id, "complete", detail_extra(ROLE_ENDER, "completionText", GetRewardText and GetRewardText()))
-		Everlook.quests.note_turned_in(id)
+		Everlook.quests.note_turned_in(id, giver_key())
 	end
 end)
