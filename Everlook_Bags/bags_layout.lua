@@ -53,7 +53,8 @@ layout.HEADER_HEIGHT = 20
 local HEADER_GAP = 4
 local SECTION_GAP = 10
 
--- A section is open, "collapsed" to its header alone, or "hidden" without even that.
+-- A section is open, "collapsed" to its header alone, or "hidden" without even that. An
+-- open one draws `visible` of its slots when that is less than its count, and its count stays.
 function layout.grouped(sections, columns)
 	local placed = {}
 	local bottom, height = 0, 0
@@ -67,9 +68,10 @@ function layout.grouped(sections, columns)
 				entry.header_y = bottom
 				section_height = layout.HEADER_HEIGHT
 			else
-				local rows = math.ceil(section.count / columns)
+				local drawn = math.min(section.visible or section.count, section.count)
+				local rows = math.ceil(drawn / columns)
 				local rows_height = span(rows)
-				for slot = 1, section.count do
+				for slot = 1, drawn do
 					local row_from_top = math.floor((slot - 1) / columns)
 					entry.positions[slot] = {
 						x = 0 - (columns - 1 - (slot - 1) % columns) * STEP,
