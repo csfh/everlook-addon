@@ -212,6 +212,14 @@ return function(root, check)
 		check("a hidden section is left out and a folded one stays", #folded.sections == 3 and folded.sections[2].key == "prep" and folded.sections[3].key == "free")
 		check("a folded section has no slots to place but keeps its count and says it is folded",
 			#folded.sections[2].positions == 0 and folded.sections[2].count == 5 and folded.sections[2].collapsed == true)
+
+		-- A section can draw fewer slots than it holds, and still say how many it holds.
+		local part = layout.grouped({ { key = "armory", title = "The Armory", count = 12 }, { key = "free", title = "Free Space", count = 14, visible = 1 } }, 10)
+		check("a section that draws one slot of fourteen has one position and keeps its count",
+			part.sections[2].count == 14 and #part.sections[2].positions == 1 and part.sections[2].positions[1].x == -9 * 42 and part.sections[2].positions[1].y == 0)
+		check("its height is that of one row", part.sections[2].header_y == 37 + 4 and part.height == 61 + 10 + 20 + 4 + 79)
+		check("a visible count above the section's own count draws them all", #layout.grouped({ { key = "free", title = "Free Space", count = 3, visible = 9 } }, 10).sections[1].positions == 3)
+		check("a folded section stays folded whatever it would draw", #layout.grouped({ { key = "free", title = "Free Space", count = 3, visible = 1, state = "collapsed" } }, 10).sections[1].positions == 0)
 		check("a folded section's header sits at its bottom, and it is one header tall", folded.sections[2].header_y == 61 + 10 and folded.sections[3].collapsed ~= true)
 		check("the section above a folded one clears the header, and a hidden section adds no gap",
 			folded.sections[1].positions[11].y == 61 + 10 + 20 + 10 and folded.height == 61 + 10 + 20 + 10 + 103)
@@ -469,6 +477,7 @@ return function(root, check)
 		local scale = found and found.options.scale
 		check("window scale starts at a hundred percent and runs from seventy to a hundred and ten", scale and scale.default == 100 and scale.min == 70 and scale.max == 110 and scale.step == 5)
 		check("pinned items start off", found and found.options.pins and found.options.pins.default == false)
+		check("every free slot starts off, so free space is one slot", found and found.options.all_free and found.options.all_free.default == false)
 		check("remembering items on other characters starts off", found and found.options.remember and found.options.remember.default == false)
 		for number = 1, 3 do
 			local custom = found and found.options["custom" .. number]
@@ -722,6 +731,8 @@ return function(root, check)
 		local addon, env, loaded = load_bags(extra)
 		loaded["Everlook_Bags"]()
 		addon.module.set("bags", "enabled", true)
+		-- The older checks draw every free slot, so they are written for that.
+		addon.module.set("bags", "all_free", true)
 		return addon, env, frame, info
 	end
 	local function headers_of(env, frame)
@@ -819,6 +830,35 @@ return function(root, check)
 		check("a disabled module leaves the layout the game draws", at(frame.buttons[2], -42, 0) and frame.height == 600)
 	end
 
+	do
+		-- Free space is a header, a count and one live empty slot, until every slot is asked for.
+		local entries = { { class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 } }
+		local addon, env, frame = group_setup(12, entries)
+		addon.module.set("bags", "group", true)
+		addon.module.set("bags", "all_free", false)
+		check("the first free slot stays at the bottom of the grid, in the game's order", at(frame.buttons[3], -378, 0) and frame.buttons[3].alpha ~= 0 and frame.buttons[3].mouse ~= false)
+		check("the other free slots are parked, clear and not clickable", (function()
+			for index = 4, 12 do
+				local button = frame.buttons[index]
+				if not (at(button, 0, 0) and button.alpha == 0 and button.mouse == false) then return false end
+			end
+			return true
+		end)())
+		check("the header still counts every free slot", header_named(env, frame, "Free Space").texts[2].content == "10")
+		check("the bag is as tall as three one-row sections and their gaps, less the two rows stock draws", frame.height == 600 + 203 - 79)
+		addon.module.set("bags", "all_free", true)
+		check("asking for every free slot places them all in one row", at(frame.buttons[12], 0, 0) and frame.buttons[12].alpha == 1 and frame.buttons[12].mouse == true and at(frame.buttons[3], -378, 0))
+		addon.module.set("bags", "all_free", false)
+		addon.module.set("bags", "sidebar", true)
+		local chip
+		for _, widget in ipairs(env.created) do
+			if widget.kind == "Button" and widget.texts and widget.texts[1].content == "Free Space" and widget.parent and widget.parent.kind == "Frame" then chip = widget end
+		end
+		chip.scripts.OnClick(chip)
+		check("showing free space alone shows all of it", at(frame.buttons[12], 0, 0) and frame.buttons[12].alpha == 1)
+		addon.module.set("bags", "group", false)
+		check("turning grouping off puts every parked free slot back in the stock grid", frame.buttons[12].alpha == 1 and frame.buttons[12].mouse == true and at(frame.buttons[12], -1 * 42, 42))
+	end
 	do
 		-- A slot under the pointer stays put: using or selling an item must not slide the next one under it.
 		local entries = { { class = 4, quality = 4, level = 270 }, { class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 } }
@@ -1500,6 +1540,37 @@ return function(root, check)
 		addon.module.set("bags", "group", true)
 		addon.module.set("bags", "enabled", false)
 		check("turning the module off with the bag closed hides the chips", not chips_frame(env, frame).shown)
+	end
+	do
+		-- Slots parked for free space come back when the bag is toggled closed: stock does not reset their alpha or mouse.
+		local entries = { { class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 } }
+		for _, change in ipairs({ { "group", false, "grouping" }, { "enabled", false, "the module" } }) do
+			local addon, _, frame = group_setup(12, entries)
+			addon.module.set("bags", "group", true)
+			addon.module.set("bags", "all_free", false)
+			check("a free slot is parked while the bag is open", frame.buttons[12].alpha == 0 and frame.buttons[12].mouse == false)
+			frame.IsShown = function() return false end
+			addon.module.set("bags", change[1], change[2])
+			check("turning off " .. change[3] .. " with the bag closed gives every parked slot back, solid and clickable",
+				frame.buttons[12].alpha == 1 and frame.buttons[12].mouse == true)
+		end
+	end
+	do
+		-- A parked slot sits on the grid's corner but is not under the pointer for any purpose of ours.
+		local entries = { { class = 4, quality = 4, level = 270 }, { class = 0, quality = 1, level = 1 } }
+		local addon, env, frame, info = group_setup(12, entries)
+		addon.module.set("bags", "group", true)
+		addon.module.set("bags", "all_free", false)
+		frame.buttons[12].mouse_over = true
+		info[1] = nil
+		frame:UpdateItems()
+		check("the pointer over a parked slot does not hold the regroup back", at(frame.buttons[2], -378, 71) and at(frame.buttons[1], -378, 0))
+		check("and nothing waits for it", (function()
+			for _, widget in ipairs(env.created) do
+				if widget.parent == nil and widget.kind == "Frame" and widget.scripts.OnUpdate and widget.shown then return false end
+			end
+			return true
+		end)())
 	end
 	do
 		-- One hook however often it is applied.
