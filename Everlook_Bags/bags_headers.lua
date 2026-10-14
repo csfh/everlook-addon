@@ -83,8 +83,9 @@ end
 
 -- Draws a header for each section of the grouped grid, up from `offset` above
 -- the corner the grid is anchored to, and hides the headers it no longer needs.
--- With `on_click` a click on a header calls it with the section's key.
-function headers.show(frame, anchor, offset, grouped, on_click)
+-- With `on_click` a click on a header calls it with the section's key, and without
+-- `with_count` a header leaves its count out, because something else has it.
+function headers.show(frame, anchor, offset, grouped, on_click, with_count)
 	local used = {}
 	for _, section in ipairs(grouped.sections) do
 		local header = made[section.key]
@@ -106,6 +107,7 @@ function headers.show(frame, anchor, offset, grouped, on_click)
 		header.frame:SetSize(grouped.width, layout.HEADER_HEIGHT)
 		header.title:SetText(section.title)
 		header.count:SetText(tostring(section.count))
+		if with_count then header.count:Show() else header.count:Hide() end
 		header.frame:Show()
 	end
 	for key, header in pairs(made) do

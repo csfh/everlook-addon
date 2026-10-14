@@ -87,23 +87,37 @@ function layout.grouped(sections, columns)
 	return { sections = placed, width = span(columns), height = height }
 end
 
--- The list of sections to the left of the grid: a column of rows, level with the
--- grid's bottom, and the gap between it and the grid.
-layout.SIDEBAR_WIDTH = 130
-layout.SIDEBAR_GAP = 8
-layout.SIDEBAR_ROW_HEIGHT = 22
+-- Chips, one for each section and one for everything, wrapped in rows over the grid
+-- and as wide as it. A chip is as wide as its text needs, which the caller measures,
+-- and one wider than the room is cut to it and takes a row alone.
+layout.CHIP_HEIGHT = 22
+layout.CHIP_GAP = 6
+layout.CHIPS_MARGIN = 8
 
--- The size of the stock frame when its grid is the grouped one. With a list of
--- `list_rows` rows the frame is wider by the list and its gap, and as tall as
--- the taller of the grid and the list.
-function layout.grouped_size(stock_width, stock_height, count, grouped, list_rows)
-	local stock = layout.grid(count, layout.STOCK_COLUMNS)
-	local width, height = grouped.width, grouped.height
-	if list_rows then
-		width = width + layout.SIDEBAR_WIDTH + layout.SIDEBAR_GAP
-		height = math.max(height, list_rows * layout.SIDEBAR_ROW_HEIGHT)
+function layout.chips(widths, available)
+	local items = {}
+	local row, x = 1, 0
+	for index, wanted in ipairs(widths) do
+		local width = math.min(wanted, available)
+		if x > 0 and x + width > available then
+			row = row + 1
+			x = 0
+		end
+		items[index] = { x = x, row = row, width = width }
+		x = x + width + layout.CHIP_GAP
 	end
-	return stock_width + width - stock.width, stock_height + height - stock.height
+	local rows = #items > 0 and row or 0
+	local height = rows > 0 and rows * layout.CHIP_HEIGHT + (rows - 1) * layout.CHIP_GAP or 0
+	return { items = items, rows = rows, height = height }
+end
+
+-- The size of the stock frame when its grid is the grouped one. Chips over the grid,
+-- `chips_height` tall, make it taller by that and the margin below them, and no wider.
+function layout.grouped_size(stock_width, stock_height, count, grouped, chips_height)
+	local stock = layout.grid(count, layout.STOCK_COLUMNS)
+	local height = grouped.height
+	if chips_height and chips_height > 0 then height = height + chips_height + layout.CHIPS_MARGIN end
+	return stock_width + grouped.width - stock.width, stock_height + height - stock.height
 end
 
 -- The order stock lays slots out in: a locked slot last, then the bags from the

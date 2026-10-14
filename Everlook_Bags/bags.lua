@@ -10,7 +10,8 @@ local assign = Everlook.bags_assign
 local alts = Everlook.bags_alts
 local recent = Everlook.bags_recent
 local folds = Everlook.bags_folds
-local sidebar = Everlook.bags_sidebar
+local chips = Everlook.bags_chips
+local search = Everlook.bags_search
 local headers = Everlook.bags_headers
 local marker = Everlook.bags_marker
 local id = "bags"
@@ -78,6 +79,7 @@ end
 
 local function remember_stock_size(frame)
 	stock_width, stock_height = frame:GetWidth(), frame:GetHeight()
+	search.measure(frame)
 end
 
 local function slots_of(frame)
@@ -108,7 +110,7 @@ end
 
 local function place_flat(frame, columns)
 	headers.hide_all()
-	sidebar.hide()
+	chips.hide()
 	unpark_all()
 	local slots = layout.order(slots_of(frame))
 	local grid = layout.grid(#slots, columns)
@@ -241,28 +243,32 @@ local function place_grouped(frame, columns)
 			for _, slot in ipairs(parked_slots) do park(slot.button, frame) end
 		end
 	end
-	headers.show(frame, frame.MoneyFrame, GRID_OFFSET_Y, grouped, fold_on and on_fold or nil)
-	local list_rows
+	headers.show(frame, frame.MoneyFrame, GRID_OFFSET_Y, grouped, fold_on and on_fold or nil, not list_on)
+	local chips_height = 0
 	if list_on then
 		local entries, items = {}, 0
 		for _, section in ipairs(wanted) do
 			entries[#entries + 1] = { key = section.key, title = section.title, count = section.count }
 			if section.key ~= categories.FREE then items = items + section.count end
 		end
-		table.insert(entries, 1, { key = sidebar.ALL, title = "All Items", count = items })
-		sidebar.show(frame, frame.MoneyFrame, GRID_OFFSET_Y, grouped.width, entries, shown_alone or sidebar.ALL, on_solo)
-		list_rows = #entries
+		table.insert(entries, 1, { key = chips.ALL, title = "All Items", count = items })
+		local above_grid = GRID_OFFSET_Y + grouped.height + layout.CHIPS_MARGIN
+		chips_height = chips.show(frame, frame.MoneyFrame, above_grid, grouped.width, entries, shown_alone or chips.ALL, on_solo)
 	else
-		sidebar.hide()
+		chips.hide()
 	end
-	frame:SetSize(layout.grouped_size(stock_width, stock_height, #slots, grouped, list_rows))
+	frame:SetSize(layout.grouped_size(stock_width, stock_height, #slots, grouped, chips_height))
 	return true
 end
 
 local function place(frame, columns, grouped)
 	if not frame.MoneyFrame or not stock_width then return end
-	if grouped and place_grouped(frame, columns) then return end
+	if grouped and place_grouped(frame, columns) then
+		search.fit(frame)
+		return
+	end
 	place_flat(frame, columns)
+	if columns ~= layout.STOCK_COLUMNS then search.fit(frame) else search.restore(frame) end
 end
 
 local function gear_label(button)
@@ -317,7 +323,7 @@ on_solo = function(key)
 	if not (module.enabled(id) and module.get(id, "sidebar") == true and grouping()) then return end
 	local frame = combined_bag()
 	if not frame then return end
-	if key == sidebar.ALL or key == solo then solo = nil else solo = key end
+	if key == chips.ALL or key == solo then solo = nil else solo = key end
 	if type(frame.IsShown) == "function" and frame:IsShown() then regroup(frame) end
 end
 
@@ -554,11 +560,17 @@ local function on_anchors()
 	set_scale(frame, scale_share())
 end
 
+-- The game has put its search box on the bag, at the size it made for its own grid.
+local function on_search(frame)
+	if module.enabled(id) and changed then search.fit(frame) end
+end
+
 local function install(frame)
 	if hooked or type(hooksecurefunc) ~= "function" then return end
 	if type(frame.UpdateItemLayout) ~= "function" or type(frame.UpdateItems) ~= "function" then return end
 	hooksecurefunc(frame, "UpdateItemLayout", on_layout)
 	hooksecurefunc(frame, "UpdateItems", on_items)
+	if type(frame.UpdateSearchBox) == "function" then hooksecurefunc(frame, "UpdateSearchBox", on_search) end
 	if type(_G.UpdateContainerFrameAnchors) == "function" then hooksecurefunc("UpdateContainerFrameAnchors", on_anchors) end
 	hooked = true
 end
@@ -582,8 +594,11 @@ local function apply(enabled)
 	local grouped = enabled and grouping()
 	local shown = type(frame.IsShown) == "function" and frame:IsShown()
 	if not shown then
-		-- A closed bag is laid out from scratch by stock when it opens, and its headers must not outlast this.
-		if not grouped then headers.hide_all() end
+		-- A closed bag is laid out from scratch by stock when it opens, and its headers and chips must not outlast this.
+		if not grouped then
+			headers.hide_all()
+			chips.hide()
+		end
 		changed = false
 		return
 	end
@@ -603,7 +618,7 @@ end
 module.register({
 	addon = addon_name, page = "bags", order = 90,
 	id = id, name = "Bags",
-	description = "Adds to the combined bag, which needs Combine all bags to be on in the game's settings. It keeps the bag's look, and its slots, search box and sort button stay the game's own. Turning this off puts the grid back as the game draws it, and a choice here does nothing until this is on.",
+	description = "Adds to the combined bag, which needs Combine all bags to be on in the game's settings. It keeps the bag's look, and its slots, search box and sort button stay the game's own, though the search box is made as wide as the grid while the layout is changed. Turning this off puts the grid back as the game draws it, and a choice here does nothing until this is on.",
 	options = {
 		item_level = { name = "Show item level on gear", default = false, description = "Writes the item level of each weapon and piece of armor, including rings, trinkets and cloaks, at the bottom right of its slot, where a stack count would sit, in the color of its quality. Other items show nothing, and turning this off removes the numbers." },
 		junk_marker = { name = "Mark items as junk", default = false, description = "Adds a coin button to the title row of the combined bag. Click it, then click items to mark or unmark them as junk, and click it again to stop. A marked item shows the junk coin, and every copy of that item is marked. Sell junk can sell marked items at a vendor when you turn that on there. Turning this off hides the button and the coins and keeps your marks." },
@@ -611,8 +626,8 @@ module.register({
 		remember = { name = "Remember items on all characters", default = false, description = "Writes down what each character has in its bags and bank, and the warband bank, whenever you log in with this on, change your bags or open the bank, so an item's tooltip can say where else you have it, such as Mage: 7 in bags, 3 in bank, and how many sit in the warband bank. It names the five characters with most and counts the rest. Only item ids and counts are kept, in your saved settings. The bank is written down only while it is open, and turning this off stops writing and keeps what was kept." },
 		scale = { name = "Window scale", default = 100, min = 70, max = 110, step = 5, description = "Makes the combined bag a share of the size the game gives it, in percent. The game still shrinks a bag that does not fit the screen, and this goes on top of that. A hundred is how the game draws it." },
 		expansions = { name = "Nest by expansion", default = false, description = "Splits the Armory, Adventure Prep, Professions and Miscellaneous sections by the expansion their items belong to, the newest first, each with its own header. An item the game cannot place in an expansion stays under the section's own header, after the others. It needs Group items by type to be on, and turning this off makes each of them one section again." },
-		sidebar = { name = "Section list", default = false, description = "Adds a list of the sections to the left of the grouped bag, a row for everything and one for each section with its name and how many slots it holds. Click a row to show only that section, and click it again, or the row for everything, to show them all. The counts do not change with the search box. It needs Group items by type to be on, and turning this off shows every section again." },
-		fold = { name = "Fold sections", default = false, description = "Click the header of a section in the grouped bag to fold it down to its header, which keeps its count and shows an arrow, and click again to open it. Which sections are folded is saved. It needs Group items by type to be on, and turning this off opens every section and keeps the folds." },
+		sidebar = { name = "Section chips", default = false, description = "Adds a row of chips over the grouped bag, one for everything and one for each section with its name and how many slots it holds, wrapping to a second row when they do not fit. The headers then show no count of their own. Click a chip to show only that section, and click it again, or the chip for everything, to show them all. The counts do not change with the search box. It needs Group items by type to be on, and turning this off shows every section again." },
+		fold = { name = "Fold sections", default = false, description = "Click the header of a section in the grouped bag to fold it down to its header, which keeps its title and shows an arrow, and click again to open it. Which sections are folded is saved. It needs Group items by type to be on, and turning this off opens every section and keeps the folds." },
 		custom1 = { name = "Custom section 1", default = "off", choices = CUSTOM_NAMES, description = "Gives the grouped bag a section of your own, named from this list. Hold Ctrl and middle-click an item to put it in the next of your custom sections that is in use, and again to move it on, and out of them all after the last. Every copy of the item goes with it, and it stays in the section after you log out. The section sits under Recent and over the types, and an item pinned stays pinned. It needs Group items by type to be on, and Off leaves the section unused and its items under their types." },
 		custom2 = { name = "Custom section 2", default = "off", choices = CUSTOM_NAMES, description = "A second section of your own. See Custom section 1." },
 		custom3 = { name = "Custom section 3", default = "off", choices = CUSTOM_NAMES, description = "A third section of your own. See Custom section 1." },
