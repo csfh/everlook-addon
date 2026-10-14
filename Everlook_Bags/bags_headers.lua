@@ -74,11 +74,36 @@ local function make_foldable(header, key)
 	end
 end
 
+-- The header kept for a section, made when it has none and made foldable when asked.
+local function header_for(frame, key, foldable)
+	local header = made[key]
+	if not header then
+		header = make(frame)
+		made[key] = header
+	end
+	if foldable and not header.key then make_foldable(header, key) end
+	return header
+end
+
 -- The title is at the header's edge, or after the arrow while one is shown.
 local function place_title(header, arrow_shown)
 	local x = INSET + (arrow_shown and header.arrow_room or 0)
 	header.title:ClearAllPoints()
 	header.title:SetPoint("LEFT", header.frame, "LEFT", x, header.lift)
+end
+
+-- How wide a header needs to be for its text, the arrow's room when it can be folded and the
+-- count when it has one, set on each section as `header_width` for the layout to use.
+function headers.measure(frame, sections, foldable, with_count)
+	for _, section in ipairs(sections) do
+		local header = header_for(frame, section.key, foldable)
+		header.title:SetText(section.title)
+		header.count:SetText(tostring(section.count))
+		local width = INSET + header.title:GetStringWidth() + INSET
+		if foldable and header.arrow_room then width = width + header.arrow_room end
+		if with_count then width = width + COUNT_GAP + header.count:GetStringWidth() end
+		section.header_width = width
+	end
 end
 
 -- Draws a header for each section of the grouped grid, up from `offset` above
@@ -88,13 +113,8 @@ end
 function headers.show(frame, anchor, offset, grouped, on_click, with_count)
 	local used = {}
 	for _, section in ipairs(grouped.sections) do
-		local header = made[section.key]
-		if not header then
-			header = make(frame)
-			made[section.key] = header
-		end
+		local header = header_for(frame, section.key, on_click ~= nil)
 		used[section.key] = true
-		if on_click and not header.key then make_foldable(header, section.key) end
 		header.on_click = on_click
 		header.frame:EnableMouse(on_click ~= nil)
 		if header.arrow then
@@ -103,8 +123,8 @@ function headers.show(frame, anchor, offset, grouped, on_click, with_count)
 		end
 		place_title(header, header.arrow ~= nil and on_click ~= nil)
 		header.frame:ClearAllPoints()
-		header.frame:SetPoint("BOTTOMRIGHT", anchor, "TOPRIGHT", 0, offset + section.header_y)
-		header.frame:SetSize(grouped.width, layout.HEADER_HEIGHT)
+		header.frame:SetPoint("BOTTOMRIGHT", anchor, "TOPRIGHT", section.header_x or 0, offset + section.header_y)
+		header.frame:SetSize(section.header_width or grouped.width, layout.HEADER_HEIGHT)
 		header.title:SetText(section.title)
 		header.count:SetText(tostring(section.count))
 		if with_count then header.count:Show() else header.count:Hide() end

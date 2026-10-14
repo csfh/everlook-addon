@@ -226,7 +226,9 @@ local function place_grouped(frame, columns)
 			wanted[#wanted + 1] = { key = key, title = title, count = #members[key], state = state, visible = visible }
 		end
 	end
-	local grouped = layout.grouped(wanted, columns)
+	local pack = module.get(id, "pack") == true and layout.packs(columns)
+	if pack then headers.measure(frame, wanted, fold_on, not list_on) end
+	local grouped = layout.grouped(wanted, columns, pack)
 	unpark_all()
 	local placed = {}
 	for _, section in ipairs(grouped.sections) do
@@ -632,6 +634,7 @@ module.register({
 		expansions = { name = "Nest by expansion", default = false, description = "Splits the Armory, Adventure Prep, Professions and Miscellaneous sections by the expansion their items belong to, the newest first, each with its own header. An item the game cannot place in an expansion stays under the section's own header, after the others. It needs Group items by type to be on, and turning this off makes each of them one section again." },
 		sidebar = { name = "Section chips", default = false, description = "Adds a row of chips over the grouped bag, one for everything and one for each section with its name and how many slots it holds, wrapping to a second row when they do not fit. The headers then show no count of their own. Click a chip to show only that section, and click it again, or the chip for everything, to show them all. The counts do not change with the search box. It needs Group items by type to be on, and turning this off shows every section again." },
 		all_free = { name = "Show every free slot", default = false, description = "Free Space is a header with the number of empty slots and one empty slot to drop an item on, so a bag with room to spare stays short. Turn this on to draw every empty slot in the Free Space section. Showing Free Space alone from its chip always draws them all. It needs Group items by type to be on." },
+		pack = { name = "Pack small sections", default = true, description = "From twelve columns, sections with a few slots stand side by side on one row, in the order the game keeps them, a slot's width apart, each as wide as its slots or its header, so a roomy bag is shorter. A section of more than one row keeps its row, and so does one that does not fit beside the one before it. It needs Group items by type to be on, and does nothing under twelve columns." },
 		fold = { name = "Fold sections", default = false, description = "Click the header of a section in the grouped bag to fold it down to its header, which keeps its title and shows an arrow, and click again to open it. Which sections are folded is saved. It needs Group items by type to be on, and turning this off opens every section and keeps the folds." },
 		custom1 = { name = "Custom section 1", default = "off", choices = CUSTOM_NAMES, description = "Gives the grouped bag a section of your own, named from this list. Hold Ctrl and middle-click an item to put it in the next of your custom sections that is in use, and again to move it on, and out of them all after the last. Every copy of the item goes with it, and it stays in the section after you log out. The section sits under Recent and over the types, and an item pinned stays pinned. It needs Group items by type to be on, and Off leaves the section unused and its items under their types." },
 		custom2 = { name = "Custom section 2", default = "off", choices = CUSTOM_NAMES, description = "A second section of your own. See Custom section 1." },
