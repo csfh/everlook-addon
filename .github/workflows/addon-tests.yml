@@ -31,3 +31,12 @@ jobs:
           lua5.1 tests/run.lua
           python3 tests/scripts_test.py
           python3 tests/luac_test.py
+          (cd scripts && python3 -m unittest risky_uses_test)
+      - name: Lines that need a second look
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "${BASE}"
+          git diff FETCH_HEAD HEAD | python3 scripts/risky_uses.py --profile addon >> "${GITHUB_STEP_SUMMARY}"
