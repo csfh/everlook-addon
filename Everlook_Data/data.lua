@@ -69,6 +69,22 @@ function data.levels(map_id)
 	return { low = tonumber(low), high = tonumber(high), spawns = tonumber(spawns) }
 end
 
+-- The quests a creature gives: { { quest = 176, level = 9, before = { 54 } }, ... }, `before` being what must be done first.
+function data.givers(npc_id)
+	local record = data.find("givers", npc_id)
+	if not record then return nil end
+	local list = {}
+	for entry in record:gmatch("[^;]+") do
+		local quest, level, before = entry:match("^(%d+):(%d+):([%d%.]*)$")
+		if quest then
+			local required = {}
+			for id in before:gmatch("%d+") do required[#required + 1] = tonumber(id) end
+			list[#list + 1] = { quest = tonumber(quest), level = tonumber(level), before = required }
+		end
+	end
+	return #list > 0 and list or nil
+end
+
 function data.version()
 	return data.meta and data.meta.version or nil
 end

@@ -31,7 +31,7 @@ local collected_version = 0
 local BUCKETS = {
 	"maps", "factions", "spells", "skillLines", "currencies", "items", "objects", "npcs", "quests", "talents",
 	"recipes", "kills", "drops", "vendors", "merchantCosts", "objectLoot", "fishingLoot", "npcSpells",
-	"npcFactions", "taxiNodes", "taxiRoutes", "instanceEntrances", "instanceEncounters", "questCredits",
+	"npcFactions", "taxiNodes", "taxiRoutes", "instanceEntrances", "instanceEncounters", "questCredits", "offers",
 }
 
 local COLUMNS = {
@@ -59,6 +59,7 @@ local COLUMNS = {
 	instanceEntrances = { "instanceId", "mapId", "x", "y", "enters", "name" },
 	instanceEncounters = { "instanceId", "encounterId", "kills", "wipes", "name" },
 	questCredits = { "questId", "objective", "npcId", "credits" },
+	offers = { "questId", "classId", "raceId", "band", "opens", "offered" },
 }
 
 local KEYS = {
@@ -71,11 +72,12 @@ local KEYS = {
 	taxiRoutes = { "fromNodeId", "toNodeId" },
 	instanceEntrances = { "instanceId", "mapId", "x", "y" }, instanceEncounters = { "instanceId", "encounterId" },
 	questCredits = { "questId", "objective", "npcId" },
+	offers = { "questId", "classId", "raceId", "band" },
 }
 
 local COUNTERS = {
 	drops = true, kills = true, loots = true, pickpockets = true, skins = true, empties = true,
-	opens = true, casts = true, quantity = true, seen = true, enters = true, wipes = true, credits = true,
+	opens = true, casts = true, quantity = true, seen = true, enters = true, wipes = true, credits = true, opens = true, offered = true,
 }
 
 local SOURCES = { target = 1, mouseover = 2, nameplate = 3, merchant = 4, loot = 5 }
@@ -652,6 +654,7 @@ local LIST_LABELS = {
 	instanceEntrances = "Dungeon entrances",
 	instanceEncounters = "Boss fights",
 	questCredits = "Kill credit",
+	offers = "Quest offers",
 }
 
 local LIST_PARTS = {
@@ -690,6 +693,7 @@ local LIST_PARTS = {
 	instanceEntrances = { { name = "name", id = "instanceId" } },
 	instanceEncounters = { { name = "name", id = "encounterId" } },
 	questCredits = { { id = "questId", bucket = "quests" }, { id = "npcId", bucket = "npcs" } },
+	offers = { { id = "questId", bucket = "quests" } },
 }
 
 local function lookup_name(bucket, id)

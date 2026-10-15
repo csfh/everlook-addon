@@ -1288,6 +1288,7 @@ frame:SetScript("OnEvent", function(_, event, first, second)
 		return
 	end
 	if event == "GOSSIP_SHOW" or event == "QUEST_GREETING" then
+		if Everlook.offers then Everlook.offers.window() end
 		-- The quests this window offers, so a follow-up that was on offer all along is not taken for a chain.
 		local ids = {}
 		if C_GossipInfo and C_GossipInfo.GetAvailableQuests then
