@@ -254,6 +254,11 @@ SlashCmdList.EVERLOOK = function(message, ...)
 		Everlook.where.print()
 		return
 	end
+	local words = type(message) == "string" and message:match("^%s*[Rr][Ee][Pp][Oo][Rr][Tt]%f[%s%z](.*)$")
+	if words or (type(message) == "string" and message:lower():match("^%s*report%s*$")) then
+		Everlook.report.command(words)
+		return
+	end
 	if type(message) == "string" and message:lower():match("^%s*collect%s*$") then
 		Everlook.consent.show()
 		return

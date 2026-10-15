@@ -37,6 +37,7 @@ module.lua
 overlaps.lua
 install.lua
 where.lua
+report.lua
 tooltips.lua
 blizzard_settings.lua
 collected.lua
