@@ -53,6 +53,7 @@ local function dispatch(kind, tooltip, data)
 		local ok, message = pcall(entry.fn, tooltip, data)
 		if not ok then
 			service.failures[entry.owner] = (service.failures[entry.owner] or 0) + 1
+			if Everlook.errors then Everlook.errors.note(entry.owner, message) end
 			local handler = geterrorhandler and geterrorhandler()
 			if handler then pcall(handler, message) end
 		end

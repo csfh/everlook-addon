@@ -10,7 +10,7 @@ return function(root, check)
 		local chunk = assert(loadfile(source("tooltips")))
 		setfenv(chunk, env)
 		chunk("Everlook", Everlook)
-		return Everlook.tooltips, env
+		return Everlook.tooltips, env, Everlook
 	end
 	local function tooltip()
 		local shown = { lines = 0 }
@@ -37,15 +37,18 @@ return function(root, check)
 
 	do
 		local posts, handled = {}, {}
-		local service = load({
+		local noted = {}
+		local service, _, namespace = load({
 			TooltipDataProcessor = { AddTooltipPostCall = function(kind, callback) posts[kind] = callback end },
 			geterrorhandler = function() return function(message) handled[#handled + 1] = message end end,
 		})
+		namespace.errors = { note = function(owner) noted[#noted + 1] = owner end }
 		local ran = false
 		service.add("breaks", "item", function() error("boom") end)
 		service.add("steady", "item", function() ran = true end)
 		posts[0](tooltip(), {})
 		check("an owner's error does not stop the next owner", ran == true)
+		check("the error is noted in the ring for its owner", noted[1] == "breaks" and #noted == 1)
 		check("the error is shown by the game's handler and counted for its owner", #handled == 1 and tostring(handled[1]):find("boom", 1, true) and service.failures.breaks == 1 and service.failures.steady == nil)
 	end
 

@@ -7,6 +7,7 @@
 ## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
 
 world.lua
+errors.lua
 trace.lua
 sched.lua
 combat.lua

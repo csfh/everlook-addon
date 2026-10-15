@@ -295,6 +295,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
 			if not ok then
 				local owner = listener.owner.id
 				failures[owner] = (failures[owner] or 0) + 1
+				if Everlook.errors then Everlook.errors.note(owner, message) end
 				local handler = geterrorhandler and geterrorhandler()
 				if handler then pcall(handler, message) end
 			end

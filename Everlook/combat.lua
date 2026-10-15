@@ -9,6 +9,7 @@ local frame
 local function run(key, work)
 	local ok, message = pcall(work)
 	if not ok then
+		if Everlook.errors then Everlook.errors.note(key, message) end
 		local handler = geterrorhandler and geterrorhandler()
 		if handler then pcall(handler, message) end
 	end

@@ -78,6 +78,11 @@ local function module_problems()
 	for id, count in pairs(registry.listener_failures or {}) do failed[#failed + 1] = id .. " (" .. count .. ")" end
 	table.sort(failed)
 	if #failed > 0 then lines[#lines + 1] = "Errors in module event handlers since login: " .. table.concat(failed, ", ") .. "." end
+	local recent = Everlook.errors and Everlook.errors.list() or {}
+	if #recent > 0 then
+		local last = recent[#recent]
+		lines[#lines + 1] = "Errors Everlook caught since login: " .. Everlook.errors.count() .. ", the latest from " .. last.owner .. ": " .. last.message
+	end
 	local install = Everlook.install and Everlook.install.report()
 	if install then lines[#lines + 1] = install end
 	return table.concat(lines, " ")
