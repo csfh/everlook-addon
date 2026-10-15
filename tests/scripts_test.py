@@ -38,6 +38,7 @@ class AddonScriptsTest(unittest.TestCase):
         (self.module / "sell_junk.lua").write_text("local addon_name = ...\n")
         for name in ("sync.sh", "pack.sh"):
             shutil.copyfile(ADDON / "scripts" / name, self.addon / "scripts" / name)
+        (self.addon / "scripts" / "folders.txt").write_text("Everlook\nEverlook_SellJunk\n")
         script = self.addon / "scripts" / "sync.sh"
         script.write_text(re.sub(r'^addons=.*$', f'addons="{self.addons}"', script.read_text(), flags=re.MULTILINE))
 
@@ -158,6 +159,27 @@ class AddonScriptsTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Missing LICENSE", result.stderr)
 
+    def run_pack(self, output):
+        return subprocess.run(
+            ["bash", str(self.addon / "scripts" / "pack.sh"), "0.1.0", str(output)],
+            capture_output=True, text=True,
+            env={**os.environ, "UV_CACHE_DIR": str(self.base / "uv-cache"), "UV_PYTHON": sys.executable},
+        )
+
+    def test_pack_stops_on_a_folder_that_is_not_in_the_declared_list(self):
+        extra = self.addon / "Everlook_Extra"
+        extra.mkdir()
+        (extra / "Everlook_Extra.toc").write_text("## Interface: 16001\n## Title: Extra\n")
+        result = self.run_pack(self.base / "extra")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("on disk but not listed: Everlook_Extra", result.stderr)
+
+    def test_pack_stops_on_a_listed_folder_that_is_gone(self):
+        shutil.rmtree(self.module)
+        result = self.run_pack(self.base / "gone")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("listed but missing on disk: Everlook_SellJunk", result.stderr)
+
     def test_release_ships_every_folder_with_the_core_version(self):
         with self.pack(self.base / "release", version="2.3.4") as archive:
             names = archive.getnames()
@@ -183,6 +205,37 @@ class AddonScriptsTest(unittest.TestCase):
                 toc = archive.read("Everlook_SellJunk/Everlook_SellJunk.toc").decode()
             self.assertIn("## Version: 2.3.4", toc)
         self.assertEqual((output / "Everlook-2.3.4.zip").read_bytes(), (output / "Everlook-latest.zip").read_bytes())
+
+
+class ReleaseArchiveTest(unittest.TestCase):
+    """The packed release of the real addon, unpacked, with the suite run against the unpacked folders."""
+
+    def test_the_unpacked_release_has_the_declared_folders_and_passes_the_suite(self):
+        declared = [line.strip() for line in (ADDON / "scripts" / "folders.txt").read_text().splitlines()
+                    if line.strip() and not line.lstrip().startswith("#")]
+        with tempfile.TemporaryDirectory(prefix="everlook-release-") as temporary:
+            base = Path(temporary)
+            environment = {**os.environ, "UV_CACHE_DIR": str(base / "uv-cache"), "UV_PYTHON": sys.executable}
+            result = subprocess.run(["bash", str(ADDON / "scripts" / "pack.sh"), "9.9.9", str(base / "dist")],
+                                    capture_output=True, text=True, env=environment)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            unpacked = base / "unpacked"
+            with tarfile.open(base / "dist" / "Everlook-9.9.9.tar.gz") as archive:
+                archive.extractall(unpacked, filter="data")
+            self.assertEqual(sorted(path.name for path in unpacked.iterdir()), sorted(declared))
+            for folder in declared:
+                toc = (unpacked / folder / f"{folder}.toc").read_text()
+                if folder != "Everlook":
+                    self.assertIn("## Version: 9.9.9", toc, folder)
+                for line in toc.splitlines():
+                    match = re.match(r"^([\w./\\-]+\.(?:lua|xml))\s*$", line)
+                    if match:
+                        self.assertTrue((unpacked / folder / match.group(1).replace("\\", "/")).is_file(), f"{folder} lists {match.group(1)}")
+            # The release carries the stub as sign.lua; the suite loads it under its template name.
+            shutil.copyfile(unpacked / "Everlook" / "sign.lua", unpacked / "Everlook" / "sign_template.lua")
+            shutil.copytree(ADDON / "tests", unpacked / "tests", ignore=shutil.ignore_patterns("__pycache__", "*.py"))
+            suite = subprocess.run(["lua5.1", "tests/run.lua"], cwd=unpacked, capture_output=True, text=True)
+            self.assertEqual(suite.returncode, 0, suite.stdout + suite.stderr)
 
 
 class LayoutTest(unittest.TestCase):

@@ -39,6 +39,17 @@ for source in "${root}"/Everlook "${root}"/Everlook_*; do
   )
 done
 
+# The folders a release ships are declared in scripts/folders.txt. A folder that is on disk but not
+# listed, or listed but gone, stops the release instead of quietly changing what players get.
+declared="$(sed -e 's/\r$//' -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d' "${root}/scripts/folders.txt" | LC_ALL=C sort)"
+found="$(printf '%s\n' "${folders[@]}" | LC_ALL=C sort)"
+if [[ "${declared}" != "${found}" ]]; then
+  echo "The folders on disk differ from scripts/folders.txt:" >&2
+  diff <(printf '%s\n' "${declared}") <(printf '%s\n' "${found}") | sed -n -e 's/^< /  listed but missing on disk: /p' -e 's/^> /  on disk but not listed: /p' >&2
+  echo "Add or remove the line in scripts/folders.txt on purpose." >&2
+  exit 1
+fi
+
 # Releases always carry the clean stub, never the developer's local token.
 cp "${core}/sign_template.lua" "${stage}/Everlook/sign.lua"
 
