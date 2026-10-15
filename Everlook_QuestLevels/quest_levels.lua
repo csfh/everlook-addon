@@ -3,6 +3,7 @@ local Everlook = Everlook
 local module = Everlook.module
 local id = "quest_levels"
 local original
+local wrapper
 local hooked = false
 
 Everlook.quest_levels = {}
@@ -32,9 +33,13 @@ local function apply(enabled)
 		return
 	end
 	if not enabled then
-		if hooked and original then
+		-- Put the game's function back only when ours is still the one in place.
+		-- Another addon may have wrapped it since, and restoring would drop that
+		-- wrapper; ours passes titles through untouched while the module is off.
+		if hooked and original and C_QuestLog.GetTitleForQuestID == wrapper then
 			C_QuestLog.GetTitleForQuestID = original
 			original = nil
+			wrapper = nil
 			hooked = false
 		end
 		return
@@ -43,13 +48,14 @@ local function apply(enabled)
 		return
 	end
 	original = C_QuestLog.GetTitleForQuestID
-	C_QuestLog.GetTitleForQuestID = function(quest_id)
+	wrapper = function(quest_id)
 		local title = original(quest_id)
 		if not module.enabled(id) then
 			return title
 		end
 		return Everlook.quest_levels.decorate(title, level_for(quest_id))
 	end
+	C_QuestLog.GetTitleForQuestID = wrapper
 	hooked = true
 end
 

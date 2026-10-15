@@ -364,6 +364,28 @@ check("quest reward money packs", quest[19][1] == 50)
 check("quest reward item packs", quest[19][3][1][1] == 80)
 check("quest requires packs", quest[22][1] == 54)
 
+-- A module that decorates the game's quest titles must not change what is collected.
+_G.C_QuestLog = {
+	GetTitleForQuestID = function(id)
+		if id == 77 then
+			return "Wolves"
+		end
+	end,
+}
+do
+	local decorated = load_addon()
+	decorated.world.reset()
+	local plain_title = _G.C_QuestLog.GetTitleForQuestID
+	_G.C_QuestLog.GetTitleForQuestID = function(id)
+		local title = plain_title(id)
+		return title and ("[8] " .. title)
+	end
+	decorated.quests.record(77, "giver", {})
+	local recorded = decorated.world.document().quests[1]
+	check("a decorated game title is not recorded", recorded and recorded[2] == "Wolves")
+	_G.C_QuestLog = nil
+end
+
 _G.UnitClass = function()
 	return "Paladin", "PALADIN", 2
 end

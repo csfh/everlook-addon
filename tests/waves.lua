@@ -586,6 +586,18 @@ return function(root, check)
 	title = "Wolves"
 	addon.module.set("quest_levels", "enabled", false)
 	check("turning quest levels off restores the title", play.C_QuestLog.GetTitleForQuestID(1) == "Wolves")
+	addon.module.set("quest_levels", "enabled", true)
+	local ours = play.C_QuestLog.GetTitleForQuestID
+	play.C_QuestLog.GetTitleForQuestID = function(quest_id)
+		return "<" .. ours(quest_id) .. ">"
+	end
+	local theirs = play.C_QuestLog.GetTitleForQuestID
+	addon.module.set("quest_levels", "enabled", false)
+	check("turning quest levels off keeps a wrapper another addon added", play.C_QuestLog.GetTitleForQuestID == theirs)
+	check("a kept wrapper shows the plain title while the module is off", play.C_QuestLog.GetTitleForQuestID(1) == "<Wolves>")
+	play.C_QuestLog.GetTitleForQuestID = function()
+		return title
+	end
 
 	local cancels = 0
 	play.CinematicFrame_CancelCinematic = function()

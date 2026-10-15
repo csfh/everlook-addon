@@ -364,13 +364,18 @@ local function quest_frequency(value)
 	return nil
 end
 
+-- The game's own lookup, taken before a module can wrap it: Everlook_QuestLevels
+-- puts a level in front of titles, and that must never be what is recorded.
+local game_title_for = C_QuestLog and C_QuestLog.GetTitleForQuestID
+
 local function title_for(id, title)
 	title = public(title)
 	if type(title) == "string" and title ~= "" then
 		return title
 	end
-	if C_QuestLog and C_QuestLog.GetTitleForQuestID then
-		title = public(C_QuestLog.GetTitleForQuestID(id))
+	local lookup = game_title_for or (C_QuestLog and C_QuestLog.GetTitleForQuestID)
+	if lookup then
+		title = public(lookup(id))
 		if type(title) == "string" and title ~= "" then
 			return title
 		end
