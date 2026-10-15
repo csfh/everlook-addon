@@ -825,6 +825,24 @@ check("a follow-up with no giver to name still links", unnamed and unnamed[1] ==
 handoff.quests.note_turned_in(504, "npc:10")
 handoff.quests.note_turned_in(504)
 check("a repeat turn-in keeps who gave it", handoff.quests.followup_requires(505, "npc:12") == nil)
+-- A giver that offers two quests at once: taking the second after turning in the first is not a chain.
+clock.now = 2100
+handoff.quests.note_offered("npc:20", { 600, 601 })
+handoff.quests.note_turned_in(600, "npc:20")
+check("a quest the giver already offered before the turn-in is not a link", handoff.quests.followup_requires(601, "npc:20") == nil)
+clock.now = 2200
+handoff.quests.note_offered("npc:20", { 600 })
+handoff.quests.note_turned_in(600, "npc:20")
+local appeared = handoff.quests.followup_requires(602, "npc:20")
+check("a quest that appeared only after the turn-in is a link", appeared and appeared[1] == 600)
+clock.now = 2300
+handoff.quests.note_offered("npc:21", { 700, 701 })
+handoff.quests.note_turned_in(700, "npc:20")
+local other = handoff.quests.followup_requires(701, "npc:20")
+check("what another giver offered does not count against this one", other and other[1] == 700)
+handoff.quests.note_offered("npc:22", { 800, 801, 0, "x", false })
+handoff.quests.note_turned_in(800, "npc:22")
+check("odd ids in an offer list are ignored without error", handoff.quests.followup_requires(801, "npc:22") == nil)
 end
 _G.GetTime = nil
 

@@ -493,6 +493,25 @@ local function giver_key()
 	return who and (who.type .. ":" .. who.id) or nil
 end
 
+-- What each giver's window offered the last time it opened, as sets of quest ids. A quest that was already on offer
+-- when the player turned another one in did not appear because of it, so taking it is not a step in a chain.
+local offered_by = {}
+local handoff_offered
+
+function Everlook.quests.note_offered(giver, ids)
+	if type(giver) ~= "string" or type(ids) ~= "table" then
+		return
+	end
+	local set = {}
+	for _, quest_id in ipairs(ids) do
+		quest_id = public(quest_id)
+		if type(quest_id) == "number" and quest_id > 0 then
+			set[quest_id] = true
+		end
+	end
+	offered_by[giver] = set
+end
+
 function Everlook.quests.note_turned_in(id, giver)
 	id = public(id)
 	if type(id) ~= "number" or id <= 0 then
@@ -504,6 +523,7 @@ function Everlook.quests.note_turned_in(id, giver)
 		handoff_giver = nil
 	end
 	handoff_id = id
+	handoff_offered = type(giver) == "string" and offered_by[giver] or nil
 	if type(GetTime) == "function" then
 		handoff_at = public(GetTime())
 	else
@@ -526,9 +546,14 @@ function Everlook.quests.followup_requires(id, giver)
 		return nil
 	end
 	local from = handoff_giver
+	local offered = handoff_offered
 	handoff_id = nil
 	handoff_giver = nil
+	handoff_offered = nil
 	if type(from) == "string" and type(giver) == "string" and from ~= giver then
+		return nil
+	end
+	if offered and offered[id] then
 		return nil
 	end
 	return { previous }
@@ -1206,6 +1231,8 @@ local function detail_extra(role, text_key, text)
 end
 
 local frame = CreateFrame("Frame")
+frame:RegisterEvent("GOSSIP_SHOW")
+frame:RegisterEvent("QUEST_GREETING")
 frame:RegisterEvent("QUEST_DETAIL")
 frame:RegisterEvent("QUEST_PROGRESS")
 frame:RegisterEvent("QUEST_COMPLETE")
@@ -1232,6 +1259,23 @@ frame:SetScript("OnEvent", function(_, event, first, second)
 	end
 	if event == "QUEST_LOG_UPDATE" then
 		queue_log()
+		return
+	end
+	if event == "GOSSIP_SHOW" or event == "QUEST_GREETING" then
+		-- The quests this window offers, so a follow-up that was on offer all along is not taken for a chain.
+		local ids = {}
+		if C_GossipInfo and C_GossipInfo.GetAvailableQuests then
+			for _, quest in ipairs(C_GossipInfo.GetAvailableQuests() or {}) do
+				ids[#ids + 1] = type(quest) == "table" and quest.questID or nil
+			end
+		end
+		if GetNumAvailableQuests and GetAvailableQuestInfo then
+			for index = 1, GetNumAvailableQuests() do
+				local _, _, _, _, quest_id = GetAvailableQuestInfo(index)
+				ids[#ids + 1] = quest_id
+			end
+		end
+		Everlook.quests.note_offered(giver_key(), ids)
 		return
 	end
 	local id = public(GetQuestID and GetQuestID())
