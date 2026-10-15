@@ -6,6 +6,8 @@ local provider
 local attached = false
 local refresh_queued = false
 local pins_stale = false
+-- Enum.UIMapType.Zone
+local ZONE_MAP_TYPE = 3
 
 Everlook.map_pins = {}
 
@@ -17,6 +19,7 @@ local TINT = {
 	flight = { 0.3, 0.55, 1 },
 	vendor = { 0.65, 0.4, 0.9 },
 	entrance = { 0.95, 0.5, 0.15 },
+	level = { 1, 1, 1 },
 }
 
 local function rare(classification)
@@ -128,6 +131,29 @@ function Everlook.map_pins.for_map(map_id)
 			}
 		end
 	end
+	-- On a continent: the level range of each zone the shared catalog has enough sightings for.
+	if module.get(id, "zone_levels") and Everlook.data_pack and C_Map and C_Map.GetMapChildrenInfo and C_Map.GetMapRectOnMap then
+		local data = Everlook.data_pack("zone levels on the map")
+		local children = data and data.levels and C_Map.GetMapChildrenInfo(map_id, ZONE_MAP_TYPE)
+		for index = 1, type(children) == "table" and #children or 0 do
+			local child = children[index]
+			local range = type(child) == "table" and type(child.mapID) == "number" and data.levels(child.mapID)
+			local left, right, top, bottom
+			if range then left, right, top, bottom = C_Map.GetMapRectOnMap(child.mapID, map_id) end
+			if range and type(left) == "number" and type(right) == "number" and type(top) == "number" and type(bottom) == "number" then
+				pins[#pins + 1] = {
+					bucket = "zoneLevels",
+					id = child.mapID,
+					x = (left + right) / 2 * 1000,
+					y = (top + bottom) / 2 * 1000,
+					kind = "level",
+					text = "Lv " .. range.low .. "-" .. range.high,
+					label = "Most creatures here are level " .. range.low .. " to " .. range.high .. ", from " .. range.spawns .. " sightings. Weaker or stronger ones are about.",
+					name = child.name or "Zone",
+				}
+			end
+		end
+	end
 	return pins
 end
 
@@ -164,8 +190,20 @@ local function ensure_pin_mixin()
 		self.info = info
 		local tint = Everlook.map_pins.tint(info.kind)
 		local texture = self.texture
-		if type(texture) == "table" and type(texture.SetVertexColor) == "function" then
-			texture:SetVertexColor(tint[1], tint[2], tint[3])
+		local text = self.text
+		if info.kind == "level" and type(text) == "table" and type(text.SetText) == "function" then
+			-- A level range is words on the map, not a dot.
+			if type(texture) == "table" and type(texture.Hide) == "function" then texture:Hide() end
+			text:SetText(info.text or "")
+			if type(text.GetStringWidth) == "function" and self.SetSize then self:SetSize(math.max(14, text:GetStringWidth() + 4), 14) end
+			if type(text.SetPoint) == "function" then text:ClearAllPoints(); text:SetPoint("CENTER") end
+			if type(text.Show) == "function" then text:Show() end
+		else
+			if type(texture) == "table" and type(texture.Show) == "function" then texture:Show() end
+			if type(text) == "table" and type(text.Hide) == "function" then text:Hide() end
+			if type(texture) == "table" and type(texture.SetVertexColor) == "function" then
+				texture:SetVertexColor(tint[1], tint[2], tint[3])
+			end
 		end
 		if self.SetScript then
 			self:SetScript("OnEnter", self.OnMouseEnter or EverlookMapPinMixin.OnMouseEnter)
@@ -341,6 +379,7 @@ module.register({
 	name = "Map pins",
 	description = "Draws quest givers, turn-ins, objectives, objects, rares, world bosses, flight masters, vendors, and trainers you have seen on the world map. Any other creature stays off it, a spot with no coordinates stays off, a rare or world boss who also sells or trains is drawn as the rare, the minimap is left alone, a client without the stock world map draws nothing and says once that the pins need it, and turning this off removes the pins.",
 	options = {
+		zone_levels = { name = "Show zone levels", default = false, description = "Labels each zone on a continent map with the level most of its creatures are, from the shared catalog, for the zones it has enough sightings of. It needs the Everlook Data addon, which loads the first time the map is drawn with this on and never in combat. A zone it knows too little about gets no label, weaker and stronger creatures are about, a client without the map functions draws nothing, and turning this off removes the labels. This option does nothing until Map pins is on." },
 		entrances = { name = "Show dungeon entrances", default = false, description = "Adds a pin where players have gone into a dungeon or raid from the map you are looking at, from the shared catalog, once a place has been entered at least three times. It needs the Everlook Data addon, which loads the first time the map is drawn with this on and never in combat. Without it, or on a map with no known entrance, nothing is added, the pins you have seen stay as they were, and turning this off removes the entrances. This option does nothing until Map pins is on." },
 	},
 	apply = apply,

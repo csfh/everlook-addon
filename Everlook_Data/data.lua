@@ -61,6 +61,14 @@ function data.entrances(map_id)
 	return #list > 0 and list or nil
 end
 
+-- Where most of a zone's creatures sit in level: { low = 7, high = 10, spawns = 1432 }.
+function data.levels(map_id)
+	local record = data.find("levels", map_id)
+	local low, high, spawns = (record or ""):match("^(%d+):(%d+):(%d+)$")
+	if not low then return nil end
+	return { low = tonumber(low), high = tonumber(high), spawns = tonumber(spawns) }
+end
+
 function data.version()
 	return data.meta and data.meta.version or nil
 end

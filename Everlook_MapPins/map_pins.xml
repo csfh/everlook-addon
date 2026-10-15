@@ -5,6 +5,9 @@
 			<Layer level="ARTWORK">
 				<Texture parentKey="texture" setAllPoints="true" file="Interface\AddOns\Everlook\assets\logo.tga"/>
 			</Layer>
+			<Layer level="OVERLAY">
+				<FontString parentKey="text" inherits="GameFontHighlightSmall" hidden="true"/>
+			</Layer>
 		</Layers>
 	</Button>
 </Ui>

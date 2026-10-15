@@ -268,6 +268,28 @@ return function(root, check)
 		check("a client with no pack loader draws only what it has seen", #survey.map_pins.for_map(37) == #pins)
 		survey.module.set("map_pins", "entrances", false)
 	end
+	do
+		-- Zone levels on a continent: each zone the pack has a range for, at the middle of its rectangle.
+		local zones = { { mapID = 1426, name = "Dun Morogh" }, { mapID = 1427, name = "Searing Gorge" } }
+		survey_env.C_Map = survey_env.C_Map or {}
+		local saved_children, saved_rect = survey_env.C_Map.GetMapChildrenInfo, survey_env.C_Map.GetMapRectOnMap
+		survey_env.C_Map.GetMapChildrenInfo = function(map_id, kind) if map_id == 1415 and kind == 3 then return zones end end
+		survey_env.C_Map.GetMapRectOnMap = function(child, parent) if parent == 1415 then return 0.4, 0.6, 0.2, 0.4 end end
+		survey.data_pack = function() return { levels = function(map_id) if map_id == 1426 then return { low = 7, high = 10, spawns = 1432 } end end } end
+		check("zone levels are off by default", #survey.map_pins.for_map(1415) == 0)
+		survey.module.set("map_pins", "zone_levels", true)
+		local labels = survey.map_pins.for_map(1415)
+		check("a zone with a range gets one label at the middle of its rectangle, and a zone with none gets nothing",
+			#labels == 1 and labels[1].kind == "level" and labels[1].text == "Lv 7-10" and math.abs(labels[1].x - 500) < 0.01 and math.abs(labels[1].y - 300) < 0.01
+			and labels[1].name == "Dun Morogh" and labels[1].label:find("1432 sightings", 1, true) ~= nil)
+		survey_env.C_Map.GetMapRectOnMap = function() end
+		check("a zone with no rectangle is skipped without an error", #survey.map_pins.for_map(1415) == 0)
+		survey_env.C_Map.GetMapRectOnMap = nil
+		check("a client without the rectangle function draws no labels", #survey.map_pins.for_map(1415) == 0)
+		survey_env.C_Map.GetMapChildrenInfo, survey_env.C_Map.GetMapRectOnMap = saved_children, saved_rect
+		survey.data_pack = nil
+		survey.module.set("map_pins", "zone_levels", false)
+	end
 	local records = { { text = "Hogger", id = "448" }, { text = "Wolf", id = "69" } }
 	local found = survey.collected.filter(records, "hog")
 	check("the collected browser filters by text", #found == 1 and found[1].id == "448")
