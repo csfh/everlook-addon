@@ -22,6 +22,11 @@ return function(root, check)
 	check("an event is described by the type of what came with it, secret or not", plain.probe.describe("UNIT_DIED", "Creature-0-1") == "UNIT_DIED string"
 		and plain.probe.describe("UNIT_DIED", "secret") == "UNIT_DIED secret" and plain.probe.describe("PARTY_KILL", nil) == "PARTY_KILL nil")
 
+	local offered = load({ UnitLevel = function() return 12 end, C_GossipInfo = { GetAvailableQuests = function() return { { questID = 5, questLevel = 14 }, { questID = 6, questLevel = 9 } } end },
+		C_QuestLog = { IsQuestFlaggedCompleted = function(id) return id == 6 end } })
+	check("a giver's window is described by counts and levels, with no title or id", offered.probe.offers() == "offers: 2 available, highest level 14, player level 12, 1 of them flagged completed")
+	check("a client with no offer list says so", load().probe.offers() == "offers: no list on this client")
+
 	local handler, registered, unregistered, env_finish
 	local running, env, said = load({
 		CreateFrame = function() return {

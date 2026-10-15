@@ -6,7 +6,7 @@ Everlook.probe = {}
 -- which map and quest functions exist, what they return, and whether the death events fire and what they carry.
 -- It only reads. The answers go to chat and to `EverlookDB.probe`, so they can be read back from the saved file.
 local LISTEN_SECONDS = 120
-local EVENTS = { "UNIT_DIED", "PARTY_KILL" }
+local EVENTS = { "UNIT_DIED", "PARTY_KILL", "GOSSIP_SHOW", "QUEST_GREETING" }
 
 local function has(path)
 	local value = _G
@@ -47,6 +47,27 @@ function Everlook.probe.describe(event, first)
 	return event .. " " .. (secret(first) and "secret" or type(first))
 end
 
+-- What a giver's window offers, as types and numbers only: how many quests, and the highest level among them next to
+-- the player's, which says whether the list holds quests above the player's level. No title and no id is kept.
+function Everlook.probe.offers()
+	if not (C_GossipInfo and type(C_GossipInfo.GetAvailableQuests) == "function") then return "offers: no list on this client" end
+	local ok, list = pcall(C_GossipInfo.GetAvailableQuests)
+	if not ok or type(list) ~= "table" then return "offers: the list could not be read" end
+	local highest, completed = nil, 0
+	for _, quest in ipairs(list) do
+		local level = type(quest) == "table" and quest.questLevel
+		if type(level) == "number" and not secret(level) and (not highest or level > highest) then highest = level end
+		local quest_id = type(quest) == "table" and quest.questID
+		if type(quest_id) == "number" and not secret(quest_id) and C_QuestLog and type(C_QuestLog.IsQuestFlaggedCompleted) == "function"
+			and C_QuestLog.IsQuestFlaggedCompleted(quest_id) == true then
+			completed = completed + 1
+		end
+	end
+	local player = type(UnitLevel) == "function" and UnitLevel("player") or nil
+	return ("offers: %d available, highest level %s, player level %s, %d of them flagged completed"):format(
+		#list, tostring(highest), type(player) == "number" and not secret(player) and tostring(player) or "?", completed)
+end
+
 local function say(line)
 	if Everlook.say then Everlook.say(line) end
 end
@@ -60,11 +81,11 @@ function Everlook.probe.run()
 		report[#report + 1] = "Register " .. event .. ": " .. (ok and "accepted" or "refused")
 	end
 	frame:SetScript("OnEvent", function(_, event, first)
-		local line = Everlook.probe.describe(event, first)
+		local line = (event == "GOSSIP_SHOW" or event == "QUEST_GREETING") and Everlook.probe.offers() or Everlook.probe.describe(event, first)
 		seen[line] = (seen[line] or 0) + 1
 	end)
 	for _, line in ipairs(report) do say(line) end
-	say("Listening " .. LISTEN_SECONDS .. " seconds for " .. table.concat(EVENTS, " and ") .. ". Kill something, alone and in a group.")
+	say("Listening " .. LISTEN_SECONDS .. " seconds. Kill something, alone and in a group, and open a quest giver's window.")
 	local function finish()
 		frame:UnregisterAllEvents()
 		local lines = {}
