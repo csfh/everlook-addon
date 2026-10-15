@@ -19,6 +19,7 @@ return function(root, check)
 		env.CreateFrame = function(kind, _, parent)
 			local widget = { kind = kind, parent = parent, events = {}, scripts = {}, hooks = {}, points = {}, textures = {}, shown = true, locked = false, level = 1 }
 			function widget:RegisterEvent(event) self.events[event] = true end
+			function widget:UnregisterEvent(event) self.events[event] = nil end
 			function widget:SetScript(name, callback) self.scripts[name] = callback end
 			function widget:HookScript(name, callback) self.hooks[name] = callback end
 			function widget:SetSize(width, height) self.width, self.height = width, height end

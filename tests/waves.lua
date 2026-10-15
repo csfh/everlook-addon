@@ -38,6 +38,9 @@ return function(root, check)
 			function frame:RegisterEvent(event)
 				self.events[event] = true
 			end
+			function frame:UnregisterEvent(event)
+				self.events[event] = nil
+			end
 			function frame:SetScript(name, callback)
 				self.scripts[name] = callback
 			end

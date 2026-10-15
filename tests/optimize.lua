@@ -17,6 +17,7 @@ return function(root, check)
 		env.CreateFrame = function()
 			local frame = { events = {} }
 			function frame:RegisterEvent(event) self.events[event] = true end
+			function frame:UnregisterEvent(event) self.events[event] = nil end
 			function frame:SetScript(name, handler) self[name] = handler end
 			game.frames[#game.frames + 1] = frame
 			return frame

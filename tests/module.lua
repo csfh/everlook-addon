@@ -7,6 +7,7 @@ return function(root, check)
 		local loaded, waiting, frames = {}, {}, {}
 		local env = setmetatable({}, { __index = _G })
 		env._G = env
+		env.frames = frames
 		env.EverlookDB = {}
 		env.EventUtil = {
 			ContinueOnAddOnLoaded = function(name, callback)
@@ -17,7 +18,11 @@ return function(root, check)
 		}
 		env.CreateFrame = function()
 			local frame = { events = {} }
-			function frame:RegisterEvent(event) self.events[event] = true end
+			function frame:RegisterEvent(event)
+				if env.unknown_events and env.unknown_events[event] then error("Frame:RegisterEvent(): Attempt to register unknown event \"" .. event .. "\"") end
+				self.events[event] = true
+			end
+			function frame:UnregisterEvent(event) self.events[event] = nil end
 			function frame:SetScript(_, callback) self.on_event = callback end
 			frames[#frames + 1] = frame
 			return frame
@@ -196,4 +201,41 @@ return function(root, check)
 		local activity = registry.sections(registry.modules[1])[1]
 		check("an extension can place its rows before one of the host's", table.concat(activity.keys, ",") == "experience,bags,repair")
 	end
+	do
+		local registry, env, finish, fire = load_registry()
+		local handled, errors = {}, {}
+		env.geterrorhandler = function() return function(message) errors[#errors + 1] = message end end
+		env.unknown_events = { NOT_IN_THIS_CLIENT = true }
+		plain(registry, "breaks", "map", 10, { events = { "PING", "NOT_IN_THIS_CLIENT" }, on_event = function() error("boom") end })
+		plain(registry, "steady", "map", 20, { events = { "PING" }, on_event = function(event) handled[#handled + 1] = event end })
+		finish("Everlook_breaks")
+		finish("Everlook_steady")
+		local function listening()
+			for _, frame in ipairs(env.frames) do if frame.events.PING then return true end end
+			return false
+		end
+		check("a disabled module has no events registered", listening() == false)
+		fire("PING")
+		check("a disabled module is not told about an event", #handled == 0 and #errors == 0)
+		registry.set("breaks", "enabled", true)
+		registry.set("steady", "enabled", true)
+		check("a module that names an event the client lacks still loads, and the event is noted", registry.loaded("breaks") and registry.unsupported_events.NOT_IN_THIS_CLIENT == true)
+		fire("PING")
+		check("a listener that errors does not stop the next one", #handled == 1 and #errors == 1 and tostring(errors[1]):find("boom", 1, true) ~= nil)
+		check("the error is counted for the module that raised it", registry.listener_failures.breaks == 1 and registry.listener_failures.steady == nil)
+		registry.set("breaks", "enabled", false)
+		registry.set("steady", "enabled", false)
+		check("turning every owner off stops listening for the event", listening() == false)
+	end
+
+	do
+		local registry, env, finish, fire = load_registry()
+		local after = 0
+		plain(registry, "waits", "map", 10, { events = { "PLAYER_REGEN_ENABLED" }, on_event = function() end, out_of_combat = true, apply = function() after = after + 1 end })
+		finish("Everlook_waits")
+		local before = after
+		fire("PLAYER_REGEN_ENABLED")
+		check("the registry keeps listening for the end of combat while no module wants the event", after == before + 1)
+	end
+
 end

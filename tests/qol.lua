@@ -61,6 +61,7 @@ return function(root, check)
 			function frame:SetAlpha(alpha) self.alpha = alpha end
 			function frame:RegisterEvent(event) self.events[event] = true; return true end
 			function frame:UnregisterEvent(event) self.events[event] = nil end
+			function frame:UnregisterEvent(event) self.events[event] = nil end
 			function frame:SetScript(name, callback) self.scripts[name] = callback end
 			function frame:SetSize(width, height) self.width, self.height = width, height end
 			function frame:SetScale(scale) self.scale = scale end
@@ -1485,6 +1486,7 @@ return function(root, check)
 		for _, name in ipairs(names) do frame.events[name] = true end
 		function frame:UnregisterEvent(name) self.events[name] = nil end
 		function frame:RegisterEvent(name) self.events[name] = true end
+		function frame:UnregisterEvent(name) self.events[name] = nil end
 		return frame
 	end
 	env5.TalkingHeadFrame = listening({ "TALKINGHEAD_REQUESTED", "TALKINGHEAD_CLOSE" })

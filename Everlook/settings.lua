@@ -67,14 +67,37 @@ local function turn_taint_log_off()
 	Everlook.say("Taint log is off.")
 end
 
+-- What the module registry noted while loading: events this client does not know, and listeners that raised.
+local function module_problems()
+	local lines = {}
+	local events = {}
+	for event in pairs(registry.unsupported_events or {}) do events[#events + 1] = event end
+	table.sort(events)
+	if #events > 0 then lines[#lines + 1] = "This client has no event " .. table.concat(events, ", ") .. "; the modules that name it ran without it." end
+	local failed = {}
+	for id, count in pairs(registry.listener_failures or {}) do failed[#failed + 1] = id .. " (" .. count .. ")" end
+	table.sort(failed)
+	if #failed > 0 then lines[#lines + 1] = "Errors in module event handlers since login: " .. table.concat(failed, ", ") .. "." end
+	return table.concat(lines, " ")
+end
+
 local function add_debug_page()
-	if type(GetCVar) ~= "function" or type(SetCVar) ~= "function" then return end
-	local present, current = pcall(GetCVar, TAINT_LOG)
-	if not present or current == nil then return end
+	local has_taint_log = false
+	if type(GetCVar) == "function" and type(SetCVar) == "function" then
+		local present, current = pcall(GetCVar, TAINT_LOG)
+		has_taint_log = present and current ~= nil
+	end
+	local problems = module_problems()
+	if not has_taint_log and problems == "" then return end
 	local page, page_layout = Settings.RegisterVerticalLayoutSubcategory(category, "Debug")
 	subpages[#subpages + 1] = page
-	page_layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Taint log", TAINT_LOG_HELP))
-	page_layout:AddInitializer(CreateSettingsButtonInitializer("Taint log", "Turn off", turn_taint_log_off, TAINT_LOG_HELP, true))
+	if problems ~= "" then
+		page_layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Modules", problems))
+	end
+	if has_taint_log then
+		page_layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Taint log", TAINT_LOG_HELP))
+		page_layout:AddInitializer(CreateSettingsButtonInitializer("Taint log", "Turn off", turn_taint_log_off, TAINT_LOG_HELP, true))
+	end
 end
 
 -- Module addons load after Everlook, so the page waits for login, when all of

@@ -6,6 +6,11 @@ Everlook.module = { modules = {} }
 local registry = Everlook.module
 local by_id, listeners = {}, {}
 local frame = CreateFrame("Frame")
+-- Events the client refused to register, and how many times each module's listener has raised.
+-- The registry itself listens for PLAYER_REGEN_ENABLED, so that one is never dropped.
+local unsupported, failures, registered = {}, {}, { PLAYER_REGEN_ENABLED = true }
+registry.unsupported_events = unsupported
+registry.listener_failures = failures
 
 -- Each module's start is timed into the load trace, when there is one.
 local function timed(label, fn, ...)
@@ -108,12 +113,31 @@ function registry.paused()
 	return IsShiftKeyDown and IsShiftKeyDown()
 end
 
+-- The one frame listens for an event only while some module that names it is on, so a
+-- module that is off costs nothing per event. A client that does not know an event
+-- refuses to register it; that is noted and the module still loads.
+local function sync_events()
+	for event, list in pairs(listeners) do
+		local wanted = false
+		for _, listener in ipairs(list) do
+			if registry.enabled(listener.owner.id) then wanted = true; break end
+		end
+		if wanted and not registered[event] then
+			if pcall(frame.RegisterEvent, frame, event) then registered[event] = true else unsupported[event] = true end
+		elseif not wanted and registered[event] and event ~= "PLAYER_REGEN_ENABLED" then
+			frame:UnregisterEvent(event)
+			registered[event] = nil
+		end
+	end
+end
+
 local function apply(module)
 	local enabled = registry.enabled(module.id)
 	if module.apply then module.apply(enabled) end
 	for _, extension in ipairs(module.extensions) do
 		if extension.apply then extension.apply(enabled) end
 	end
+	sync_events()
 end
 
 function registry.set(id, key, value)
@@ -194,7 +218,7 @@ end
 
 local function listen(owner, events, on_event)
 	for _, event in ipairs(events or {}) do
-		if not listeners[event] then listeners[event] = {}; frame:RegisterEvent(event) end
+		listeners[event] = listeners[event] or {}
 		listeners[event][#listeners[event] + 1] = { owner = owner, on_event = on_event }
 	end
 end
@@ -258,6 +282,15 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		end
 	end
 	for _, listener in ipairs(listeners[event] or {}) do
-		if registry.enabled(listener.owner.id) then listener.on_event(event, ...) end
+		if registry.enabled(listener.owner.id) then
+			-- One module's error must not stop the modules after it; the game's own handler still shows it.
+			local ok, message = pcall(listener.on_event, event, ...)
+			if not ok then
+				local owner = listener.owner.id
+				failures[owner] = (failures[owner] or 0) + 1
+				local handler = geterrorhandler and geterrorhandler()
+				if handler then pcall(handler, message) end
+			end
+		end
 	end
 end)
