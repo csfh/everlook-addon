@@ -240,7 +240,11 @@ function Everlook.settings.toggle()
 	ensure()
 	if not category then return end
 	if showing_everlook() then
-		HideUIPanel(SettingsPanel)
+		-- Closing the panel is the game's own call. If the client refuses it, for example in combat, it is tried
+		-- again when combat ends, and the player is not shown an error for pressing a key.
+		if not pcall(HideUIPanel, SettingsPanel) and Everlook.after_combat then
+			Everlook.after_combat("settings:close", function() pcall(HideUIPanel, SettingsPanel) end)
+		end
 	else
 		Settings.OpenToCategory(category:GetID())
 	end

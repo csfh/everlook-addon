@@ -1992,14 +1992,28 @@ return function(root, check)
 	env2.SettingsPanel.GetCurrentCategory = function() return canvas_pages[1] end
 	addon2.settings.toggle()
 	check("the toggle closes the window from the collected data subpage", hidden_panels == 3 and opened == nil)
+	do
+		-- A client that refuses to close the panel is not an error for the player, and it is tried again after combat.
+		local real_hide, later = env2.HideUIPanel, nil
+		env2.HideUIPanel = function() error("blocked") end
+		addon2.after_combat = function(key, work) later = { key = key, work = work } end
+		env2.SettingsPanel.shown = true
+		env2.SettingsPanel.GetCurrentCategory = function() return root_category end
+		local ok = pcall(addon2.settings.toggle)
+		check("a refused close raises nothing and is queued for after combat", ok and later and later.key == "settings:close")
+		env2.HideUIPanel = real_hide
+		later.work()
+		check("the queued close runs when combat ends", hidden_panels == 4)
+		addon2.after_combat = nil
+	end
 	env2.SettingsPanel.shown = true
 	env2.SettingsPanel.GetCurrentCategory = function() return {} end
 	addon2.settings.toggle()
-	check("the toggle switches to Everlook from another settings page", opened == 42 and hidden_panels == 3)
+	check("the toggle switches to Everlook from another settings page", opened == 42 and hidden_panels == 4)
 	env2.SettingsPanel.shown = false
 	opened = nil
 	addon2.settings.toggle()
-	check("the toggle opens the page when the panel is closed", opened == 42 and hidden_panels == 3)
+	check("the toggle opens the page when the panel is closed", opened == 42 and hidden_panels == 4)
 	check("/everlook is the only command and it toggles the page",
 		env2.SLASH_EVERLOOK1 == "/everlook" and env2.SLASH_EVERLOOK2 == nil and env2.SLASH_EVERLOOKQOL1 == nil
 		and env2.SlashCmdList.EVERLOOKQOL == nil)
