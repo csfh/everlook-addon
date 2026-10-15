@@ -32,6 +32,8 @@ return function(load_addon, path)
 		npcFactions = { { npcId = 448, factionId = 72, reputation = 250 } },
 		taxiNodes = { { id = 2, name = "Stormwind, Elwynn", mapId = 37, x = 612, y = 432, factionSide = 1 } },
 		taxiRoutes = { { fromNodeId = 2, toNodeId = 6, cost = 192, durationSeconds = 75, hops = 2 } },
+		instanceEntrances = { { instanceId = 43, mapId = 1413, x = 525, y = 375, enters = 3, name = "Wailing Caverns" } },
+		instanceEncounters = { { instanceId = 43, encounterId = 585, kills = 2, wipes = 1, name = "Lady Anacondra" } },
 	}
 
 	local order = {}

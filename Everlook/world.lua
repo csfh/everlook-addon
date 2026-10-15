@@ -31,7 +31,7 @@ local collected_version = 0
 local BUCKETS = {
 	"maps", "factions", "spells", "skillLines", "currencies", "items", "objects", "npcs", "quests", "talents",
 	"recipes", "kills", "drops", "vendors", "merchantCosts", "objectLoot", "fishingLoot", "npcSpells",
-	"npcFactions", "taxiNodes", "taxiRoutes",
+	"npcFactions", "taxiNodes", "taxiRoutes", "instanceEntrances", "instanceEncounters",
 }
 
 local COLUMNS = {
@@ -56,6 +56,8 @@ local COLUMNS = {
 	npcFactions = { "npcId", "factionId", "reputation" },
 	taxiNodes = { "id", "name", "mapId", "x", "y", "factionSide" },
 	taxiRoutes = { "fromNodeId", "toNodeId", "cost", "durationSeconds", "hops" },
+	instanceEntrances = { "instanceId", "mapId", "x", "y", "enters", "name" },
+	instanceEncounters = { "instanceId", "encounterId", "kills", "wipes", "name" },
 }
 
 local KEYS = {
@@ -66,11 +68,12 @@ local KEYS = {
 	merchantCosts = { "npcId", "itemId", "position" }, objectLoot = { "objectId", "itemId" },
 	fishingLoot = { "mapId", "areaId", "itemId" }, npcSpells = { "npcId", "spellId" },
 	taxiRoutes = { "fromNodeId", "toNodeId" },
+	instanceEntrances = { "instanceId", "mapId", "x", "y" }, instanceEncounters = { "instanceId", "encounterId" },
 }
 
 local COUNTERS = {
 	drops = true, kills = true, loots = true, pickpockets = true, skins = true,
-	opens = true, casts = true, quantity = true, seen = true,
+	opens = true, casts = true, quantity = true, seen = true, enters = true, wipes = true,
 }
 
 local SOURCES = { target = 1, mouseover = 2, nameplate = 3, merchant = 4, loot = 5 }
@@ -644,6 +647,8 @@ local LIST_LABELS = {
 	npcFactions = "Creature factions",
 	taxiNodes = "Flight masters",
 	taxiRoutes = "Flight paths",
+	instanceEntrances = "Dungeon entrances",
+	instanceEncounters = "Boss fights",
 }
 
 local LIST_PARTS = {
@@ -679,6 +684,8 @@ local LIST_PARTS = {
 		{ id = "fromNodeId", bucket = "taxiNodes" },
 		{ id = "toNodeId", bucket = "taxiNodes" },
 	},
+	instanceEntrances = { { name = "name", id = "instanceId" } },
+	instanceEncounters = { { name = "name", id = "encounterId" } },
 }
 
 local function lookup_name(bucket, id)

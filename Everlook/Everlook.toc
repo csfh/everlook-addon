@@ -24,6 +24,7 @@ factions.lua
 recipes.lua
 taxi.lua
 fishing.lua
+instances.lua
 drops.lua
 scan.lua
 hash.lua
