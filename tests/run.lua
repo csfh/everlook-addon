@@ -2675,6 +2675,10 @@ assert(loadfile(root .. "/tests/blizzard_settings.lua"))()(root, check)
 assert(loadfile(root .. "/tests/bar_slots.lua"))()(root, check)
 assert(loadfile(root .. "/tests/waves.lua"))()(root, check)
 
+if os.getenv("EVERLOOK_WORLD_FIXTURE") then
+	assert(loadfile(root .. "/tests/world_fixture.lua"))()(load_addon, os.getenv("EVERLOOK_WORLD_FIXTURE"))
+end
+
 if failed > 0 then
 	print(failed .. " failed")
 	os.exit(1)
