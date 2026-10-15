@@ -53,4 +53,31 @@ return function(root, check)
 	check("a choice between rewards stays for the player", says(nil, nil, "choice of rewards", facts("QUEST_COMPLETE", { choices = 2 })))
 	check("an unknown reward count stays for the player", says(nil, nil, "turning in is off, costs money or has no count", facts("QUEST_COMPLETE", {})))
 	check("any other event is not a quest window", says(nil, nil, "not a quest window", facts("SOMETHING_ELSE")))
+	do
+		local skip_env = setmetatable({ Everlook = Everlook }, { __index = _G })
+		skip_env._G = skip_env
+		skip_env.Enum = { GossipOption = { Vendor = 1, Gossip = 2, Taxi = 3, Trainer = 4, Binder = 5 } }
+		local skip = assert(loadfile(source("gossip_continue")))
+		setfenv(skip, skip_env)
+		skip("Everlook_GossipSkip", Everlook)
+		local pick = Everlook.gossip_continue.decide
+		local function open(extra)
+			local base = { options = { { gossipOptionID = 9, gossipOptionType = 2 } }, can_select = true }
+			for key, value in pairs(extra) do base[key] = value end
+			return base
+		end
+		check("the only plain gossip option is chosen", pick(open({})) == 9)
+		local _, reason = pick(open({ paused = true }))
+		check("Shift holds it back", reason == "paused")
+		_, reason = pick(open({ quests_present = true }))
+		check("a window that offers quests is left to the player", reason == "the window offers quests")
+		_, reason = pick(open({ options = { { gossipOptionID = 1, gossipOptionType = 2 }, { gossipOptionID = 2, gossipOptionType = 2 } } }))
+		check("two options are left to the player", reason == "not exactly one option")
+		check("a vendor is left to the player", pick(open({ options = { { gossipOptionID = 3, gossipOptionType = 1 } } })) == nil)
+		check("a flight master by name is left to the player", pick(open({ options = { { gossipOptionID = 3, type = "Taxi" } } })) == nil)
+		check("an option of an unknown type is left to the player", pick(open({ options = { { gossipOptionID = 3 } } })) == nil)
+		_, reason = pick(open({ can_select = false }))
+		check("a client that cannot select does nothing", reason == "the option cannot be selected")
+	end
+
 end

@@ -19,6 +19,21 @@ local function blocked(option)
 	return kind == names.Vendor or kind == names.Taxi or kind == names.Trainer or kind == names.Binder
 end
 
+Everlook.gossip_continue = {}
+
+-- What to choose from the facts alone, with a reason when the answer is nothing. `facts` holds whether Shift
+-- holds automation back, whether the window offers quests, and the options the window lists.
+function Everlook.gossip_continue.decide(facts)
+	if facts.paused then return nil, "paused" end
+	if facts.quests_present then return nil, "the window offers quests" end
+	local options = facts.options
+	if type(options) ~= "table" or #options ~= 1 then return nil, "not exactly one option" end
+	local option = options[1]
+	if blocked(option) then return nil, "a vendor, flight master, trainer or binder, or a type that cannot be classified" end
+	if not facts.can_select or type(option.gossipOptionID) ~= "number" then return nil, "the option cannot be selected" end
+	return option.gossipOptionID
+end
+
 local function quests_present()
 	if not C_GossipInfo then
 		return false
@@ -29,18 +44,16 @@ local function quests_present()
 end
 
 local function continue_gossip()
-	if module.paused() or quests_present() or not C_GossipInfo or type(C_GossipInfo.GetOptions) ~= "function" then
+	if module.paused() or not C_GossipInfo or type(C_GossipInfo.GetOptions) ~= "function" then
 		return
 	end
-	local options = C_GossipInfo.GetOptions()
-	if type(options) ~= "table" or #options ~= 1 or blocked(options[1]) then
-		return
-	end
-	local option = options[1]
-	if type(C_GossipInfo.SelectOption) ~= "function" or type(option.gossipOptionID) ~= "number" then
-		return
-	end
-	C_GossipInfo.SelectOption(option.gossipOptionID)
+	local choice = Everlook.gossip_continue.decide({
+		paused = false,
+		quests_present = quests_present(),
+		options = C_GossipInfo.GetOptions(),
+		can_select = type(C_GossipInfo.SelectOption) == "function",
+	})
+	if choice then C_GossipInfo.SelectOption(choice) end
 end
 
 module.register({
