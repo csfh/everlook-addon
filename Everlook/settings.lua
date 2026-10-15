@@ -128,6 +128,19 @@ local function build()
 			layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(signing))
 		end
 	end
+	-- Recording is the player's choice and starts off. Nothing else on this page changes it.
+	if Everlook.config and Everlook.config.collecting then
+		local collect = Settings.RegisterProxySetting(category, "Everlook_Collect", "boolean", "Record world data", false,
+			function() return Everlook.config.collecting() end,
+			function(value) Everlook.config.set_collecting(value) end)
+		local checkbox = Settings.CreateCheckbox(category, collect,
+			"Records what you see while you play (creatures, items, quests, vendors and where they were seen) to a file on your computer, with no character name, realm or guild. Signed in to the Everlook app, that file goes to everlook.ing. Off, nothing new is recorded and nothing is added to the file.")
+		if type(checkbox) == "table" and type(checkbox.AddSearchTags) == "function" then
+			checkbox:AddSearchTags("Everlook")
+			checkbox:AddSearchTags("privacy")
+			checkbox:AddSearchTags("upload")
+		end
+	end
 	layout:AddInitializer(CreateSettingsButtonInitializer("Eager scan", "Scan", Everlook.scan.now,
 		"Read your bags, gear, spellbook, talents, currencies, professions, nearby units, factions and quest lines once, now.", true))
 	-- Each subject is a page in the list on the left.
@@ -239,6 +252,10 @@ SlashCmdList = SlashCmdList or {}
 SlashCmdList.EVERLOOK = function(message, ...)
 	if type(message) == "string" and message:lower():match("^%s*where%s*$") then
 		Everlook.where.print()
+		return
+	end
+	if type(message) == "string" and message:lower():match("^%s*collect%s*$") then
+		Everlook.consent.show()
 		return
 	end
 	return Everlook.settings.toggle(message, ...)

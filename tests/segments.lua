@@ -79,6 +79,9 @@ return function(root, check)
 			setfenv(chunk, env)
 			chunk("Everlook", Everlook)
 		end
+		Everlook.config.collecting = function()
+			return true
+		end
 		return Everlook, env, snapshots
 	end
 

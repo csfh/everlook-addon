@@ -34,6 +34,21 @@ local function signer_for(secret)
 	return signer_value
 end
 
+-- Whether this install may record world data. Nothing is recorded until the
+-- player has said yes, and the answer is the player's alone: nothing here
+-- changes it. `nil` means not asked yet, and counts as no.
+function Everlook.config.collecting()
+	return saved().collect == true
+end
+
+function Everlook.config.set_collecting(on)
+	saved().collect = on and true or false
+end
+
+function Everlook.config.asked()
+	return saved().collect ~= nil
+end
+
 -- The token and the short name the server knows it by, without signing
 -- anything. Nil until a token is placed.
 function Everlook.config.credentials()

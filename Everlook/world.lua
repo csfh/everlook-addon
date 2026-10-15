@@ -1246,8 +1246,15 @@ function Everlook.world.lookup(kind, id)
 	return lines
 end
 
+-- Nothing is recorded until the player has said yes. The config file loads
+-- after this one, and a load without it (a test) records as it always did.
+local function may_record()
+	local config = Everlook.config
+	return not (config and config.collecting) or config.collecting()
+end
+
 function Everlook.world.store(bucket, row)
-	if type(row) ~= "table" then
+	if type(row) ~= "table" or not may_record() then
 		return
 	end
 	local key = row_key(bucket, row)
@@ -1330,7 +1337,7 @@ end
 -- A repeat row only adds counters. Once those fields exist, the id columns
 -- are left alone and the general merge is skipped.
 function Everlook.world.count(bucket, row)
-	if type(row) ~= "table" then
+	if type(row) ~= "table" or not may_record() then
 		return
 	end
 	local key = row_key(bucket, row)

@@ -107,12 +107,44 @@ local function load_addon()
 		setfenv(chunk, env)
 		chunk("Everlook", Everlook)
 	end
+	-- Recording waits for the player's yes. The gate has its own test below.
+	Everlook.config.collecting = function()
+		return true
+	end
 	return Everlook, env
 end
 
 local Everlook = load_addon()
 Everlook.world.reset()
 check("the namespace is the global Everlook, for module addons", rawget(_G, "Everlook") == Everlook)
+
+do
+	-- Nothing is recorded until the player has said yes; the answer is theirs alone.
+	local asked = load_addon()
+	asked.config.collecting = nil
+	local function chunk_of(name)
+		local run = assert(loadfile(source(name)))
+		return run
+	end
+	_G.EverlookDB = {}
+	local config_env = setmetatable({}, { __index = _G })
+	local gate = { config = {} }
+	setfenv(chunk_of("config.lua"), config_env)("Everlook", gate)
+	check("a fresh install has not been asked and records nothing", gate.config.collecting() == false and gate.config.asked() == false)
+	gate.config.set_collecting(true)
+	check("saying yes allows recording and counts as asked", gate.config.collecting() == true and gate.config.asked() == true)
+	gate.config.set_collecting(false)
+	check("saying no is an answer and records nothing", gate.config.collecting() == false and gate.config.asked() == true)
+	asked.config.collecting = function() return false end
+	asked.world.reset()
+	asked.world.store("maps", { id = 37, name = "Elwynn Forest" })
+	asked.world.count("kills", { npcId = 448, kills = 1 })
+	check("without a yes, store and count write no row", asked.world.row_count() == 0)
+	asked.config.collecting = function() return true end
+	asked.world.store("maps", { id = 37, name = "Elwynn Forest" })
+	check("with a yes they do", asked.world.row_count() == 1)
+	_G.EverlookDB = nil
+end
 
 check("secret numbers are dropped", Everlook.world.usable("ok") == true)
 _G.issecretvalue = function(value)
@@ -2772,6 +2804,7 @@ assert(loadfile(root .. "/tests/combat.lua"))()(root, check)
 assert(loadfile(root .. "/tests/install.lua"))()(root, check)
 assert(loadfile(root .. "/tests/errors.lua"))()(root, check)
 assert(loadfile(root .. "/tests/where.lua"))()(root, check)
+assert(loadfile(root .. "/tests/consent.lua"))()(root, check)
 assert(loadfile(root .. "/tests/overlaps.lua"))()(root, check)
 assert(loadfile(root .. "/tests/quest_decide.lua"))()(root, check)
 assert(loadfile(root .. "/tests/reward_marks.lua"))()(root, check)
