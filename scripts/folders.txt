@@ -31,8 +31,8 @@ Everlook_IslandShare
 Everlook_IslandWarnings
 Everlook_MapPins
 Everlook_MinimapCoordinates
-Everlook_Nameplates
 Everlook_NameplateTitles
+Everlook_Nameplates
 Everlook_OpenContainers
 Everlook_Optimize
 Everlook_QuestAutomation
@@ -40,6 +40,7 @@ Everlook_QuestLevels
 Everlook_QuestNameplates
 Everlook_QuestTextSize
 Everlook_RadialMenu
+Everlook_RewardMarks
 Everlook_SellJunk
 Everlook_SwingTimers
 Everlook_TakeMail

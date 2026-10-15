@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffRewardMarks|r
+## Notes: Puts a small coin on the quest reward choice that a vendor pays the most for.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+reward_marks.lua
