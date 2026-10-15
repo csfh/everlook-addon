@@ -270,4 +270,34 @@ return function(root, check)
 		check("a default that changes in code reaches a player who never set it", later.get("moved", "limit") == 7)
 	end
 
+	do
+		local namespace, started = {}, nil
+		local env = setmetatable({}, { __index = _G })
+		env._G = env
+		env.EventUtil = { ContinueOnAddOnLoaded = function(name, callback) started = { name = name, callback = callback } end }
+		local chunk = assert(loadfile(source("migrations")))
+		setfenv(chunk, env)
+		chunk("Everlook", namespace)
+		local migrations = namespace.migrations
+		local fresh = {}
+		migrations.run(fresh)
+		check("a fresh file is brought to the current schema", fresh.schema == migrations.current and type(fresh.qol) == "table")
+		local old = { qol = { thing = { enabled = true } } }
+		migrations.run(old)
+		check("an older file keeps its settings and gets the schema number", old.schema == migrations.current and old.qol.thing.enabled == true)
+		local current = { schema = migrations.current, qol = { thing = {} } }
+		local same = current.qol
+		migrations.run(current)
+		check("a file at the current schema is left alone", current.qol == same)
+		local newer = { schema = migrations.current + 5 }
+		migrations.run(newer)
+		check("a file from a newer Everlook is not touched", newer.schema == migrations.current + 5 and newer.qol == nil)
+		local damaged = { schema = "x", qol = 3 }
+		migrations.run(damaged)
+		check("a damaged file is repaired", damaged.schema == migrations.current and type(damaged.qol) == "table")
+		env.EverlookDB = {}
+		started.callback()
+		check("the runner starts when Everlook has loaded its saved variables", started.name == "Everlook" and env.EverlookDB.schema == migrations.current)
+	end
+
 end
