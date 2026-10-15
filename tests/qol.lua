@@ -1810,6 +1810,7 @@ return function(root, check)
 	env2.EventUtil.ContinueOnAddOnLoaded = function(_, callback) callback() end
 	env2.EventUtil.ContinueOnPlayerLogin = function(callback) callback() end
 	env2.MinimalSliderWithSteppersMixin = { Label = { Right = "right" } }
+	do local where = assert(loadfile(source("where"))); setfenv(where, env2); where("Everlook", addon2) end
 	local settings = assert(loadfile(source("settings"))); setfenv(settings, env2); settings("Everlook", addon2)
 	check("native settings register one Everlook page", pages == 1)
 	check("modules can add native settings buttons after their options", settings_buttons["Preview notifications"] and settings_buttons["Reset Island position"])
@@ -1913,7 +1914,18 @@ return function(root, check)
 	check("the toggle opens the page when the panel is closed", opened == 42 and hidden_panels == 3)
 	check("/everlook is the only command and it toggles the page",
 		env2.SLASH_EVERLOOK1 == "/everlook" and env2.SLASH_EVERLOOK2 == nil and env2.SLASH_EVERLOOKQOL1 == nil
-		and env2.SlashCmdList.EVERLOOK == addon2.settings.toggle and env2.SlashCmdList.EVERLOOKQOL == nil)
+		and env2.SlashCmdList.EVERLOOKQOL == nil)
+	opened = nil
+	env2.SettingsPanel.shown = false
+	env2.SlashCmdList.EVERLOOK("")
+	check("/everlook with nothing after it toggles the page", opened == 42)
+	opened = nil
+	do
+		local said = {}
+		addon2.say = function(text) said[#said + 1] = text end
+		env2.SlashCmdList.EVERLOOK(" Where ")
+		check("/everlook where prints the install facts and does not open the page", opened == nil and #said >= 3 and said[1]:find("Everlook", 1, true))
+	end
 	check("the Everlook page keeps only the eager scan, with no data button", rows[1].name == "Eager scan" and rows[2] == nil)
 	rows[1].click()
 	check("the eager scan button scans", scanned == 1)

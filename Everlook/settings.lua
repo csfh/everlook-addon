@@ -98,13 +98,14 @@ local function add_debug_page()
 	if not has_taint_log and problems == "" then return end
 	local page, page_layout = Settings.RegisterVerticalLayoutSubcategory(category, "Debug")
 	subpages[#subpages + 1] = page
-	if problems ~= "" then
-		page_layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Modules", problems))
-	end
 	if has_taint_log then
 		page_layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Taint log", TAINT_LOG_HELP))
 		page_layout:AddInitializer(CreateSettingsButtonInitializer("Taint log", "Turn off", turn_taint_log_off, TAINT_LOG_HELP, true))
 	end
+	if problems ~= "" then
+		page_layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Modules", problems))
+	end
+	page_layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("This install", Everlook.where.text()))
 end
 
 -- Module addons load after Everlook, so the page waits for login, when all of
@@ -227,4 +228,11 @@ end
 
 SLASH_EVERLOOK1 = "/everlook"
 SlashCmdList = SlashCmdList or {}
-SlashCmdList.EVERLOOK = Everlook.settings.toggle
+-- `/everlook where` prints the client, the versions and the player's place for a bug report.
+SlashCmdList.EVERLOOK = function(message, ...)
+	if type(message) == "string" and message:lower():match("^%s*where%s*$") then
+		Everlook.where.print()
+		return
+	end
+	return Everlook.settings.toggle(message, ...)
+end

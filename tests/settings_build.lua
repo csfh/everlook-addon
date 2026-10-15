@@ -51,6 +51,9 @@ return function(root, check)
 		end
 		env.EventUtil = { ContinueOnPlayerLogin = function(fn) game.login = fn end }
 		env.SettingsPanel = nil
+		local where = assert(loadfile(source("where.lua")))
+		setfenv(where, env)
+		where("Everlook", Everlook)
 		local chunk = assert(loadfile(source("settings.lua")))
 		setfenv(chunk, env)
 		chunk("Everlook", Everlook)
