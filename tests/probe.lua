@@ -119,9 +119,19 @@ return function(root, check)
 		quests.probe.run("quests")
 		local report = table.concat(quest_env.EverlookDB.probe.quests.lines, "\n")
 		check("the quest log check counts titles that already start with a number in brackets", report:find("3 titles, 2 start with", 1, true) and report:find("the game's own", 1, true) and report:find("colorblind mode: 0", 1, true))
+		local from_data, data_env = load({
+			GetQuestTitlePrefix = function() end,
+			C_QuestLog = { GetNumQuestLogEntries = function() return 3 end, GetInfo = function(index)
+				return ({ { title = "Wolves" }, { title = "[9] Boars" }, { title = "Region", isHeader = true } })[index]
+			end },
+		})
+		from_data.probe.run("quests")
+		local from_report = table.concat(data_env.EverlookDB.probe.quests.lines, "\n")
+		check("without the log open, the data still says whether the game has a prefix function and prefixes its titles", from_report:find("GetQuestTitlePrefix: present", 1, true)
+			and from_report:find("quests in the log by the data: 2, 1 of their titles", 1, true) and from_report:find("not drawn yet", 1, true))
 		local undrawn, undrawn_env, said_undrawn = load({})
 		undrawn.probe.run("quests")
-		check("an undrawn quest log is said, not guessed", undrawn_env.EverlookDB.probe.quests.lines[1]:find("not drawn yet", 1, true) ~= nil)
+		check("an undrawn quest log is said, not guessed", table.concat(undrawn_env.EverlookDB.probe.quests.lines, "\n"):find("not drawn yet", 1, true) ~= nil)
 		local lost, _, said_lost = load({})
 		lost.probe.run("nonsense")
 		check("a subject it does not know is said", said_lost[1]:find("Probe what?", 1, true) ~= nil)

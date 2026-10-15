@@ -168,7 +168,27 @@ end
 function SUBJECTS.quests()
 	local scroll = _G.QuestScrollFrame
 	local pool = type(scroll) == "table" and scroll.titleFramePool
-	if type(pool) ~= "table" or type(pool.EnumerateActive) ~= "function" then return { "quests: the quest log list is not drawn yet; open the quest log and run this again" } end
+	-- What the game's data says, which needs no quest log open: whether it has a function that puts a level in front of
+	-- a title, and whether the titles it hands out already start with one.
+	local data = {}
+	local prefix = type(_G.GetQuestTitlePrefix) == "function"
+	data[#data + 1] = "GetQuestTitlePrefix: " .. (prefix and "present" or "missing")
+	if C_QuestLog and type(C_QuestLog.GetNumQuestLogEntries) == "function" and type(C_QuestLog.GetInfo) == "function" then
+		local entries, with_bracket = 0, 0
+		for index = 1, C_QuestLog.GetNumQuestLogEntries() do
+			local info = C_QuestLog.GetInfo(index)
+			local title = type(info) == "table" and not info.isHeader and info.title
+			if type(title) == "string" and not secret(title) then
+				entries = entries + 1
+				if title:find("^%[%d+%]") then with_bracket = with_bracket + 1 end
+			end
+		end
+		data[#data + 1] = ("quests in the log by the data: %d, %d of their titles start with a bracketed number"):format(entries, with_bracket)
+	end
+	if type(pool) ~= "table" or type(pool.EnumerateActive) ~= "function" then
+		data[#data + 1] = "quest log list: not drawn yet; open the quest log and run this again for what the list shows"
+		return data
+	end
 	local total, bracketed = 0, 0
 	for button in pool:EnumerateActive() do
 		local text = type(button) == "table" and type(button.Text) == "table" and button.Text:GetText()
@@ -178,11 +198,10 @@ function SUBJECTS.quests()
 		end
 	end
 	local quest_levels = Everlook.module and Everlook.module.enabled and Everlook.module.enabled("quest_levels")
-	return {
-		("quest log list: %d titles, %d start with a bracketed number"):format(total, bracketed),
-		"Everlook's Quest levels is " .. (quest_levels and "ON, so those may be its own: turn it off and run this again to see the game's" or "off, so those are the game's own"),
-		"colorblind mode: " .. tostring(type(GetCVar) == "function" and GetCVar("colorblindMode") or "unknown"),
-	}
+	data[#data + 1] = ("quest log list: %d titles, %d start with a bracketed number"):format(total, bracketed)
+	data[#data + 1] = "Everlook's Quest levels is " .. (quest_levels and "ON, so those may be its own: turn it off and run this again to see the game's" or "off, so those are the game's own")
+	data[#data + 1] = "colorblind mode: " .. tostring(type(GetCVar) == "function" and GetCVar("colorblindMode") or "unknown")
+	return data
 end
 
 function Everlook.probe.run(subject)
