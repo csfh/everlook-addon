@@ -190,6 +190,26 @@ class AddonScriptsTest(unittest.TestCase):
         self.assertIn("## Interface: 16001\n## Version: 2.3.4\n", toc)
         self.assertNotIn("## Version", (self.module / "Everlook_SellJunk.toc").read_text())
 
+    def test_the_same_commit_packs_to_the_same_bytes_and_ships_checksums(self):
+        stamped = {**os.environ, "SOURCE_DATE_EPOCH": "1700000000"}
+        for name in ("first", "second"):
+            result = subprocess.run(
+                ["bash", str(self.addon / "scripts" / "pack.sh"), "2.3.4", str(self.base / name)],
+                capture_output=True, text=True,
+                env={**stamped, "UV_CACHE_DIR": str(self.base / "uv-cache"), "UV_PYTHON": sys.executable},
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            if name == "first":
+                # Touching a file must not change the archive: only the commit's time and the contents count.
+                os.utime(self.core / "world.lua", (1_800_000_000, 1_800_000_000))
+        for archive in ("Everlook-2.3.4.tar.gz", "Everlook-2.3.4.zip"):
+            self.assertEqual((self.base / "first" / archive).read_bytes(), (self.base / "second" / archive).read_bytes(), archive)
+        sums = (self.base / "first" / "SHA256SUMS").read_text().splitlines()
+        self.assertEqual(len(sums), 2)
+        for line in sums:
+            digest, name = line.split(None, 1)
+            self.assertEqual(digest, hashlib.sha256((self.base / "first" / name.strip()).read_bytes()).hexdigest())
+
     def test_release_also_ships_a_zip_with_the_same_folders(self):
         output = self.base / "release-zip"
         self.pack(output, version="2.3.4").close()

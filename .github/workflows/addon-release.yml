@@ -123,7 +123,7 @@ jobs:
           git tag -a "${tag}" -m "Everlook addon ${VERSION}"
           git push origin "${tag}"
           archive="${{ steps.pack.outputs.archive }}"
-          gh release create "${tag}" "${archive}" "${archive%.tar.gz}.zip" \
+          gh release create "${tag}" "${archive}" "${archive%.tar.gz}.zip" "$(dirname "${archive}")/SHA256SUMS" \
             --verify-tag \
             --title "Everlook addon ${VERSION}" \
             --notes-file "${RUNNER_TEMP}/notes.md"

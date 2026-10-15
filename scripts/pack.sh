@@ -69,23 +69,35 @@ for name in "${folders[@]}"; do
   mv "${toc}.stamped" "${toc}"
 done
 
+# The same commit packs to the same bytes: files are put in a fixed order with a fixed time, owner and mode,
+# and no name or time goes into the gzip header. The time is the commit's (or SOURCE_DATE_EPOCH), not the clock.
+epoch="${SOURCE_DATE_EPOCH:-$(git -C "${root}" log -1 --format=%ct 2>/dev/null || true)}"
+epoch="${epoch:-315532800}"
+find "${stage}" -type d -exec chmod 755 {} +
+find "${stage}" -type f -exec chmod 644 {} +
+
 archive="${outdir}/Everlook-${version}.tar.gz"
-tar -C "${stage}" -czf "${archive}" "${folders[@]}"
+tar -C "${stage}" --sort=name --mtime="@${epoch}" --owner=0 --group=0 --numeric-owner -cf - "${folders[@]}" | gzip -n -9 > "${archive}"
 cp "${archive}" "${outdir}/Everlook-latest.tar.gz"
 
 # Windows opens a .zip without extra tools, so every release carries the same folders as one.
 zip_archive="${outdir}/Everlook-${version}.zip"
-uv run --no-project python - "${stage}" "${zip_archive}" "${folders[@]}" <<'PY'
+uv run --no-project python - "${stage}" "${zip_archive}" "${epoch}" "${folders[@]}" <<'PY'
 import sys
+import time
 import zipfile
 from pathlib import Path
 
-stage, target, *folders = sys.argv[1:]
+stage, target, epoch, *folders = sys.argv[1:]
+stamp = time.gmtime(max(int(epoch), 315532800))[:6]
 with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
-    for folder in folders:
+    for folder in sorted(folders):
         for path in sorted(Path(stage, folder).rglob("*")):
             if path.is_file():
-                archive.write(path, path.relative_to(stage).as_posix())
+                info = zipfile.ZipInfo(path.relative_to(stage).as_posix(), stamp)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o644 << 16
+                archive.writestr(info, path.read_bytes())
 PY
 cp "${zip_archive}" "${outdir}/Everlook-latest.zip"
 
@@ -116,5 +128,15 @@ for name in "${folders[@]}"; do
     exit 1
   fi
 done
+
+# What was built, as checksums a player can check a download against.
+(
+  cd "${outdir}"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "Everlook-${version}.tar.gz" "Everlook-${version}.zip" > SHA256SUMS
+  else
+    shasum -a 256 "Everlook-${version}.tar.gz" "Everlook-${version}.zip" > SHA256SUMS
+  fi
+)
 
 echo "${archive}"
