@@ -11,3 +11,4 @@ data.lua
 meta.lua
 drops_1.lua
 levels_1.lua
+givers_1.lua
