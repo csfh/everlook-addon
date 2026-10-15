@@ -1,52 +1,12 @@
 local addon_name = ...
 local Everlook = Everlook
+local K = Everlook.island_const
 local module = Everlook.module
 local id = "smart_island"
-local grid = Everlook.island_grid
-local island_section = Everlook.island_section
-local island_blocks = Everlook.island_blocks
-local island_reaction = Everlook.island_reaction
-local island_capsule = Everlook.island_capsule
-local island_summary = Everlook.island_summary
-local island_row = Everlook.island_row
 
 BINDING_HEADER_EVERLOOK_ISLAND = "Everlook Island"
 BINDING_NAME_EVERLOOK_SMART_ISLAND = "Open smart island"
 BINDING_NAME_EVERLOOK_SMART_ISLAND_DISMISS = "Dismiss top island notice"
-
-local ACTION = "EVERLOOK_SMART_ISLAND"
-local HOLD = 0.2
-local LIST_MAX, STATUS_MAX = 30, 10 -- LIST_MAX sizes the pooled inbox rows; the inbox size option sets how many show.
-local CLOSED_W, CLOSED_H = 64, 36
-local QUEUE_MAX = 5
-local TOAST_GAP = 6
-local MOTION = { enter = 0.2, exit = 0.15, open = 0.15, close = 0.125, handoff = 0.125, complete = 0.15 }
-local ENTER_TIME, EXIT_TIME = MOTION.enter, MOTION.exit
--- Two columns when there is a quest to show beside the notifications, one when there is not.
-local OPEN_W, NARROW_W = grid.widths.two, grid.widths.one
-local COLORS = {
-	primary = { 245 / 255, 247 / 255, 250 / 255, 1 },
-	secondary = { 174 / 255, 182 / 255, 195 / 255, 1 },
-	accent = { 173 / 255, 118 / 255, 239 / 255, 1 },
-	success = { 0.5, 0.9, 0.65, 1 },
-	-- Amber, so a warning is not mistaken for the gold of a quest.
-	warning = { 1, 0.62, 0.25, 1 },
-	error = { 1, 0.5, 0.5, 1 },
-	muted = { 136 / 255, 145 / 255, 160 / 255, 1 },
-}
--- WoW fonts have one weight, so a role is a size and a tone. Display is the
--- level, a title names a thing, text lists things, body explains it, a caption names a figure and
--- a heading names a section. Headings are set in capitals through shell.heading.
-local ROLES = {
-	display = { "GameFontHighlightLarge", COLORS.primary },
-	title = { "GameFontHighlightMedium", COLORS.primary },
-	text = { "GameFontHighlight", COLORS.primary },
-	body = { "GameFontHighlight", COLORS.secondary },
-	caption = { "GameFontHighlightSmall", COLORS.secondary },
-	heading = { "GameFontHighlightSmall", COLORS.muted },
-}
-local ART = "Interface\\AddOns\\Everlook_Island\\assets\\"
-local EMPTY_HINT = "Loot, mail, quests and warnings from Everlook and other addons collect here."
 
 local island = {}
 Everlook.smart_island = island
@@ -71,7 +31,7 @@ local paint
 local mark_removed
 local next_notice_id = 0
 -- Sections share the notices' counter, so one number names one thing.
-local sections = island_section.new_store(function()
+local sections = Everlook.island_section.new_store(function()
 	next_notice_id = next_notice_id + 1
 	return next_notice_id
 end)
@@ -90,10 +50,7 @@ local vitals = Everlook.island_vitals
 local actions = Everlook.island_actions
 local compact_api = Everlook.island_capsule
 local island_surface = Everlook.island_surface
-local island_notice = Everlook.island_notice
-local island_inbox = Everlook.island_inbox
-local island_toasts = Everlook.island_toasts
-local shell = { quest_offset = 0, quest_height = 0, stats = Everlook.island_stats, scroll_api = Everlook.island_scroll, width = CLOSED_W, height = CLOSED_H, from_w = CLOSED_W, to_w = CLOSED_W, from_h = CLOSED_H, to_h = CLOSED_H }
+local shell = { quest_offset = 0, quest_height = 0, stats = Everlook.island_stats, scroll_api = Everlook.island_scroll, width = K.CLOSED_W, height = K.CLOSED_H, from_w = K.CLOSED_W, to_w = K.CLOSED_W, from_h = K.CLOSED_H, to_h = K.CLOSED_H }
 local resting_slots = {}
 -- Background statuses: they hold the capsule when nothing with more to say does, and are never history, a toast or timed.
 shell.backgrounds = {}
@@ -121,20 +78,17 @@ local function refresh_quests(force)
 	return shell.quest_pushed
 end
 
--- The quest events arrive in bursts. The first one scans at once, and the rest
--- inside the window collapse into one scan when it ends.
-local QUEST_SCAN_WINDOW = 0.5
 local last_quest_scan, quest_scan_waiting
 local function refresh_quests_from_event()
 	local time = GetTime and GetTime() or 0
-	if not last_quest_scan or time - last_quest_scan >= QUEST_SCAN_WINDOW or not (C_Timer and C_Timer.After) then
+	if not last_quest_scan or time - last_quest_scan >= K.QUEST_SCAN_WINDOW or not (C_Timer and C_Timer.After) then
 		last_quest_scan = time
 		refresh_quests(true)
 		return true
 	end
 	if quest_scan_waiting then return false end
 	quest_scan_waiting = true
-	C_Timer.After(QUEST_SCAN_WINDOW - (time - last_quest_scan), function()
+	C_Timer.After(K.QUEST_SCAN_WINDOW - (time - last_quest_scan), function()
 		quest_scan_waiting = nil
 		if not module.enabled(id) then return end
 		last_quest_scan = GetTime and GetTime() or 0
@@ -167,7 +121,7 @@ end
 -- Headings are set in capitals, which a font cannot do for us.
 -- Sets a label to a font role: its font and its tone.
 shell.role = function(label, role)
-	local font, tone = unpack(ROLES[role] or ROLES.text)
+	local font, tone = unpack(K.ROLES[role] or K.ROLES.text)
 	call(label, "SetFontObject", font)
 	call(label, "SetTextColor", unpack(tone))
 end
@@ -189,7 +143,7 @@ shell.make_ring = function(parent, size)
 	ring.track = call(parent, "CreateTexture", nil, "BACKGROUND")
 	-- A small ring has its own art, drawn near the size it shows at: the large one, shrunk to 14,
 	-- blurs, and an even stroke of two pixels needs its own proportions.
-	local art = ART .. (size <= 20 and "island_ring_small.tga" or "island_ring.tga")
+	local art = K.ART .. (size <= 20 and "island_ring_small.tga" or "island_ring.tga")
 	call(ring.track, "SetTexture", art)
 	call(ring.track, "SetVertexColor", 1, 1, 1, 0.14)
 	call(ring.track, "SetSize", size, size)
@@ -246,7 +200,7 @@ end
 
 
 local function screen_size(method)
-	return (call(UIParent, method) or (method == "GetWidth" and OPEN_W + 32 or 1080)) / (module.get(id, "size") / 100)
+	return (call(UIParent, method) or (method == "GetWidth" and K.OPEN_W + 32 or 1080)) / (module.get(id, "size") / 100)
 end
 
 -- The battleground score and similar widgets sit at the top center. When one is
@@ -275,15 +229,11 @@ function island.reset_position()
 	module.set(id, "position_top", 12)
 end
 
--- A preset sets what the player chooses to see. Placement, size, opacity and
--- the key stay as they are. Each option carries its value under each preset,
--- so the options a feed addon adds follow the preset too.
-local PRESET_ORDER = { "Quiet", "Standard", "Informative" }
 local registered
 
 function island.apply_preset(name)
 	local known = false
-	for _, preset in ipairs(PRESET_ORDER) do known = known or preset == name end
+	for _, preset in ipairs(K.PRESET_ORDER) do known = known or preset == name end
 	if not known or not registered then return false end
 	for key, option in pairs(registered.options) do
 		local value = option.presets and option.presets[name]
@@ -316,16 +266,16 @@ local function remove_status(entry)
 end
 
 local function unread_count()
-	return island_inbox.unread(notices)
+	return Everlook.island_inbox.unread(notices)
 end
 
 local function bound_history()
-	island_inbox.evict(notices, module.get(id, "inbox_size"))
+	Everlook.island_inbox.evict(notices, module.get(id, "inbox_size"))
 end
 
 -- The role is a name from ROLES. The older `true` means body, and none means title.
 local function make_label(parent, justify, role)
-	local font, tone = unpack(ROLES[role == true and "body" or role or "title"])
+	local font, tone = unpack(K.ROLES[role == true and "body" or role or "title"])
 	local label = call(parent, "CreateFontString", nil, "OVERLAY", font)
 	call(label, "SetJustifyH", justify or "LEFT")
 	call(label, "SetTextColor", unpack(tone))
@@ -368,8 +318,8 @@ local function make_content(parent, belongs_to_preview, row)
 	call(node.label, "SetPoint", "TOPLEFT", visual, "TOPLEFT", shell.card.text, -shell.card.label_top)
 	node.progress = CreateFrame("StatusBar", nil, visual)
 	call(node.progress, "EnableMouse", false)
-	call(node.progress, "SetStatusBarTexture", ART .. "island_white.tga")
-	call(node.progress, "SetStatusBarColor", unpack(COLORS.accent))
+	call(node.progress, "SetStatusBarTexture", K.ART .. "island_white.tga")
+	call(node.progress, "SetStatusBarColor", unpack(K.COLORS.accent))
 	call(node.progress, "SetMinMaxValues", 0, 1)
 	return node
 end
@@ -403,7 +353,7 @@ local function content_size(node, entry, width, compact, activity)
 	if (entry.count or 1) > 1 then primary = (primary or "") .. " ×" .. entry.count end
 	call(node.label, "SetText", primary or entry.text)
 	-- A row you have read steps back from one you have not.
-	if node.row then call(node.label, "SetTextColor", unpack(entry.unread and COLORS.primary or COLORS.secondary)) end
+	if node.row then call(node.label, "SetTextColor", unpack(entry.unread and K.COLORS.primary or K.COLORS.secondary)) end
 	local primary_height = call(node.label, "GetStringHeight") or 14
 	local foreign_source = type(entry.source) == "string" and entry.source:find("^smart_island") == nil and entry.source:find("^everlook") == nil
 	-- A toast from Everlook itself does not name its source. The inbox row does.
@@ -456,7 +406,7 @@ local function content_size(node, entry, width, compact, activity)
 		call(node.meta, "SetPoint", "TOPLEFT", node.visual, "TOPLEFT", card.text, -y)
 		call(node.meta, "SetWidth", text_width)
 		call(node.meta, "SetText", metadata)
-		call(node.meta, "SetTextColor", unpack(COLORS[entry.severity] or (node.row and COLORS.muted or COLORS.secondary)))
+		call(node.meta, "SetTextColor", unpack(K.COLORS[entry.severity] or (node.row and K.COLORS.muted or K.COLORS.secondary)))
 		local metadata_height = call(node.meta, "GetStringHeight") or 12
 		y = y + metadata_height + card.after_meta
 	end
@@ -472,7 +422,7 @@ local function content_size(node, entry, width, compact, activity)
 	if action_row > 0 then y = y + action_row end
 	node.width, node.height = width, math.max(card.min_height, y)
 	call(node.frame, "SetSize", node.width, node.height)
-	local tone = COLORS[entry.severity]
+	local tone = K.COLORS[entry.severity]
 	if tone and not activity and entry.severity ~= "info" then
 		call(node.accent, "SetColorTexture", tone[1], tone[2], tone[3], 1)
 		call(node.accent, "ClearAllPoints")
@@ -591,7 +541,7 @@ local function animate_preview(is_open)
 	local reduced = module.get(id, "reduced_motion")
 	if reduced then from_y, to_y = 0, 0 end
 	local to_alpha = is_open and 1 or 0
-	local duration = is_open and MOTION.open or MOTION.close
+	local duration = is_open and K.MOTION.open or K.MOTION.close
 	preview.phase, preview.open, preview.reduced = is_open and "opening" or "closing", is_open, reduced
 	if not preview_group then settle_preview(is_open); return end
 	local motion = { from_y = from_y, to_y = to_y, from_alpha = from_alpha, to_alpha = to_alpha, duration = duration, reduced = reduced == true }
@@ -668,8 +618,8 @@ quest_context.after_refresh = function() shell.quest_pushed = shell.push_quests(
 -- The header and the status cells, pushed as sections in one batch.
 local function push_summary()
 	return in_batch(function()
-		local summary_pushed = island_summary.push(readout, module.get(id, "low_slots"))
-		local resting_pushed = island_summary.push_resting(readout, {
+		local summary_pushed = Everlook.island_summary.push(readout, module.get(id, "low_slots"))
+		local resting_pushed = Everlook.island_summary.push_resting(readout, {
 			level = island.format_level(readout.level), xp = module.get(id, "closed_xp"), clock = module.get(id, "closed_clock"),
 			gear = module.get(id, "source_durability"), bags = module.get(id, "source_bags"), free = module.get(id, "closed_bags"),
 			low_slots = module.get(id, "low_slots"),
@@ -808,8 +758,7 @@ local function layout_summary(width, left_w)
 	call(shell.divider, "SetHeight", 1)
 end
 
-local QUEST_COLOR = { 1, 0.82, 0.25, 1 }
-shell.quest_color = QUEST_COLOR
+shell.quest_color = K.QUEST_COLOR
 
 local function show_label(label, visible, text)
 	if not label then return end
@@ -849,7 +798,7 @@ local function handoff_toasts()
 			position_toast(node, y - frame.height, alpha)
 			local token = {}
 			node.handoff, node.shown = token, true
-			animate_toast(node, node.y, 0, MOTION.handoff, function()
+			animate_toast(node, node.y, 0, K.MOTION.handoff, function()
 				if node.handoff ~= token or entry.node ~= node then return end
 				node.handoff, node.shown = nil, false
 				call(node.frame, "Hide")
@@ -879,7 +828,7 @@ animate_toast = function(node, y, alpha, duration, finished)
 	call(node.fade, "SetFromAlpha", from_alpha)
 	call(node.fade, "SetToAlpha", alpha)
 	local completing = node.entry and node.entry.completing and alpha == 1
-	call(node.fade, "SetDuration", completing and MOTION.complete or duration)
+	call(node.fade, "SetDuration", completing and K.MOTION.complete or duration)
 	if completing then node.entry.completing = nil end
 	call(node.group, "SetScript", "OnFinished", function()
 		if node.motion ~= motion then return end
@@ -946,7 +895,7 @@ local function layout_toasts()
 		elseif opened() then
 			-- The handoff owns its fade; metric repaints must not restart it.
 		elseif entry.phase == "exiting" and node.reduced ~= module.get(id, "reduced_motion") then
-			animate_toast(node, node.motion.to_y, 0, EXIT_TIME, function() remove_toast(entry) end)
+			animate_toast(node, node.motion.to_y, 0, K.EXIT_TIME, function() remove_toast(entry) end)
 		elseif entry.phase ~= "exiting" and (node.anchor or node.target_y ~= y or node.reduced ~= module.get(id, "reduced_motion")) then
 			if node.anchor then
 				local from_y, alpha = toast_position(node)
@@ -956,13 +905,13 @@ local function layout_toasts()
 			end
 			local toast_y = y
 			node.target_y, node.reduced = toast_y, module.get(id, "reduced_motion")
-			animate_toast(node, toast_y, 1, ENTER_TIME, function()
+			animate_toast(node, toast_y, 1, K.ENTER_TIME, function()
 				if entry.phase == "entering" then entry.phase = "visible" end
 				actions.sync(entry, opened(), entry.phase, false, secure_origin(node, toast_y))
 			end)
 		end
 		actions.sync(entry, opened(), entry.phase, node.motion, secure_origin(node, y))
-		y = y - node.height - TOAST_GAP
+		y = y - node.height - K.TOAST_GAP
 	end
 end
 
@@ -1011,7 +960,7 @@ local function exit_toast(entry)
 		remove_toast(entry)
 	else
 		local y = toast_position(entry.node)
-		animate_toast(entry.node, y + 8, 0, EXIT_TIME, function() remove_toast(entry) end)
+		animate_toast(entry.node, y + 8, 0, K.EXIT_TIME, function() remove_toast(entry) end)
 	end
 	return true
 end
@@ -1041,7 +990,7 @@ function island.hover_notice(entry, inside)
 	actions.hover(entry, inside, clock_now(), opened(), toast_timer)
 end
 
-local priority = island_toasts.priority
+local priority = Everlook.island_toasts.priority
 
 local function show_toast(entry)
 	if entry.node then
@@ -1063,8 +1012,8 @@ local function show_toast(entry)
 				return
 			end
 		end
-		if #toast_queue == QUEUE_MAX then
-			local evict = island_toasts.evict_index(toast_queue, entry)
+		if #toast_queue == K.QUEUE_MAX then
+			local evict = Everlook.island_toasts.evict_index(toast_queue, entry)
 			if not evict then return end
 			local removed = table.remove(toast_queue, evict)
 			if removed and not removed.persist and not removed.removed then
@@ -1098,7 +1047,7 @@ end
 local function pump_toasts()
 	if opened() then return end
 	while #active_toasts < module.get(id, "toast_count") and #toast_queue > 0 do
-		show_toast(table.remove(toast_queue, island_toasts.next_index(toast_queue)))
+		show_toast(table.remove(toast_queue, Everlook.island_toasts.next_index(toast_queue)))
 	end
 end
 
@@ -1150,13 +1099,13 @@ end
 -- The open island is two columns, quests on the left and notifications on the
 -- right. The summary above them uses the same split, so what sits above a
 -- pane lines up with it.
-shell.panes = grid.panes
+shell.panes = Everlook.island_grid.panes
 
 -- The width the open island takes, and whether two panes fit in it. Two panes sit on the
 -- grid at their own width; when the screen is too narrow for them, the island is one pane.
 shell.panel = function(two)
-	local width, fitted = grid.fit(two, screen_size("GetWidth") - 32)
-	return math.max(CLOSED_W, width), fitted
+	local width, fitted = Everlook.island_grid.fit(two, screen_size("GetWidth") - 32)
+	return math.max(K.CLOSED_W, width), fitted
 end
 
 local function layout_expanded(list, status, two)
@@ -1184,7 +1133,7 @@ local function layout_expanded(list, status, two)
 	call(shell.empty_hint, "ClearAllPoints")
 	call(shell.empty_hint, "SetPoint", "TOPLEFT", inbox_content, "TOPLEFT", space.edge, -content_height - space.near - (call(empty_text, "GetStringHeight") or 14) - space.within)
 	call(shell.empty_hint, "SetWidth", right_w - 2 * space.edge)
-	call(shell.empty_hint, "SetText", EMPTY_HINT)
+	call(shell.empty_hint, "SetText", K.EMPTY_HINT)
 	for index, entry in ipairs(list) do
 		local node = history_nodes[index]
 		if node then
@@ -1353,7 +1302,7 @@ end
 local function play_shell()
 	if not shell.group or not shell.anim then finish_shell(); return end
 	call(shell.group, "Stop")
-	call(shell.anim, "SetDuration", MOTION.open)
+	call(shell.anim, "SetDuration", K.MOTION.open)
 	call(shell.group, "Play")
 	shell.playing = true
 	call(frame, "SetScript", "OnUpdate", shell.tick)
@@ -1381,10 +1330,10 @@ shell.sample = function()
 	call(expanded, "SetAlpha", alpha)
 	call(shell.face, "SetAlpha", 1 - alpha)
 	call(shell.face, "SetPoint", "TOP", resting, "TOP", 0, 0)
-	call(shell.face, "SetSize", motion.closed_w or CLOSED_W, motion.closed_h or CLOSED_H)
+	call(shell.face, "SetSize", motion.closed_w or K.CLOSED_W, motion.closed_h or K.CLOSED_H)
 	if motion.travel_x then
-		local from_x = width / 2 - (motion.closed_w or CLOSED_W) / 2 + motion.travel_x
-		local from_y = -((motion.closed_h or CLOSED_H) / 2)
+		local from_x = width / 2 - (motion.closed_w or K.CLOSED_W) / 2 + motion.travel_x
+		local from_y = -((motion.closed_h or K.CLOSED_H) / 2)
 		local title = shell.blocks_header and shell.blocks_header:first_title()
 		local to_x = shell.space.edge + ((call(title, "GetStringWidth") or 0) / 2)
 		local to_y = -shell.space.edge - ((call(title, "GetLineHeight") or 14) / 2)
@@ -1471,7 +1420,7 @@ paint = function(reason)
 	end
 	local visual_open = now == "open" or preview.phase == "closing"
 	local list = visual_open and notices or {}
-	local width, height = CLOSED_W, CLOSED_H
+	local width, height = K.CLOSED_W, K.CLOSED_H
 	local status = active_status()
 	-- The capsule is held by the first of: a status, a background status, the resting display. A status
 	-- with no capsule of its own keeps its icon beside the level.
@@ -1501,7 +1450,7 @@ paint = function(reason)
 		reserve = math.ceil(call(unread_text, "GetStringWidth") or 8) + shell.space.near
 	end
 	local layout = compact and compact_api.layout(compact, measure_capsule, available, counts_unread and reserve or 0) or nil
-	local closed_w, closed_h = CLOSED_W, CLOSED_H
+	local closed_w, closed_h = K.CLOSED_W, K.CLOSED_H
 	if layout then closed_w, closed_h = layout.width, layout.height end
 	status_height = 0
 	-- The open island already shows what the tooltip would say. The resting display has none.
@@ -1534,7 +1483,7 @@ paint = function(reason)
 	end
 	for _, control in ipairs(preview_controls) do call(control, "EnableMouse", now == "open") end
 	show_label(empty_text, visual_open and #list == 0, "No notifications yet")
-	show_label(shell.empty_hint, visual_open and #list == 0, EMPTY_HINT)
+	show_label(shell.empty_hint, visual_open and #list == 0, K.EMPTY_HINT)
 	call(unread_text, "ClearAllPoints")
 	call(unread_text, "SetPoint", "RIGHT", shell.face, "RIGHT", layout and -shell.space.edge or -5, 0)
 	show_label(unread_text, (now == "closed" or morphing) and counts_unread and unread_count() > 0, tostring(unread_count()))
@@ -1542,13 +1491,13 @@ paint = function(reason)
 	for _, entry in ipairs(notices) do
 		if entry.unread and priority(entry) > 1 then unread_warning = true end
 	end
-	call(unread_text, "SetTextColor", unpack(unread_warning and COLORS.warning or COLORS.accent))
+	call(unread_text, "SetTextColor", unpack(unread_warning and K.COLORS.warning or K.COLORS.accent))
 	-- Opening the island, the level slides from the resting display to the header's title, when the
 	-- resting display's own title is the level. The copy that slides stands in for that title meanwhile.
 	local travels = rested ~= nil and layout ~= nil and level_text ~= "" and layout.row.title == level_text and morphing
 	show_label(closed_text, travels, level_text)
 	for _, slot in ipairs(resting_slots) do slot.row:lend_title(travels) end
-	for index = 1, LIST_MAX do
+	for index = 1, K.LIST_MAX do
 		local entry = list[index]
 		local node = history_nodes[index]
 		if node then
@@ -1688,7 +1637,7 @@ end
 
 function island.undo_clear()
 	if not undo_state or not module.enabled(id) then return false end
-	local restored = island_inbox.restore(notices, undo_state.entries)
+	local restored = Everlook.island_inbox.restore(notices, undo_state.entries)
 	undo_state, notices = nil, restored
 	for _, entry in ipairs(notices) do
 		if entry.removed then
@@ -1710,7 +1659,7 @@ local function refresh_status(entry)
 	for _, current in ipairs(statuses) do if current == entry then exists = true end end
 	if not exists then
 		statuses[#statuses + 1] = entry
-		if #statuses > STATUS_MAX then remove_status(statuses[1]) end
+		if #statuses > K.STATUS_MAX then remove_status(statuses[1]) end
 	end
 	local token = {}
 	entry.status_timer = token
@@ -1726,7 +1675,7 @@ end
 function island.notify(payload)
 	if not module.enabled(id) then return nil, "disabled" end
 	if not usable(payload) or type(payload) ~= "table" or getmetatable(payload) ~= nil then return nil, "invalid_notification" end
-	local read, reason = island_notice.read(payload, module.get(id, "read_time"))
+	local read, reason = Everlook.island_notice.read(payload, module.get(id, "read_time"))
 	if not read then return nil, reason end
 	local text, source, kind, key, duration = read.text, read.source, read.kind, read.key, read.duration
 	local persist, stack, severity, detail, icon = read.persist, read.stack, read.severity, read.detail, read.icon
@@ -1922,7 +1871,7 @@ end
 -- Returns its handle, or nil and a reason.
 function island.section(spec)
 	if not module.enabled(id) then return nil, "disabled" end
-	local record, reason = island_section.read(spec)
+	local record, reason = Everlook.island_section.read(spec)
 	if not record then return nil, reason end
 	local handle, limit = sections.put(record, clock_now())
 	if not handle then return nil, limit end
@@ -1931,25 +1880,24 @@ function island.section(spec)
 end
 
 -- The reaction playing on the island's body, drawn from the arithmetic in island_reaction.lua.
-local reaction_state = island_reaction.new()
+local reaction_state = Everlook.island_reaction.new()
 
 local function show_reaction()
-	local sample = island_reaction.sample(reaction_state, clock_now())
+	local sample = Everlook.island_reaction.sample(reaction_state, clock_now())
 	if not sample then
 		island_surface.set_glow(shell.glow, nil, 0, 0)
 		call(shell.reaction_frame, "SetScript", "OnUpdate", nil)
 		return
 	end
-	island_surface.set_glow(shell.glow, island_capsule.tone_color(sample.tone), sample.tint, sample.edge)
+	island_surface.set_glow(shell.glow, Everlook.island_capsule.tone_color(sample.tone), sample.tint, sample.edge)
 end
 
 local function stop_reaction()
-	reaction_state = island_reaction.new()
+	reaction_state = Everlook.island_reaction.new()
 	island_surface.set_glow(shell.glow, nil, 0, 0)
 	call(shell.reaction_frame, "SetScript", "OnUpdate", nil)
 end
 
-local REACTION_KEYS = { kind = true, strength = true, source = true }
 
 -- Flashes the island's body. `reaction` is a kind, or { kind, strength, source }. Returns true,
 -- or nil and a reason: disabled, do_not_disturb, invalid_reaction, or limited.
@@ -1960,32 +1908,31 @@ function island.react(reaction)
 	if type(reaction) == "table" then
 		if not usable(reaction) or getmetatable(reaction) ~= nil then return nil, "invalid_reaction" end
 		for key in pairs(reaction) do
-			if not REACTION_KEYS[key] then return nil, "invalid_reaction" end
+			if not K.REACTION_KEYS[key] then return nil, "invalid_reaction" end
 		end
 		kind, strength = reaction.kind, reaction.strength
 		if reaction.source ~= nil and (type(reaction.source) ~= "string" or #reaction.source > 64) then return nil, "invalid_reaction" end
 	elseif not usable(reaction) then
 		return nil, "invalid_reaction"
 	end
-	local started, reason = island_reaction.start(reaction_state, kind, strength, clock_now(), module.get(id, "reduced_motion") == true)
+	local started, reason = Everlook.island_reaction.start(reaction_state, kind, strength, clock_now(), module.get(id, "reduced_motion") == true)
 	if not started then return nil, reason end
 	call(shell.reaction_frame, "SetScript", "OnUpdate", show_reaction)
 	show_reaction()
 	return true
 end
 
-local SECTION_CHANGES = { title = true, order = true, blocks = true, expires = true }
 
 local function update_section(record, changes)
 	for name in pairs(changes) do
-		if not SECTION_CHANGES[name] then return nil, "invalid_update" end
+		if not K.SECTION_CHANGES[name] then return nil, "invalid_update" end
 	end
 	local merged = { source = record.source, key = record.key, region = record.region, title = record.title,
 		order = record.order, expires = record.expires, blocks = changes.blocks or {} }
-	for name in pairs(SECTION_CHANGES) do
+	for name in pairs(K.SECTION_CHANGES) do
 		if changes[name] ~= nil and name ~= "blocks" then merged[name] = changes[name] end
 	end
-	local next_record, reason = island_section.read(merged)
+	local next_record, reason = Everlook.island_section.read(merged)
 	if not next_record then return nil, reason end
 	-- Blocks that were not changed are kept as they were read.
 	if changes.blocks == nil then next_record.blocks, next_record.bytes = record.blocks, record.bytes end
@@ -2131,7 +2078,7 @@ local function hide()
 	end
 	painted = {}
 	sections.clear()
-	island_summary.reset()
+	Everlook.island_summary.reset()
 	quest_context.forget_push()
 	stop_reaction()
 	local kept = {}
@@ -2156,8 +2103,8 @@ local function hide()
 	notices, readout = kept, {}
 	vitals.follow("hide")
 	shell.signature, shell.incoming, shell.playing, shell.fading, shell.sizing = nil, nil, false, false, false
-	shell.width, shell.height = CLOSED_W, CLOSED_H
-	shell.from_w, shell.to_w, shell.from_h, shell.to_h = CLOSED_W, CLOSED_W, CLOSED_H, CLOSED_H
+	shell.width, shell.height = K.CLOSED_W, K.CLOSED_H
+	shell.from_w, shell.to_w, shell.from_h, shell.to_h = K.CLOSED_W, K.CLOSED_W, K.CLOSED_H, K.CLOSED_H
 	call(shell.group, "Stop")
 	call(frame, "SetScript", "OnUpdate", nil)
 	if frame then
@@ -2175,12 +2122,6 @@ local function on_enter()
 	paint("pointer")
 end
 
--- Moving from the Island onto one of its own controls is a leave for the frame
--- and an enter for the control. A control that does not tell the Island it was
--- entered (the scroll thumb, the experience heading, the buttons on a notice)
--- would otherwise close it under the pointer. So the close waits, and checks
--- whether the pointer is still over the Island, and checks again until it is not.
-local CLOSE_DELAY = 0.1
 
 local function on_leave()
 	local token = {}
@@ -2188,14 +2129,14 @@ local function on_leave()
 	local function close()
 		if close_token ~= token then return end
 		if call(frame, "IsMouseOver") == true and C_Timer and C_Timer.After then
-			C_Timer.After(CLOSE_DELAY, close)
+			C_Timer.After(K.CLOSE_DELAY, close)
 			return
 		end
 		close_token, hovering = nil, nil
 		leave_open()
 		paint("pointer")
 	end
-	if C_Timer and C_Timer.After then C_Timer.After(CLOSE_DELAY, close) else close() end
+	if C_Timer and C_Timer.After then C_Timer.After(K.CLOSE_DELAY, close) else close() end
 end
 
 -- Shift and drag moves the Island by writing the same two placement options as
@@ -2317,7 +2258,7 @@ end
 -- same look as the buttons on a notice. Under the pointer the fill lightens and the words turn white.
 shell.tint_link = function(button, state)
 	island_surface.tint_button(button.quiet, state)
-	call(button.label, "SetTextColor", unpack(state == "rest" and COLORS.secondary or COLORS.primary))
+	call(button.label, "SetTextColor", unpack(state == "rest" and K.COLORS.secondary or K.COLORS.primary))
 end
 
 shell.make_link = function(parent, name, title, callback)
@@ -2356,19 +2297,19 @@ local function ensure_frame()
 	if frame or not CreateFrame or not UIParent then return frame end
 	frame = CreateFrame("Button", "EverlookSmartIsland", UIParent)
 	if not frame then return nil end
-	frame.width, frame.height = CLOSED_W, CLOSED_H
+	frame.width, frame.height = K.CLOSED_W, K.CLOSED_H
 	call(frame, "SetFrameStrata", "HIGH")
 	call(frame, "SetFrameLevel", 50)
 	call(frame, "SetClampedToScreen", true)
 	call(frame, "EnableMouse", true)
 	call(frame, "RegisterForClicks", "LeftButtonUp")
-	call(frame, "SetSize", CLOSED_W, CLOSED_H)
+	call(frame, "SetSize", K.CLOSED_W, K.CLOSED_H)
 	call(frame, "SetPoint", "TOP", UIParent, "TOP", 0, -8)
 	resting = CreateFrame("Frame", "EverlookIslandResting", frame)
 	call(resting, "EnableMouse", false)
 	call(resting, "SetFrameLevel", 49)
 	call(resting, "SetPoint", "TOP", frame, "TOP", 0, 0)
-	call(resting, "SetSize", CLOSED_W, CLOSED_H)
+	call(resting, "SetSize", K.CLOSED_W, K.CLOSED_H)
 	call(resting, "SetAlpha", 1)
 	surface = island_surface.make(resting)
 	shell.glow = island_surface.make_glow(resting)
@@ -2377,7 +2318,7 @@ local function ensure_frame()
 	call(shell.face, "EnableMouse", false)
 	call(shell.face, "SetFrameLevel", 52)
 	call(shell.face, "SetPoint", "TOP", resting, "TOP", 0, 0)
-	call(shell.face, "SetSize", CLOSED_W, CLOSED_H)
+	call(shell.face, "SetSize", K.CLOSED_W, K.CLOSED_H)
 	expanded = CreateFrame("Frame", "EverlookIslandExpanded", frame)
 	call(expanded, "EnableMouse", false)
 	-- The panel clips, and the game orders everything under a clipping frame as one unit at that frame's own level.
@@ -2395,7 +2336,7 @@ local function ensure_frame()
 	call(closed_text, "SetPoint", "CENTER", shell.face, "CENTER", -4, 0)
 	unread_text = make_label(shell.face, "RIGHT", true)
 	call(unread_text, "SetPoint", "RIGHT", shell.face, "RIGHT", -5, 0)
-	call(unread_text, "SetTextColor", unpack(COLORS.accent))
+	call(unread_text, "SetTextColor", unpack(K.COLORS.accent))
 	shell.measure = make_label(resting, "LEFT")
 	call(shell.measure, "Hide")
 	for index = 1, 2 do
@@ -2403,7 +2344,7 @@ local function ensure_frame()
 		call(slot_frame, "SetAllPoints", shell.face)
 		call(slot_frame, "EnableMouse", false)
 		call(slot_frame, "Hide")
-		resting_slots[index] = { frame = slot_frame, row = island_row.new(slot_frame, { label = make_label, ring_size = shell.space.capsule_ring, center_alone = true,
+		resting_slots[index] = { frame = slot_frame, row = Everlook.island_row.new(slot_frame, { label = make_label, ring_size = shell.space.capsule_ring, center_alone = true,
 			rings = { make = shell.make_ring, place = shell.place_ring, chain = shell.chain_ring, set = shell.set_ring, hide = shell.hide_ring } }) }
 	end
 	-- A capsule's arrow that asks for its angle is turned ten times a second, while a capsule shows.
@@ -2424,7 +2365,7 @@ local function ensure_frame()
 		-- alpha animation here would fade the pill's body in and out with every crossfade.
 		shell.anim = call(shell.group, "CreateAnimation", "Translation")
 		call(shell.anim, "SetSmoothing", "OUT")
-		call(shell.anim, "SetDuration", MOTION.open)
+		call(shell.anim, "SetDuration", K.MOTION.open)
 		call(shell.anim, "SetOffset", 0, 0)
 	end
 	local activity = CreateFrame("Button", nil, expanded)
@@ -2449,7 +2390,7 @@ local function ensure_frame()
 	call(quest_scroll, "EnableMouseWheel", true)
 	preview_controls[#preview_controls + 1] = quest_scroll
 	quest_content = CreateFrame("Frame", nil, quest_scroll)
-	call(quest_content, "SetSize", OPEN_W / 2, 1)
+	call(quest_content, "SetSize", K.OPEN_W / 2, 1)
 	call(quest_content, "SetPoint", "TOPLEFT", quest_scroll, "TOPLEFT", 0, 0)
 	call(quest_scroll, "SetScrollChild", quest_content)
 	call(quest_scroll, "SetScript", "OnMouseWheel", function(_, delta)
@@ -2462,7 +2403,7 @@ local function ensure_frame()
 	call(inbox, "EnableMouseWheel", true)
 	preview_controls[#preview_controls + 1] = inbox
 	inbox_content = CreateFrame("Frame", nil, inbox)
-	call(inbox_content, "SetSize", OPEN_W / 2, 1)
+	call(inbox_content, "SetSize", K.OPEN_W / 2, 1)
 	call(inbox_content, "SetPoint", "TOPLEFT", inbox, "TOPLEFT", 0, 0)
 	call(inbox, "SetScrollChild", inbox_content)
 	call(inbox, "SetScript", "OnMouseWheel", function(_, delta)
@@ -2474,7 +2415,7 @@ local function ensure_frame()
 	empty_text = make_label(empty_visual, "LEFT", "text")
 	call(empty_text, "SetPoint", "TOPLEFT", empty_visual, "TOPLEFT", shell.space.edge, -shell.space.edge)
 	shell.empty_hint = make_label(empty_visual, "LEFT", "caption")
-	for index = 1, LIST_MAX do
+	for index = 1, K.LIST_MAX do
 		local target = CreateFrame("Button", nil, inbox_content)
 		local node = make_content(target, true, true)
 		history_nodes[index] = node
@@ -2506,13 +2447,13 @@ local function ensure_frame()
 			hover_target(target, node)
 			preview_controls[#preview_controls + 1] = target
 		end,
-		heading = shell.heading, space = shell.space, ring_size = shell.space.capsule_ring, primary = COLORS.primary,
+		heading = shell.heading, space = shell.space, ring_size = shell.space.capsule_ring, primary = K.COLORS.primary,
 		money = vitals.rich, click = on_click, role = shell.role,
 		rings = { make = shell.make_ring, place = shell.place_ring, chain = shell.chain_ring, set = shell.set_ring, hide = shell.hide_ring, track = shell.track_ring } }
-	shell.blocks_header = island_blocks.new(shell.header_visual, block_host, { title_role = "display", row_height = 20 })
-	shell.blocks_metrics = island_blocks.new(shell.header_visual, block_host, { across = 4 })
-	shell.blocks_a = island_blocks.new(quest_content, block_host)
-	shell.blocks_b = island_blocks.new(inbox_content, block_host)
+	shell.blocks_header = Everlook.island_blocks.new(shell.header_visual, block_host, { title_role = "display", row_height = 20 })
+	shell.blocks_metrics = Everlook.island_blocks.new(shell.header_visual, block_host, { across = 4 })
+	shell.blocks_a = Everlook.island_blocks.new(quest_content, block_host)
+	shell.blocks_b = Everlook.island_blocks.new(inbox_content, block_host)
 	-- A row's arrow that asks for its angle is turned ten times a second, while the panes show.
 	shell.aim_frame = CreateFrame("Frame", nil, expanded)
 	local aim_wait = 0
@@ -2553,7 +2494,7 @@ local function restore_history()
 	local now = clock_now()
 	for _, row in ipairs(Everlook.island_history.load()) do
 		next_notice_id = next_notice_id + 1
-		local icon = island_notice.icon_for(row.icon, row.kind)
+		local icon = Everlook.island_notice.icon_for(row.icon, row.kind)
 		notices[#notices + 1] = {
 			id = next_notice_id, source = row.source, key = row.key, kind = row.kind, text = row.text, detail = row.detail,
 			severity = row.severity, icon = icon, money = row.money, count = row.count, unread = row.unread,
@@ -2698,7 +2639,7 @@ local function key_up()
 	holding, hold_at, hold_was_pinned = nil, nil, nil
 	if module.enabled(id) then
 		local now = GetTime and GetTime() or 0
-		if type(started) ~= "number" or (now - started) < HOLD then
+		if type(started) ~= "number" or (now - started) < K.HOLD then
 			pinned = not pinned_before
 		else
 			pinned = pinned_before
@@ -2767,7 +2708,7 @@ registered = module.register({
 	id = id,
 	name = "Smart island",
 	description = "While this is on, a pill at the top of the screen shows a level chip when closed, unless a quest or a status capsule replaces that chip, and level, experience, gold, durability, bag slots, and the clock when open, with toasts underneath. Hover previews it, a click or a tap of the key pins it open, a second click or tap closes it, holding the key peeks, the key is set below or under Key Bindings, turning this off hides the pill and clears its notices except a card frozen in combat, and the quest tracker and action bars stay where they are.",
-	keybinding = ACTION,
+	keybinding = K.ACTION,
 	extra_keybindings = { "EVERLOOK_SMART_ISLAND_DISMISS" },
 	options = {
 		size = { name = "Island size", default = 100, min = 80, max = 150, step = 5, unit = "%", description = "Scales the Island's text, surfaces, controls, and toasts together, from 80 to 150, in steps of 5. 100 is the normal size, the position sliders stay on their own options, and this number does nothing until Smart island is on." },
@@ -2809,7 +2750,7 @@ registered = module.register({
 					Standard = "Quest display, quest turn-ins, rare loot, the Hearthstone, mail and flights, with the warnings.",
 					Informative = "Everything on, including reputation, professions, the recap and experience detail.",
 				}
-				for _, name in ipairs(PRESET_ORDER) do
+				for _, name in ipairs(K.PRESET_ORDER) do
 					layout:AddInitializer(CreateSettingsButtonInitializer(name .. " preset", "Apply", function() return island.apply_preset(name) end,
 						descriptions[name] .. " Placement, size and opacity stay as they are.", true))
 				end
