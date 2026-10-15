@@ -563,6 +563,12 @@ return function(root, check)
 		return { GetXY = function() return 0.2, 0.4 end }
 	end
 	check("coordinates read a vector position", addon.coordinates.player_text() == "20.0, 40.0")
+	play.C_Map.GetPlayerMapPosition = function() return nil end
+	check("coordinates are blank when the client gives no position", addon.coordinates.player_text() == "")
+	play.C_Map.GetPlayerMapPosition = function()
+		return { GetXY = function() return nil, nil end }
+	end
+	check("coordinates are blank when the position has no numbers", addon.coordinates.player_text() == "")
 	play.C_Map = nil
 	play.Minimap = {}
 	addon.module.set("coordinates", "enabled", true)

@@ -120,6 +120,15 @@ _G.issecretvalue = function(value)
 end
 check("secret values are unusable", Everlook.world.usable("secret") == false)
 
+do
+	local saved_map = _G.C_Map
+	_G.C_Map = { GetBestMapForUnit = function() return 37 end, GetPlayerMapPosition = function() return nil end }
+	check("a player the client gives no position for has no location", load_addon().location.player() == nil)
+	_G.C_Map = { GetBestMapForUnit = function() return nil end, GetPlayerMapPosition = function() return { x = 0.5, y = 0.5 } end }
+	check("a player on no map has no location", load_addon().location.player() == nil)
+	_G.C_Map = saved_map
+end
+
 Everlook.world.store("maps", { id = 37, name = "Elwynn Forest" })
 Everlook.world.store("npcs", {
 	id = 448,
