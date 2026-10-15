@@ -33,6 +33,7 @@ segments.lua
 sign.lua
 links.lua
 module.lua
+install.lua
 tooltips.lua
 blizzard_settings.lua
 collected.lua
