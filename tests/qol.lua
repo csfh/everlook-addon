@@ -419,6 +419,16 @@ return function(root, check)
 	event("QUEST_DETAIL")
 	check("a quest that cannot be classified stays manual", accepted == 2)
 	env.C_QuestLog = { IsRepeatableQuest = function() return false end }
+	do
+		local before = accepted
+		env.QuestFlagsPVP = function() return true end
+		event("QUEST_DETAIL")
+		check("a quest that flags the player for PvP is left to the player", accepted == before)
+		env.QuestFlagsPVP = function() return false end
+		event("QUEST_DETAIL")
+		check("a quest that does not flag PvP is accepted", accepted == before + 1)
+		env.QuestFlagsPVP = nil
+	end
 
 	local looted = {}
 	env.GetNumLootItems = function() return 3 end

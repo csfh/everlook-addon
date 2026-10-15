@@ -50,6 +50,8 @@ local function automate(event)
 	elseif repeatable() then
 		return
 	elseif event == "QUEST_DETAIL" and module.get(id, "accept") and AcceptQuest then
+		-- Blizzard's Accept button asks first when a quest flags the player for PvP. Leave that question to the player.
+		if QuestFlagsPVP and QuestFlagsPVP() then return end
 		if QuestGetAutoAccept and QuestGetAutoAccept() then
 			if AcknowledgeAutoAcceptQuest then AcknowledgeAutoAcceptQuest() end
 		else AcceptQuest() end
