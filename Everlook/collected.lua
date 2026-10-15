@@ -101,6 +101,7 @@ local bucket_bar
 local record_box
 local record_bar
 local empty
+local no_match
 local selected_bucket
 local selected_record_id
 local places
@@ -227,6 +228,15 @@ local function refresh()
 	end
 	apply_provider(bucket_box, entries, true)
 	apply_provider(record_box, records, true)
+	-- A name that finds nothing says why the list is empty, and a search still reading says it is reading.
+	if no_match then
+		local typed = filter_text() ~= nil and filter_text() ~= ""
+		local reading = scan ~= nil and not scan.done
+		no_match:SetText(reading and "Searching this list..."
+			or (scan ~= nil and "No name in this list matches."
+				or "No name on this page matches. Press Enter to search every page of this list."))
+		no_match:SetShown(#records == 0 and (typed or reading))
+	end
 	if places then
 		local text = record and Everlook.collected.location_text(selected_bucket, record.id) or nil
 		places:SetText(text or "")
@@ -406,7 +416,9 @@ local function build(panel)
 
 	local blank = panel:CreateFontString(nil, "OVERLAY", "GameFontDisable")
 	blank:SetPoint("CENTER", 0, -8)
-	blank:SetText("Nothing collected yet.")
+	blank:SetText("Nothing collected yet. Everlook records what you see and do as you play. To read your bags, gear and spellbook now, press Eager scan on the Everlook page.")
+	if blank.SetWidth then blank:SetWidth(360) end
+	if blank.SetWordWrap then blank:SetWordWrap(true) end
 	blank:Hide()
 	empty = blank
 
@@ -422,6 +434,12 @@ local function build(panel)
 	where:SetText("")
 	places = where
 	panel.places = where
+
+	no_match = panel:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+	no_match:SetPoint("CENTER", panel, "CENTER", 100, -8)
+	if no_match.SetWidth then no_match:SetWidth(320) end
+	if no_match.SetWordWrap then no_match:SetWordWrap(true) end
+	no_match:Hide()
 
 	local buckets, bucket_scroll = create_list(panel, init_bucket)
 	buckets:SetPoint("TOPLEFT", 8, -64)

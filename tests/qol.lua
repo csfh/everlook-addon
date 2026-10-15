@@ -1997,7 +1997,12 @@ return function(root, check)
 		widget.name, widget.template = name, template
 		widget.TitleText = label()
 		widget.portrait = { SetTexture = function() end }
-		widget.CreateFontString = label
+		widget.CreateFontString = function(...)
+			local made = label(...)
+			widget.labels = widget.labels or {}
+			widget.labels[#widget.labels + 1] = made
+			return made
+		end
 		for _, method in ipairs({ "SetFrameStrata", "SetClampedToScreen", "SetMovable", "EnableMouse", "RegisterForDrag", "StartMoving", "StopMovingOrSizing", "SetWidth", "SetSize", "SetPoint" }) do
 			widget[method] = function() end
 		end
@@ -2086,6 +2091,12 @@ return function(root, check)
 	addon3.world.collected_buckets = function() return {} end
 	browser:Show()
 	check("showing the page again refreshes the browser", not frames3[before + 2].shown and #frames3 == before + 8)
+	check("an empty collection says what to do", (function()
+		for _, text in ipairs(browser.labels or {}) do
+			if text.shown and type(text.text) == "string" and text.text:find("Nothing collected yet. Everlook records", 1, true) then return true end
+		end
+		return false
+	end)())
 	do
 		addon3.world.collected_buckets = function() return { { bucket = "npcs", label = "Creatures", count = 4 } } end
 		browser:Show()
@@ -2108,14 +2119,30 @@ return function(root, check)
 		search_box.GetText = function() return "bear" end
 		search_box.scripts.OnTextChanged(search_box)
 		check("a name on another page is not found by typing alone", #records_box.entries == 0)
+		local function says(prefix)
+			for _, text in ipairs(browser.labels or {}) do
+				if text.shown and type(text.text) == "string" and text.text:sub(1, #prefix) == prefix then return true end
+			end
+			return false
+		end
+		check("an empty page tells the player how to search every page", says("No name on this page matches. Press Enter"))
 		search_box.scripts.OnEnterPressed(search_box)
 		check("enter starts a search that has not finished", #records_box.entries == 0)
+		check("a search still reading says so", says("Searching this list"))
 		addon3.sched.tick()
 		check("the search reads a few pages at a time", #records_box.entries == 0)
 		for _ = 1, 3 do
 			addon3.sched.tick()
 		end
 		check("the search finds the row on any page", #records_box.entries == 1 and records_box.entries[1].text == "Bear")
+		check("a list with a result says nothing about missing names", not says("No name") and not says("Searching"))
+		search_box.GetText = function() return "zzz" end
+		search_box.scripts.OnTextChanged(search_box)
+		search_box.scripts.OnEnterPressed(search_box)
+		for _ = 1, 4 do
+			addon3.sched.tick()
+		end
+		check("a finished search with no result says no name in the list matches", says("No name in this list matches."))
 		browser.scripts.OnHide()
 		search_box.GetText = function() return "wolf" end
 		search_box.scripts.OnTextChanged(search_box)
