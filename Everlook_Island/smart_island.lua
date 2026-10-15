@@ -138,6 +138,16 @@ end
 -- A ring that fills clockwise to a fraction, in place of a bar. The track is the
 -- whole ring, dim. The fill is a cooldown held at a percentage, as the game's own
 -- honor ring is, so it needs no art but the ring.
+-- One physical pixel in this frame's units, so a divider is a hairline at any UI scale. A client that does not say its
+-- screen size gets one unit.
+shell.hairline = function()
+	local scale = call(frame or UIParent, "GetEffectiveScale")
+	local _, height = nil, nil
+	if type(GetPhysicalScreenSize) == "function" then _, height = GetPhysicalScreenSize() end
+	if type(scale) ~= "number" or scale <= 0 or type(height) ~= "number" or height <= 0 then return 1 end
+	return 768 / height / scale
+end
+
 shell.make_ring = function(parent, size)
 	local ring = { size = size }
 	ring.track = call(parent, "CreateTexture", nil, "BACKGROUND")
@@ -755,7 +765,7 @@ local function layout_summary(width, left_w)
 	call(shell.divider, "ClearAllPoints")
 	call(shell.divider, "SetPoint", "BOTTOMLEFT", summary, "BOTTOMLEFT", edge, 0)
 	call(shell.divider, "SetPoint", "BOTTOMRIGHT", summary, "BOTTOMRIGHT", -edge, 0)
-	call(shell.divider, "SetHeight", 1)
+	call(shell.divider, "SetHeight", shell.hairline())
 end
 
 shell.quest_color = K.QUEST_COLOR
@@ -1203,7 +1213,7 @@ local function layout_expanded(list, status, two)
 	local height = viewport_top + scroll_height + space.edge
 	call(shell.pane_divider, "ClearAllPoints")
 	call(shell.pane_divider, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", left_w, -header_height)
-	call(shell.pane_divider, "SetSize", 1, height - header_height)
+	call(shell.pane_divider, "SetSize", shell.hairline(), height - header_height)
 	call(footer, "ClearAllPoints")
 	call(footer, "SetPoint", "TOPLEFT", expanded, "TOPLEFT", left_w, -header_height)
 	call(footer, "SetSize", right_w, space.head)
@@ -2066,6 +2076,8 @@ Everlook.island = {
 	unregister_event = island.unregister_event,
 	section = island.section,
 	react = island.react,
+	-- One physical pixel in the island's units.
+	hairline = function() return shell.hairline() end,
 	-- Lays the island out again, as a change of font size needs.
 	repaint = function() shell.signature = nil; if Everlook.island_summary then Everlook.island_summary.reset() end; if paint then paint() end end,
 	-- Raised only when something is added, so an addon can test for what it needs.

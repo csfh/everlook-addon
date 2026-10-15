@@ -58,12 +58,33 @@ local function whole_width(label)
 	call(label, "SetWidth", math.ceil(call(label, "GetStringWidth") or 0))
 end
 
+-- The wording of a title that fits `room`: the first of the candidates, longest first, whose width is no more than
+-- the room; failing that, the last one cut at a word with "..." after it; failing that, the dots alone. It never cuts
+-- inside a word, which the engine's own clipping does. `measure(text)` gives the width of a text.
+function row.fit(candidates, room, measure)
+	if type(candidates) == "string" then candidates = { candidates } end
+	local last
+	for _, text in ipairs(candidates or {}) do
+		if measure(text) <= room then return text end
+		last = text
+	end
+	if not last then return "" end
+	local words = {}
+	for word in last:gmatch("%S+") do words[#words + 1] = word end
+	for count = #words - 1, 1, -1 do
+		local cut = table.concat(words, " ", 1, count) .. "..."
+		if measure(cut) <= room then return cut end
+	end
+	return measure("...") <= room and "..." or ""
+end
+
 -- The width a row asks for, worked out from the width of its words and with no frames: where its title
 -- starts, the title, a group gap, then the ring, labels and badge each a gap apart, and the right inset.
 -- `measure(text, role)` gives a width, and `ring_size` the ring's, `reserve` the room kept at the right.
 function row.natural_width(spec, measure, ring_size, reserve)
 	local width = (spec.icon ~= nil or spec.arrow ~= nil) and SPACE.title or SPACE.edge
-	if spec.title then width = width + measure(spec.title, "title") end
+	local title = type(spec.title) == "table" and spec.title[1] or spec.title
+	if title then width = width + measure(title, "title") end
 	local trailing, previous = 0, nil
 	local function add(size, gap)
 		trailing = trailing + (previous and gap or 0) + size
@@ -190,7 +211,9 @@ function Row:set(spec, reserve)
 	end
 	self.has_lead = self.has_icon or arrow ~= nil
 
-	local title = spec.title
+	-- A title may be given as wordings, longest first, and the one that fits is shown.
+	self.wordings = type(spec.title) == "table" and spec.title or (spec.title and { spec.title }) or nil
+	local title = self.wordings and self.wordings[1]
 	call(self.title, "SetText", title or "")
 	call(self.title, title and "Show" or "Hide")
 
@@ -225,6 +248,25 @@ function Row:set(spec, reserve)
 		self.host.rings.hide(self.ring)
 	end
 	self:layout(reserve)
+	self:fit_title(reserve)
+end
+
+-- Sets the title to the wording that fits the room the other parts leave it. Where the row has no width yet, the
+-- first wording stays and the engine clips it as it always did.
+function Row:fit_title(reserve)
+	local wordings = self.wordings
+	local width = call(self.parent, "GetWidth")
+	if not wordings or type(width) ~= "number" or width <= 0 then return end
+	local left = self.has_lead and SPACE.title or SPACE.edge
+	local trailing = self:trailing_width()
+	local after = trailing > 0 and SPACE.gap or 0
+	if self.has_ring then after = after + (self.host.ring_size or 0) + SPACE.ring end
+	local room = width - left - SPACE.edge - (reserve or 0) - trailing - after
+	local measure = function(text)
+		call(self.title, "SetText", text)
+		return call(self.title, "GetStringWidth") or 0
+	end
+	call(self.title, "SetText", row.fit(wordings, room, measure))
 end
 
 -- Hides the title while a copy of it travels somewhere else, and shows it again.
