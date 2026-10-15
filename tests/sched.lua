@@ -425,6 +425,12 @@ return function(root, check)
 						return child
 					end
 				end
+				-- Only the methods the page calls, and every one of them a real widget method. Anything else is a
+				-- mistake in the code or in this stand-in and fails instead of doing nothing.
+				local known = { Hide = true, SetAllPoints = true, SetColorTexture = true, SetHeight = true, SetJustifyH = true,
+					SetJustifyV = true, SetPoint = true, SetScript = true, SetSize = true, SetText = true, SetTextColor = true,
+					SetWidth = true, SetWordWrap = true, Show = true }
+				if not known[name] then error("the widget stand-in has no method " .. tostring(name), 2) end
 				return function(self, ...)
 					if name == "SetText" then
 						self.text = ...

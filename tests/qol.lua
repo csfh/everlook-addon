@@ -1729,6 +1729,11 @@ return function(root, check)
 			if key == "SetScript" then return function(_, name, callback) minimap_scripts[name] = callback end end
 			if key == "CreateTexture" then return function() return widget() end end
 			if key == "GetParent" then return function() return env9.Minimap end end
+			-- Only the methods the minimap button calls, each a real widget method; another one is a mistake and fails.
+			local known = { ClearAllPoints = true, RegisterForClicks = true, RegisterForDrag = true, SetClampedToScreen = true,
+				SetFrameLevel = true, SetFrameStrata = true, SetHighlightTexture = true, SetMovable = true, SetPoint = true,
+				SetSize = true, SetTexCoord = true, SetTexture = true, Show = true }
+			if not known[key] then error("the widget stand-in has no method " .. tostring(key), 2) end
 			return function() end
 		end })
 	end
