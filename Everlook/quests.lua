@@ -214,14 +214,39 @@ local function reward_reputations()
 	return list
 end
 
-function Everlook.quests.rewards()
+-- Experience shrinks for a player well above the quest, so two players read two
+-- numbers for one quest. The base value the game also returns does not depend on
+-- the player. Without it, a reading from a player five or more levels over the
+-- quest is left out, and one whose level cannot be compared is kept as before.
+local OVER_LEVEL = 5
+
+local function reward_experience(questId)
+	if GetQuestLogRewardXP and type(questId) == "number" then
+		local ok, total, base = pcall(GetQuestLogRewardXP, questId)
+		base = ok and public(base) or nil
+		if type(base) == "number" and base > 0 then
+			return base
+		end
+	end
+	local total = GetRewardXP and public(GetRewardXP())
+	if type(total) ~= "number" then
+		return nil
+	end
+	local level = C_QuestLog and C_QuestLog.GetQuestDifficultyLevel and type(questId) == "number"
+		and public(C_QuestLog.GetQuestDifficultyLevel(questId))
+	local player = UnitLevel and public(UnitLevel("player"))
+	if type(level) == "number" and level > 0 and type(player) == "number" and player >= level + OVER_LEVEL then
+		return nil
+	end
+	return total
+end
+
+function Everlook.quests.rewards(questId)
 	local packed = {}
 	if GetRewardMoney then
 		packed.money = public(GetRewardMoney())
 	end
-	if GetRewardXP then
-		packed.experience = public(GetRewardXP())
-	end
+	packed.experience = reward_experience(questId)
 	packed.items = reward_items("reward")
 	packed.choices = reward_items("choice")
 	packed.reputations = reward_reputations()
@@ -1206,7 +1231,7 @@ local function detail_extra(role, text_key, text)
 	local who = starter()
 	local extra = {
 		title = public(GetTitleText and GetTitleText()),
-		rewards = Everlook.quests.rewards(),
+		rewards = Everlook.quests.rewards(GetQuestID and public(GetQuestID())),
 		location = here(role),
 	}
 	extra[text_key] = public(text)

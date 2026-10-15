@@ -510,6 +510,24 @@ _G.GetNumQuestLogRewardFactions = nil
 _G.GetQuestLogRewardFactionInfo = nil
 _G.GetFactionInfoByID = nil
 
+do
+	-- Experience is shrunk for a player well over the quest's level, so the base
+	-- value is the one to record, and a shrunk reading is left out without it.
+	local saved = { _G.GetRewardXP, _G.GetQuestLogRewardXP, _G.UnitLevel, _G.C_QuestLog }
+	_G.GetRewardXP = function() return 120 end
+	_G.UnitLevel = function() return 30 end
+	_G.C_QuestLog = { GetQuestDifficultyLevel = function() return 10 end }
+	_G.GetQuestLogRewardXP = function() return 40, 120 end
+	check("the base experience is recorded when the game gives it", rewarded.quests.rewards(1).experience == 120)
+	_G.GetQuestLogRewardXP = nil
+	_G.GetRewardXP = function() return 40 end
+	check("a reading from a player far over the quest is left out", rewarded.quests.rewards(1) == nil)
+	_G.UnitLevel = function() return 12 end
+	check("a reading from a player near the quest's level is kept", rewarded.quests.rewards(1).experience == 40)
+	check("a reading with no quest level to compare is kept", rewarded.quests.rewards().experience == 40)
+	_G.GetRewardXP, _G.GetQuestLogRewardXP, _G.UnitLevel, _G.C_QuestLog = saved[1], saved[2], saved[3], saved[4]
+end
+
 _G.Enum = { QuestFrequency = { Default = 0, Daily = 1, Weekly = 2 } }
 _G.C_QuestLog = {
 	GetNumQuestLogEntries = function()
