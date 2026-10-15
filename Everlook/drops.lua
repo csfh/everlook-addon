@@ -16,10 +16,25 @@ local NON_CREATURE_LOOT = {
 	[31252] = true, -- Prospecting
 	[51005] = true, -- Milling
 }
+-- Spells whose loot window is on a creature, yet is not the kill's drop:
+-- skinning opens the corpse a second time, and picking a pocket opens a mob
+-- that is still alive. The window is counted as its own kind, never as a kill.
+local CREATURE_LOOT_KIND = {
+	[921] = "pickpocket",
+	[8613] = "skin",
+	[8617] = "skin",
+	[8618] = "skin",
+	[10768] = "skin",
+}
 local CAST_WINDOW = 10
 local RESULT_WINDOW = 3
+-- Corpses already counted this session, so reopening one adds nothing.
+local COUNTED_CORPSES = 128
 
 local item_loot_until = 0
+local creature_loot_until = 0
+local creature_loot_kind
+local counted, counted_order, counted_next = {}, {}, 0
 
 local function clock()
 	return type(GetTime) == "function" and public(GetTime()) or nil
@@ -29,14 +44,50 @@ end
 -- shortens it to the moment its loot appears, and one that fails closes it.
 function Everlook.drops.note_cast(spellId, phase)
 	local now = clock()
-	if not (now and NON_CREATURE_LOOT[spellId]) then
+	local kind = CREATURE_LOOT_KIND[spellId]
+	if not (now and (NON_CREATURE_LOOT[spellId] or kind)) then
 		return
 	end
-	if phase == "failed" then
-		item_loot_until = 0
+	local until_time = phase == "failed" and 0 or now + (phase == "landed" and RESULT_WINDOW or CAST_WINDOW)
+	if kind then
+		creature_loot_until = until_time
+		creature_loot_kind = kind
 	else
-		item_loot_until = now + (phase == "landed" and RESULT_WINDOW or CAST_WINDOW)
+		item_loot_until = until_time
 	end
+end
+
+-- The kind of creature window the last cast opened, once: "skin", "pickpocket" or nil.
+local function creature_loot_open()
+	local now = clock()
+	if now and now <= creature_loot_until then
+		creature_loot_until = 0
+		return creature_loot_kind
+	end
+	return nil
+end
+
+-- Whether this window is the first on that corpse. A corpse the client does not
+-- name cannot be told apart, so it counts as it always has.
+local function first_window(guid, windows)
+	if type(guid) ~= "string" or not Everlook.world.usable(guid) then
+		return true
+	end
+	if windows[guid] then
+		return true
+	end
+	if counted[guid] then
+		return false
+	end
+	windows[guid] = true
+	counted[guid] = true
+	counted_next = counted_next % COUNTED_CORPSES + 1
+	local evicted = counted_order[counted_next]
+	if evicted then
+		counted[evicted] = nil
+	end
+	counted_order[counted_next] = guid
+	return true
 end
 
 local function item_loot_open()
@@ -129,6 +180,8 @@ function Everlook.drops.scan()
 	end
 	local killed = {}
 	local opened = {}
+	local windows = {}
+	local creature_kind = creature_loot_open()
 	for slot = 1, GetNumLootItems() do
 		if loot_is_item(slot) then
 			local itemId, name, quantity = slot_loot(slot)
@@ -143,7 +196,17 @@ function Everlook.drops.scan()
 				opened[key] = true
 				Everlook.objects.record(guid or (UnitGUID and UnitGUID("npc")), "loot")
 				Everlook.items.record(itemId, "loot", name)
-			elseif itemId and npcId then
+			elseif itemId and npcId and creature_kind then
+				if not killed[npcId] then
+					killed[npcId] = true
+					kill_row.npcId = npcId
+					kill_row.kills = 0
+					kill_row.loots = 0
+					kill_row.pickpockets = creature_kind == "pickpocket" and 1 or 0
+					kill_row.skins = creature_kind == "skin" and 1 or 0
+					Everlook.world.count("kills", kill_row)
+				end
+			elseif itemId and npcId and first_window(guid, windows) then
 				drop_row.npcId = npcId
 				drop_row.itemId = itemId
 				drop_row.quantity = quantity

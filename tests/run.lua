@@ -251,8 +251,56 @@ EverlookDrops.world.store = function(bucket, row)
 end
 EverlookDrops.drops.scan()
 local counted = EverlookDrops.world.document()
-check("repeat loot counts without storing the rows", loot_stores == 0 and counted.drops[1][3] == repeat_drops + 1 and counted.kills[1][2] == repeat_kills + 1 and counted.drops[1][4] == repeat_quantity + 4)
+check("reopening the same corpse counts nothing", loot_stores == 0 and counted.drops[1][3] == repeat_drops and counted.kills[1][2] == repeat_kills and counted.drops[1][4] == repeat_quantity)
 EverlookDrops.world.store = store_loot
+
+do
+	-- A second corpse of the same creature is a second kill, and skinning or
+	-- picking a pocket opens a window that is neither a kill nor a drop.
+	local previous_source = _G.GetLootSourceInfo
+	local previous_time = _G.GetTime
+	local before_row = EverlookDrops.world.row("kills", 448)
+	local kills_before, loots_before = before_row.kills, before_row.loots
+	local function drop_count() return EverlookDrops.world.document().drops[1][3] end
+	local drops_before = drop_count()
+	_G.GetLootSourceInfo = function()
+		return "Creature-0-1-0-2-448-def", 4
+	end
+	EverlookDrops.drops.scan()
+	local second = EverlookDrops.world.row("kills", 448)
+	local skins_before, pockets_before = second.skins or 0, second.pickpockets or 0
+	check("a different corpse of the same creature is another kill", second.kills == kills_before + 1 and second.loots == loots_before + 1
+		and drop_count() == drops_before + 1)
+	check("both windows of a corpse count once", (function()
+		EverlookDrops.drops.scan()
+		return EverlookDrops.world.row("kills", 448).kills == kills_before + 1
+	end)())
+
+	_G.GetTime = function() return 5000 end
+	_G.GetLootSourceInfo = function()
+		return "Creature-0-1-0-2-448-ghi", 4
+	end
+	EverlookDrops.drops.note_cast(8613, "sent")
+	EverlookDrops.drops.scan()
+	local skinned = EverlookDrops.world.row("kills", 448)
+	check("a skinning window is a skin, not a kill or a drop", skinned.kills == kills_before + 1 and skinned.loots == loots_before + 1
+		and skinned.skins == skins_before + 1 and drop_count() == drops_before + 1)
+	EverlookDrops.drops.scan()
+	check("the skinned corpse is still a first window afterwards", EverlookDrops.world.row("kills", 448).kills == kills_before + 2)
+
+	_G.GetLootSourceInfo = function()
+		return "Creature-0-1-0-2-448-jkl", 4
+	end
+	EverlookDrops.drops.note_cast(921, "sent")
+	EverlookDrops.drops.scan()
+	check("a pickpocket window counts a pickpocket and adds no kill",
+		EverlookDrops.world.row("kills", 448).pickpockets == pockets_before + 1 and EverlookDrops.world.row("kills", 448).kills == kills_before + 2)
+	EverlookDrops.drops.scan()
+	check("killing the creature that was robbed still counts", EverlookDrops.world.row("kills", 448).kills == kills_before + 3)
+
+	_G.GetLootSourceInfo = previous_source
+	_G.GetTime = previous_time
+end
 
 do
 	-- Disenchanting opens a loot window whose source is the item, not a creature.
