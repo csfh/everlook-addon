@@ -23,6 +23,13 @@ local function slider_label(option)
 	end
 end
 
+-- The game's settings search matches a control's name and its search tags. An option named "Columns" would
+-- not be found by searching for the module it belongs to, so every control carries its module's name.
+local function tagged(control, module)
+	if type(control) == "table" and type(control.AddSearchTags) == "function" then control:AddSearchTags(module.name) end
+	return control
+end
+
 local function setting(page, module, key)
 	local option = module.options[key]
 	local variable = "Everlook_QoL_" .. module.id .. "_" .. key
@@ -35,15 +42,15 @@ local function setting(page, module, key)
 			for _, choice in ipairs(option.choices) do container:Add(choice[1], choice[2]) end
 			return container:GetData()
 		end
-		return Settings.CreateDropdown(page, proxy, choices, option.description or module.description)
+		return tagged(Settings.CreateDropdown(page, proxy, choices, option.description or module.description), module)
 	elseif type(option.default) == "boolean" then
-		return Settings.CreateCheckbox(page, proxy, option.description or module.description)
+		return tagged(Settings.CreateCheckbox(page, proxy, option.description or module.description), module)
 	else
 		local slider = Settings.CreateSliderOptions(shown(option, option.min), shown(option, option.max), shown(option, option.step or 1))
 		if MinimalSliderWithSteppersMixin then
 			slider:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, slider_label(option))
 		end
-		return Settings.CreateSlider(page, proxy, slider, option.description or module.description)
+		return tagged(Settings.CreateSlider(page, proxy, slider, option.description or module.description), module)
 	end
 end
 

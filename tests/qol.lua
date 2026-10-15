@@ -1812,7 +1812,7 @@ return function(root, check)
 	local function control()
 		return { SetParentInitializer = function(self, parent, predicate)
 			self.parent, self.predicate = parent, predicate; children[#children + 1] = self
-		end }
+		end, AddSearchTags = function(self, ...) self.tags = { ... } end }
 	end
 	local canvas = {}
 	local canvas_requests, opened = 0, nil
@@ -1868,7 +1868,14 @@ return function(root, check)
 	do local where = assert(loadfile(source("where"))); setfenv(where, env2); where("Everlook", addon2) end
 	local settings = assert(loadfile(source("settings"))); setfenv(settings, env2); settings("Everlook", addon2)
 	check("native settings register one Everlook page", pages == 1)
-	check("modules can add native settings buttons after their options", settings_buttons["Preview notifications"] and settings_buttons["Reset Island position"])
+	check("every option carries its module's name as a search tag", (function()
+		local tagged_count = 0
+		for _, row in ipairs(children) do
+			if row.tags and type(row.tags[1]) == "string" and row.tags[1] ~= "" then tagged_count = tagged_count + 1 end
+		end
+		return tagged_count == #children and #children > 0
+	end)())
+		check("modules can add native settings buttons after their options", settings_buttons["Preview notifications"] and settings_buttons["Reset Island position"])
 	check("preview has no effect when the module is off", settings_buttons["Preview notifications"].click() == false and #addon2.smart_island.view().notices == 0)
 	addon2.module.set("smart_island", "enabled", true)
 	settings_buttons["Preview notifications"].click()
