@@ -20,6 +20,12 @@ return function(root, check)
 	check("drops lists the creatures in the order the pack has them", #list == 2 and list[1].npc == 448 and list[1].drops == 12 and list[1].name == "Hogger" and list[2].name == "Fang")
 	check("a name may hold a colon", (function() data.chunk("drops", 600, "\n600|1:1:Lord: of Rats\n"); return data.drops(600)[1].name == "Lord: of Rats" end)())
 
+	data.chunk("entrances", 1413, "\n1413|43:525:375:9:Wailing Caverns;389:700:450:4:\n")
+	local entrances = data.entrances(1413)
+	check("entrances are read as places with how often they were entered, and a missing name is nil", #entrances == 2 and entrances[1].instance == 43 and entrances[1].x == 525
+		and entrances[1].y == 375 and entrances[1].enters == 9 and entrances[1].name == "Wailing Caverns" and entrances[2].name == nil)
+	check("a map with no entrance has none", data.entrances(1) == nil)
+
 	-- The real pack that ships: every chunk the meta names is there and an item in it resolves.
 	local real = load_data()
 	for _, name in ipairs({ "meta", "drops_1" }) do
@@ -61,7 +67,8 @@ return function(root, check)
 		return lines
 	end
 
-	local Everlook, item = tooltip_module({ Everlook_Data = data })
+	local Everlook, item = tooltip_module({})
+	Everlook.data_pack = function() return data end
 	check("the module registers a pack option that is on by default", Everlook.def.options.pack and Everlook.def.options.pack.default == true)
 	local lines = lines_for(item, 10)
 	check("a loaded pack adds who drops the item", lines[#lines] == "Dropped by Hogger, Fang")
@@ -70,20 +77,4 @@ return function(root, check)
 	check("more than three droppers say how many more", lines[#lines] == "Dropped by A, B, C and 2 more")
 	check("an item nobody has seen drop gets no line", not dropped(lines_for(item, 12)))
 
-	local loads = 0
-	local Missing, missing_item = tooltip_module({}, {})
-	Missing.load_data_addon = function(name)
-		loads = loads + 1
-		Missing.data_addons[name] = { state = "failed" }
-		return false
-	end
-	lines_for(missing_item, 10)
-	lines_for(missing_item, 10)
-	check("a pack that cannot load is asked for once, and the tooltip stays as it was", loads == 1 and not dropped(lines_for(missing_item, 10)))
-
-	local Waiting, waiting_item = tooltip_module({}, {})
-	local waiting_loads = 0
-	Waiting.load_data_addon = function() waiting_loads = waiting_loads + 1; return false end
-	lines_for(waiting_item, 10)
-	check("a pack that waits for combat to end is asked again at the next tooltip", waiting_loads == 1 and not dropped(lines_for(waiting_item, 10)) and waiting_loads == 2)
 end

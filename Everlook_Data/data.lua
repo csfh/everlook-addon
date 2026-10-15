@@ -47,6 +47,20 @@ function data.drops(item_id)
 	return #list > 0 and list or nil
 end
 
+-- The instances entered from an outdoor map: { { instance = 43, x = 525, y = 375, enters = 9, name = "Wailing Caverns" }, ... }.
+function data.entrances(map_id)
+	local record = data.find("entrances", map_id)
+	if not record then return nil end
+	local list = {}
+	for entry in record:gmatch("[^;]+") do
+		local instance, x, y, enters, name = entry:match("^(%d+):(%d+):(%d+):(%d+):(.*)$")
+		if instance then
+			list[#list + 1] = { instance = tonumber(instance), x = tonumber(x), y = tonumber(y), enters = tonumber(enters), name = name ~= "" and name or nil }
+		end
+	end
+	return #list > 0 and list or nil
+end
+
 function data.version()
 	return data.meta and data.meta.version or nil
 end

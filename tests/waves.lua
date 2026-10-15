@@ -245,6 +245,29 @@ return function(root, check)
 	check("ordinary creatures are not pinned", buckets.npcs == 1)
 	local elsewhere = survey.map_pins.for_map(1)
 	check("a giver pin stays off another map", #elsewhere == 0)
+	do
+		-- Dungeon entrances come from the shared catalog, only when asked for, and add nothing without it.
+		local asked = 0
+		survey.data_pack = function() asked = asked + 1; return { entrances = function(map_id) if map_id == 37 then return { { instance = 43, x = 525, y = 375, enters = 9, name = "Wailing Caverns" }, { instance = 389, x = 700, y = 450, enters = 1 } } end end } end
+		check("entrances are off by default and the pack is not even asked", #survey.map_pins.for_map(37) == #pins and asked == 0)
+		survey.module.set("map_pins", "entrances", true)
+		local with = survey.map_pins.for_map(37)
+		local entrance, other
+		for index = 1, #with do
+			if with[index].bucket == "instanceEntrances" then
+				if with[index].id == 43 then entrance = with[index] else other = with[index] end
+			end
+		end
+		check("with entrances on, each known entrance is a pin with its name and how often it was entered",
+			#with == #pins + 2 and entrance.kind == "entrance" and entrance.x == 525 and entrance.name == "Wailing Caverns"
+			and entrance.label == "dungeon entrance, entered 9 times" and other.name == "Dungeon" and other.label == "dungeon entrance, entered 1 time")
+		check("a map with no known entrance gets none", #survey.map_pins.for_map(1) == 0)
+		survey.data_pack = function() return nil end
+		check("without the pack the pins are what they were", #survey.map_pins.for_map(37) == #pins)
+		survey.data_pack = nil
+		check("a client with no pack loader draws only what it has seen", #survey.map_pins.for_map(37) == #pins)
+		survey.module.set("map_pins", "entrances", false)
+	end
 	local records = { { text = "Hogger", id = "448" }, { text = "Wolf", id = "69" } }
 	local found = survey.collected.filter(records, "hog")
 	check("the collected browser filters by text", #found == 1 and found[1].id == "448")

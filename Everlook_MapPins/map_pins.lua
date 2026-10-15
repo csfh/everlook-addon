@@ -16,6 +16,7 @@ local TINT = {
 	rare = { 0.85, 0.2, 0.2 },
 	flight = { 0.3, 0.55, 1 },
 	vendor = { 0.65, 0.4, 0.9 },
+	entrance = { 0.95, 0.5, 0.15 },
 }
 
 local function rare(classification)
@@ -107,6 +108,24 @@ function Everlook.map_pins.for_map(map_id)
 			elseif bucket == "taxiNodes" then
 				add("taxiNodes", row, key, row, "flight", "flight master")
 			end
+		end
+	end
+	-- Where players have entered instances from this map, from the shared catalog. It loads the first time the map
+	-- is drawn with this on, and a client without it draws nothing more.
+	if module.get(id, "entrances") and Everlook.data_pack then
+		local data = Everlook.data_pack("dungeon entrances on the map")
+		local entrances = data and data.entrances and data.entrances(map_id)
+		for index = 1, entrances and #entrances or 0 do
+			local entry = entrances[index]
+			pins[#pins + 1] = {
+				bucket = "instanceEntrances",
+				id = entry.instance,
+				x = entry.x,
+				y = entry.y,
+				kind = "entrance",
+				label = "dungeon entrance, entered " .. entry.enters .. (entry.enters == 1 and " time" or " times"),
+				name = entry.name or "Dungeon",
+			}
 		end
 	end
 	return pins
@@ -273,6 +292,8 @@ local function apply(enabled)
 		return
 	end
 	if attached then
+		-- An option changed, such as the entrances: draw again.
+		refresh_pins()
 		return
 	end
 	if not MapCanvasDataProviderMixin or not CreateFromMixins or not WorldMapFrame or not WorldMapFrame.AddDataProvider then
@@ -319,5 +340,8 @@ module.register({
 	id = id,
 	name = "Map pins",
 	description = "Draws quest givers, turn-ins, objectives, objects, rares, world bosses, flight masters, vendors, and trainers you have seen on the world map. Any other creature stays off it, a spot with no coordinates stays off, a rare or world boss who also sells or trains is drawn as the rare, the minimap is left alone, a client without the stock world map draws nothing and says once that the pins need it, and turning this off removes the pins.",
+	options = {
+		entrances = { name = "Show dungeon entrances", default = false, description = "Adds a pin where players have gone into a dungeon or raid from the map you are looking at, from the shared catalog, once a place has been entered at least three times. It needs the Everlook Data addon, which loads the first time the map is drawn with this on and never in combat. Without it, or on a map with no known entrance, nothing is added, the pins you have seen stay as they were, and turning this off removes the entrances. This option does nothing until Map pins is on." },
+	},
 	apply = apply,
 })

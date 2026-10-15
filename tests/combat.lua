@@ -97,4 +97,20 @@ return function(root, check)
 		check("a client that cannot load addons on demand is told so", plain.load_data_addon("Everlook_Catalog", "x") == false and plain.data_addons.Everlook_Catalog.state == "unsupported")
 	end
 
+	do
+		-- The shared catalog: loaded on demand, once, never in combat.
+		local calls, in_combat = 0, false
+		local addon, env = load({
+			InCombatLockdown = function() return in_combat end,
+			C_AddOns = { LoadAddOn = function() calls = calls + 1; return false, "MISSING" end },
+		})
+		check("a pack that cannot load is nil and asked for once", addon.data_pack("tooltip") == nil and addon.data_pack("tooltip") == nil and calls == 1)
+		local ready, ready_env
+		ready, ready_env = load({ C_AddOns = { LoadAddOn = function() ready_env.Everlook_Data = { loaded = true }; return true end } })
+		check("a pack that loads is returned, and then returned again without loading", ready.data_pack("tooltip").loaded == true and ready.data_pack("tooltip").loaded == true)
+		local waiting_calls = 0
+		local waiting = load({ InCombatLockdown = function() return true end, C_AddOns = { LoadAddOn = function() waiting_calls = waiting_calls + 1; return true end } })
+		check("in combat the pack is nil and nothing loads", waiting.data_pack("tooltip") == nil and waiting_calls == 0)
+	end
+
 end

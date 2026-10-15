@@ -70,3 +70,13 @@ function Everlook.load_data_addon(name, reason)
 	record.failure = failure
 	return false, tostring(failure or "unknown")
 end
+
+-- The shared catalog (`Everlook_Data`), loaded the first time something asks and never in combat, or nil.
+-- A pack that is missing or cannot load is asked for once, and whoever asked goes on as it did without it.
+function Everlook.data_pack(reason)
+	if type(_G.Everlook_Data) == "table" then return _G.Everlook_Data end
+	local record = Everlook.data_addons.Everlook_Data
+	if record and (record.state == "failed" or record.state == "unsupported") then return nil end
+	local ok = Everlook.load_data_addon("Everlook_Data", reason)
+	return ok and type(_G.Everlook_Data) == "table" and _G.Everlook_Data or nil
+end

@@ -13,22 +13,11 @@ local function add_lookup(tooltip, kind, entry_id)
 	end
 end
 
--- The shared catalog is a data addon that loads the first time a tooltip asks for it, never in combat.
--- Where it is not installed, or cannot load, the tooltip is what it was.
-local function pack()
-	if type(_G.Everlook_Data) == "table" then return _G.Everlook_Data end
-	local record = Everlook.data_addons and Everlook.data_addons.Everlook_Data
-	if record and (record.state == "failed" or record.state == "unsupported") then return nil end
-	if not Everlook.load_data_addon then return nil end
-	local ok = Everlook.load_data_addon("Everlook_Data", "item tooltip")
-	return ok and type(_G.Everlook_Data) == "table" and _G.Everlook_Data or nil
-end
-
 local SHOWN_DROPPERS = 3
 
 local function add_pack_drops(tooltip, item_id)
 	if not module.get(id, "pack") then return end
-	local data = pack()
+	local data = Everlook.data_pack and Everlook.data_pack("item tooltip")
 	local droppers = data and data.drops and data.drops(item_id)
 	if not droppers then return end
 	local names = {}
