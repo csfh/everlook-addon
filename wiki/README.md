@@ -2,7 +2,7 @@
 
 These pages are for people working on this addon. The game does not load this folder. Leave every file here out of the TOCs.
 
-Everlook gathers world data for https://everlook.ing. The site is a database in the same family as Wowhead and Thottbot.
+Everlook gathers world data for https://everlook.ing. The site is a database built from what players see.
 
 Collectors write rows through `Everlook.world`. The addon saves them as `EverlookDB.world`, one compressed document. The desktop app uploads the SavedVariables file. The collectors cover creatures, items, drops, kills, quests, objects, vendors, spells, factions, recipes, flight points, and fishing.
 

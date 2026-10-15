@@ -122,7 +122,7 @@ function SUBJECTS.lines()
 	}
 end
 
--- The map functions the Map reveal and the zone labels need, and the fields they return, for the map the player is on.
+-- The map functions the zone labels and the map pins use, and the fields they return, for the map the player is on.
 -- Only field names and types are kept.
 local function shape(value)
 	if type(value) ~= "table" then return type(value) end
