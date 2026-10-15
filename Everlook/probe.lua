@@ -72,7 +72,129 @@ local function say(line)
 	if Everlook.say then Everlook.say(line) end
 end
 
-function Everlook.probe.run()
+-- The checks that are done by touching something, one answer each, run at once and kept like the rest.
+-- `combat` is for use in combat: whether the panel can be closed and a frame's click pass-through set there.
+-- `lines` is for the first minute after a cold start: whether a line limited to one line has any width.
+-- `quests` is for a look at the quest log list: whether the game already puts a level in front of a title.
+local SUBJECTS = {}
+
+local function keep(subject, lines)
+	EverlookDB = EverlookDB or {}
+	EverlookDB.probe = EverlookDB.probe or {}
+	EverlookDB.probe[subject] = { lines = lines, build = type(GetBuildInfo) == "function" and select(2, GetBuildInfo()) or nil }
+	for _, line in ipairs(lines) do
+		if Everlook.say then Everlook.say(line) end
+	end
+	if Everlook.say then Everlook.say("Saved under EverlookDB.probe." .. subject .. ".") end
+end
+
+function SUBJECTS.combat()
+	local lines = { "in combat: " .. tostring(type(InCombatLockdown) == "function" and InCombatLockdown() or "unknown") }
+	if type(SettingsPanel) == "table" and type(SettingsPanel.IsShown) == "function" and SettingsPanel:IsShown() then
+		local ok, why = pcall(HideUIPanel, SettingsPanel)
+		lines[#lines + 1] = "close the settings panel: " .. (ok and "allowed" or ("refused, " .. tostring(why):sub(1, 120)))
+	else
+		lines[#lines + 1] = "close the settings panel: open it first (/everlook), then run this again"
+	end
+	if type(CreateFrame) == "function" then
+		local ok, why = pcall(function()
+			local frame = CreateFrame("Button")
+			frame:SetPassThroughButtons("LeftButton")
+			frame:SetPassThroughButtons()
+		end)
+		lines[#lines + 1] = "set a frame's click pass-through: " .. (ok and "allowed" or ("refused, " .. tostring(why):sub(1, 120)))
+	end
+	return lines
+end
+
+function SUBJECTS.lines()
+	local holder = type(CreateFrame) == "function" and CreateFrame("Frame") or nil
+	local text = holder and holder:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	if not text then return { "lines: no frames on this client" } end
+	text:SetMaxLines(1)
+	text:SetText("A line limited to one line")
+	local limited = text:GetStringWidth()
+	text:SetMaxLines(0)
+	local free = text:GetStringWidth()
+	return {
+		("one-line text width right after setting it: %s (without the limit %s)"):format(tostring(limited), tostring(free)),
+		(type(limited) == "number" and limited > 0) and "the limit left the text with a width" or "the limit left the text blank: this is what the bug looks like",
+	}
+end
+
+-- The map functions the Map reveal and the zone labels need, and the fields they return, for the map the player is on.
+-- Only field names and types are kept.
+local function shape(value)
+	if type(value) ~= "table" then return type(value) end
+	local keys = {}
+	for key, item in pairs(value) do
+		if type(key) == "string" then keys[#keys + 1] = key .. ":" .. type(item) end
+	end
+	table.sort(keys)
+	return "{" .. table.concat(keys, ", ") .. "}"
+end
+
+function SUBJECTS.maps()
+	local lines = {}
+	local map_id = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+	if type(map_id) ~= "number" then return { "maps: the client gave no map for the player; stand in a zone and run this again" } end
+	lines[#lines + 1] = "map type of this map: " .. tostring(C_Map.GetMapInfo and (C_Map.GetMapInfo(map_id) or {}).mapType)
+	local function try(label, fn, ...)
+		if type(fn) ~= "function" then lines[#lines + 1] = label .. ": missing"; return nil end
+		local ok, a, b = pcall(fn, ...)
+		if not ok then lines[#lines + 1] = label .. ": errored, " .. tostring(a):sub(1, 100); return nil end
+		lines[#lines + 1] = label .. ": " .. shape(a) .. (b ~= nil and (", " .. shape(b)) or "")
+		return a
+	end
+	local art = try("GetMapArtID", C_Map and C_Map.GetMapArtID, map_id)
+	local layers = try("GetMapArtLayers", C_Map and C_Map.GetMapArtLayers, map_id)
+	if type(layers) == "table" and layers[1] then lines[#lines + 1] = "first art layer: " .. shape(layers[1]) end
+	local textures = try("GetMapArtLayerTextures", C_Map and C_Map.GetMapArtLayerTextures, map_id, 1)
+	if type(textures) == "table" then lines[#lines + 1] = "textures in layer 1: " .. #textures end
+	local explored = try("GetExploredMapTextures", C_MapExplorationInfo and C_MapExplorationInfo.GetExploredMapTextures, map_id)
+	if type(explored) == "table" and explored[1] then lines[#lines + 1] = "first explored entry: " .. shape(explored[1]) end
+	if type(explored) == "table" then lines[#lines + 1] = "explored entries: " .. #explored end
+	lines[#lines + 1] = "GetMapRectOnMap on a child zone: " .. (function()
+		local children = C_Map.GetMapChildrenInfo and C_Map.GetMapChildrenInfo(map_id, 3)
+		local child = type(children) == "table" and children[1]
+		if not child then return "this map has no zone children (try a continent map)" end
+		local ok, left, right, top, bottom = pcall(C_Map.GetMapRectOnMap, child.mapID, map_id)
+		return ok and type(left) == "number" and (("%.3f %.3f %.3f %.3f"):format(left, right, top, bottom)) or "no rectangle"
+	end)()
+	lines[#lines + 1] = "map art id: " .. tostring(type(art) == "number" and art or "none")
+	return lines
+end
+
+function SUBJECTS.quests()
+	local scroll = _G.QuestScrollFrame
+	local pool = type(scroll) == "table" and scroll.titleFramePool
+	if type(pool) ~= "table" or type(pool.EnumerateActive) ~= "function" then return { "quests: the quest log list is not drawn yet; open the quest log and run this again" } end
+	local total, bracketed = 0, 0
+	for button in pool:EnumerateActive() do
+		local text = type(button) == "table" and type(button.Text) == "table" and button.Text:GetText()
+		if type(text) == "string" and not secret(text) then
+			total = total + 1
+			if text:find("^%[%d+%]") then bracketed = bracketed + 1 end
+		end
+	end
+	local quest_levels = Everlook.module and Everlook.module.enabled and Everlook.module.enabled("quest_levels")
+	return {
+		("quest log list: %d titles, %d start with a bracketed number"):format(total, bracketed),
+		"Everlook's Quest levels is " .. (quest_levels and "ON, so those may be its own: turn it off and run this again to see the game's" or "off, so those are the game's own"),
+		"colorblind mode: " .. tostring(type(GetCVar) == "function" and GetCVar("colorblindMode") or "unknown"),
+	}
+end
+
+function Everlook.probe.run(subject)
+	if type(subject) == "string" and subject ~= "" then
+		local check = SUBJECTS[subject:lower()]
+		if not check then
+			if Everlook.say then Everlook.say("Probe what? combat, lines, quests, maps, or nothing for the death, giver and function check.") end
+			return
+		end
+		keep(subject:lower(), check())
+		return
+	end
 	local report = Everlook.probe.facts()
 	local seen = {}
 	local frame = CreateFrame("Frame")
@@ -93,7 +215,18 @@ function Everlook.probe.run()
 			seen[line] = (seen[line] or 0) + 1
 		end)
 	end
+	-- Whose GUID PARTY_KILL carries: the creature that died, or the one who killed it. Only the kind of GUID, never the
+	-- GUID, is kept, and whether it was also a UNIT_DIED GUID in the same run.
+	local died_guids, party_guids, kinds = {}, {}, {}
 	frame:SetScript("OnEvent", function(_, event, first)
+		if type(first) == "string" and not secret(first) then
+			if event == "UNIT_DIED" then died_guids[first] = true end
+			if event == "PARTY_KILL" then
+				party_guids[first] = true
+				local kind = first:match("^(%a+)%-") or "other"
+				kinds[kind] = (kinds[kind] or 0) + 1
+			end
+		end
 		if event == "UNIT_DIED" then watch_death(first) end
 		local line = (event == "GOSSIP_SHOW" or event == "QUEST_GREETING") and Everlook.probe.offers() or Everlook.probe.describe(event, first)
 		seen[line] = (seen[line] or 0) + 1
@@ -106,6 +239,17 @@ function Everlook.probe.run()
 		for line, count in pairs(seen) do lines[#lines + 1] = line .. " x" .. count end
 		table.sort(lines)
 		if #lines == 0 then lines[1] = "No death event was seen." end
+		local party_total, matched = 0, 0
+		for guid in pairs(party_guids) do
+			party_total = party_total + 1
+			if died_guids[guid] then matched = matched + 1 end
+		end
+		if party_total > 0 then
+			local names = {}
+			for kind, count in pairs(kinds) do names[#names + 1] = kind .. " x" .. count end
+			table.sort(names)
+			lines[#lines + 1] = ("PARTY_KILL guid is a creature that also died in UNIT_DIED: %d of %d (kinds: %s)"):format(matched, party_total, table.concat(names, ", "))
+		end
 		EverlookDB = EverlookDB or {}
 		EverlookDB.probe = { facts = report, events = lines, build = select(2, GetBuildInfo()) }
 		for _, line in ipairs(lines) do say(line) end

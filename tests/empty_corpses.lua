@@ -57,6 +57,7 @@ return function(root, check)
 	none("a creature another player tapped counts nothing", function(s) s.tap_denied = true end)
 	none("a death out of combat counts nothing", function(s) s.combat = false end)
 	none("a corpse that holds loot counts nothing here, the loot window will count it", function(s) s.loot = { true, true } end)
+	none("a corpse that holds nothing but may not be looted counts nothing", function(s) s.loot = { false, false } end)
 	none("an answer the game does not give counts nothing", function(s) s.loot = {} end)
 	none("a target the client hides counts nothing", function(s) s.target = "hidden" end)
 

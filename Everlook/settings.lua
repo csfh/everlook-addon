@@ -263,8 +263,9 @@ SlashCmdList.EVERLOOK = function(message, ...)
 		Everlook.report.command(words)
 		return
 	end
-	if type(message) == "string" and message:lower():match("^%s*probe%s*$") then
-		Everlook.probe.run()
+	local probing = type(message) == "string" and message:lower():match("^%s*probe%s*(%a*)%s*$")
+	if probing then
+		Everlook.probe.run(probing)
 		return
 	end
 	if type(message) == "string" and message:lower():match("^%s*collect%s*$") then

@@ -236,7 +236,7 @@ end
 -- A kill with nothing to loot never opens a loot window, so it never reaches the count a drop chance is out of.
 -- A death is counted as such only when it is surely the player's own: the creature was the player's target, was
 -- not tapped by someone else, and the player was fighting; and only when the game says, a second later, that the
--- corpse holds nothing. A death the client hides, or a client missing any of these functions, counts nothing.
+-- corpse holds nothing and may be looted. A death the client hides, or a client missing any of these functions, counts nothing.
 local DEATH_DELAY = 1
 local DIED_KEPT = 128
 local died, died_order, died_next = {}, {}, 0
@@ -267,8 +267,10 @@ function Everlook.drops.note_death(guid)
 	Everlook.drops.last_kill = { npcId = npcId, at = type(GetTime) == "function" and public(GetTime()) or nil, used = false }
 	C_Timer.After(DEATH_DELAY, function()
 		if counted[guid] then return end
-		local ok, has_loot = pcall(CanLootUnit, guid)
-		if ok and public(has_loot) == false then
+		-- On build 70374 an empty corpse of the player's own kill answered (hasLoot false, canLoot true); a creature
+		-- someone else killed answered (false, false), and one with loot the player may not take (true, false).
+		local ok, has_loot, can_loot = pcall(CanLootUnit, guid)
+		if ok and public(has_loot) == false and public(can_loot) == true then
 			empty_row.npcId = npcId
 			Everlook.world.count("kills", empty_row)
 		end

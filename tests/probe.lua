@@ -69,4 +69,102 @@ return function(root, check)
 			and not joined:find("Creature", 1, true))
 	end
 
+	do
+		-- The checks done by touching something: each answers in lines and keeps them, and a subject it does not know is said.
+		local function frame_with(overrides)
+			local frame = { passes = 0 }
+			function frame:SetPassThroughButtons() self.passes = self.passes + 1 end
+			function frame:CreateFontString()
+				local region = { max_lines = 0, text = "" }
+				function region:SetMaxLines(value) self.max_lines = value end
+				function region:SetText(value) self.text = value end
+				function region:GetStringWidth() return (self.max_lines == 1 and overrides.blank) and 0 or #self.text * 6 end
+				return region
+			end
+			return frame
+		end
+		local panel_closed = 0
+		local combat, combat_env, said_combat = load({
+			InCombatLockdown = function() return true end,
+			SettingsPanel = { IsShown = function() return true end },
+			HideUIPanel = function() panel_closed = panel_closed + 1; error("blocked") end,
+			CreateFrame = function() return frame_with({}) end,
+		})
+		combat.probe.run("combat")
+		local joined = table.concat(combat_env.EverlookDB.probe.combat.lines, "\n")
+		check("the combat check says what the client allowed, and keeps it", panel_closed == 1 and joined:find("in combat: true", 1, true)
+			and joined:find("close the settings panel: refused", 1, true) and joined:find("pass-through: allowed", 1, true) and #said_combat >= 3)
+
+		local closed_first, first_env = load({ SettingsPanel = { IsShown = function() return false end }, CreateFrame = function() return frame_with({}) end })
+		closed_first.probe.run("combat")
+		check("with the panel closed it says to open it first and does not try", table.concat(first_env.EverlookDB.probe.combat.lines, "\n"):find("open it first", 1, true) ~= nil)
+
+		local blank, blank_env = load({ CreateFrame = function() return frame_with({ blank = true }) end })
+		blank.probe.run("lines")
+		check("a one-line text with no width is called the bug", table.concat(blank_env.EverlookDB.probe.lines.lines, "\n"):find("left the text blank", 1, true) ~= nil)
+		local fine, fine_env = load({ CreateFrame = function() return frame_with({}) end })
+		fine.probe.run("lines")
+		check("a one-line text with a width is called fine", table.concat(fine_env.EverlookDB.probe.lines.lines, "\n"):find("left the text with a width", 1, true) ~= nil)
+
+		local function button(text) return { Text = { GetText = function() return text end } } end
+		local list = { button("[12] Wolves"), button("Boars"), button("[3] Murlocs") }
+		local quests, quest_env = load({
+			QuestScrollFrame = { titleFramePool = { EnumerateActive = function()
+				local index = 0
+				return function() index = index + 1; return list[index], true end
+			end } },
+			GetCVar = function() return "0" end,
+		})
+		quests.module = { enabled = function() return false end }
+		quests.probe.run("quests")
+		local report = table.concat(quest_env.EverlookDB.probe.quests.lines, "\n")
+		check("the quest log check counts titles that already start with a number in brackets", report:find("3 titles, 2 start with", 1, true) and report:find("the game's own", 1, true) and report:find("colorblind mode: 0", 1, true))
+		local undrawn, undrawn_env, said_undrawn = load({})
+		undrawn.probe.run("quests")
+		check("an undrawn quest log is said, not guessed", undrawn_env.EverlookDB.probe.quests.lines[1]:find("not drawn yet", 1, true) ~= nil)
+		local lost, _, said_lost = load({})
+		lost.probe.run("nonsense")
+		check("a subject it does not know is said", said_lost[1]:find("Probe what?", 1, true) ~= nil)
+	end
+
+	do
+		-- Whose GUID PARTY_KILL carries, told by the kind and by whether the same GUID died in UNIT_DIED.
+		local handler, finish
+		local party, party_env = load({
+			CreateFrame = function() return { RegisterEvent = function() end, SetScript = function(_, _, fn) handler = fn end, UnregisterAllEvents = function() end } end,
+			C_Timer = { After = function(seconds, fn) if seconds == 120 then finish = fn end end },
+		})
+		party.probe.run()
+		handler(nil, "UNIT_DIED", "Creature-0-1-0-2-448-abc")
+		handler(nil, "PARTY_KILL", "Creature-0-1-0-2-448-abc")
+		handler(nil, "PARTY_KILL", "Player-1-0000")
+		finish()
+		local joined = table.concat(party_env.EverlookDB.probe.events, "\n")
+		check("PARTY_KILL is told apart by kind and by whether its GUID died, with no id kept",
+			joined:find("is a creature that also died in UNIT_DIED: 1 of 2 (kinds: Creature x1, Player x1)", 1, true) and not joined:find("448", 1, true))
+	end
+
+	do
+		local maps, maps_env = load({
+			C_Map = {
+				GetBestMapForUnit = function() return 1415 end,
+				GetMapInfo = function() return { mapType = 2 } end,
+				GetMapArtID = function() return 1234 end,
+				GetMapArtLayers = function() return { { layerWidth = 100, layerHeight = 50, tileWidth = 256 } } end,
+				GetMapArtLayerTextures = function() return { 11, 12, 13 } end,
+				GetMapChildrenInfo = function() return { { mapID = 1426 } } end,
+				GetMapRectOnMap = function() return 0.4, 0.6, 0.2, 0.4 end,
+			},
+			C_MapExplorationInfo = { GetExploredMapTextures = function() return { { textureWidth = 10, offsetX = 1, fileDataIDs = { 5 } } } end },
+		})
+		maps.probe.run("maps")
+		local joined = table.concat(maps_env.EverlookDB.probe.maps.lines, "\n")
+		check("the map check names each function's fields and types, the rectangle of a child zone, and no file id", joined:find("GetMapArtID: number", 1, true)
+			and joined:find("first art layer: {layerHeight:number, layerWidth:number, tileWidth:number}", 1, true) and joined:find("textures in layer 1: 3", 1, true)
+			and joined:find("first explored entry: {fileDataIDs:table, offsetX:number, textureWidth:number}", 1, true) and joined:find("0.400 0.600 0.200 0.400", 1, true))
+		local missing, missing_env = load({ C_Map = { GetBestMapForUnit = function() return 1415 end } })
+		missing.probe.run("maps")
+		check("a missing function is said as missing", table.concat(missing_env.EverlookDB.probe.maps.lines, "\n"):find("GetMapArtID: missing", 1, true) ~= nil)
+	end
+
 end
