@@ -285,6 +285,8 @@ local function finish(pass)
 	-- Party members and raid-style frames hang under frames this walk can miss.
 	for text in pairs(pass.names) do replace(text, people_font, pass.offset) end
 	if Everlook.trace then Everlook.trace.count("fonts_frames", pass.walked) end
+	-- Text the island sized from the old font stays that wide until it is laid out again.
+	if Everlook.island and Everlook.island.repaint then Everlook.island.repaint() end
 end
 
 -- One slice of the pass. True while frames are left. Another request that

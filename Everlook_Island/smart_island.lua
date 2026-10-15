@@ -2066,6 +2066,8 @@ Everlook.island = {
 	unregister_event = island.unregister_event,
 	section = island.section,
 	react = island.react,
+	-- Lays the island out again, as a change of font size needs.
+	repaint = function() shell.signature = nil; if Everlook.island_summary then Everlook.island_summary.reset() end; if paint then paint() end end,
 	-- Raised only when something is added, so an addon can test for what it needs.
 	api = 3,
 }
