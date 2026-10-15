@@ -31,7 +31,7 @@ local collected_version = 0
 local BUCKETS = {
 	"maps", "factions", "spells", "skillLines", "currencies", "items", "objects", "npcs", "quests", "talents",
 	"recipes", "kills", "drops", "vendors", "merchantCosts", "objectLoot", "fishingLoot", "npcSpells",
-	"npcFactions", "taxiNodes", "taxiRoutes", "instanceEntrances", "instanceEncounters", "questCredits", "offers",
+	"npcFactions", "taxiNodes", "taxiRoutes", "instanceEntrances", "instanceEncounters", "questCredits", "offers", "mapArt", "mapOverlays", "mapRects",
 }
 
 local COLUMNS = {
@@ -60,6 +60,9 @@ local COLUMNS = {
 	instanceEncounters = { "instanceId", "encounterId", "kills", "wipes", "name" },
 	questCredits = { "questId", "objective", "npcId", "credits" },
 	offers = { "questId", "classId", "raceId", "band", "opens", "offered" },
+	mapArt = { "mapId", "artId", "layerWidth", "layerHeight", "tileWidth", "tileHeight", "minScale", "maxScale", "zoomSteps", "tiles" },
+	mapOverlays = { "mapId", "offsetX", "offsetY", "width", "height", "files", "top", "hover" },
+	mapRects = { "mapId", "parentId", "left", "right", "top", "bottom" },
 }
 
 local KEYS = {
@@ -73,6 +76,7 @@ local KEYS = {
 	instanceEntrances = { "instanceId", "mapId", "x", "y" }, instanceEncounters = { "instanceId", "encounterId" },
 	questCredits = { "questId", "objective", "npcId" },
 	offers = { "questId", "classId", "raceId", "band" },
+	mapArt = { "mapId" }, mapOverlays = { "mapId", "offsetX", "offsetY" }, mapRects = { "mapId", "parentId" },
 }
 
 local COUNTERS = {
@@ -655,6 +659,9 @@ local LIST_LABELS = {
 	instanceEncounters = "Boss fights",
 	questCredits = "Kill credit",
 	offers = "Quest offers",
+	mapArt = "Map art",
+	mapOverlays = "Map pieces",
+	mapRects = "Map places",
 }
 
 local LIST_PARTS = {
@@ -694,6 +701,9 @@ local LIST_PARTS = {
 	instanceEncounters = { { name = "name", id = "encounterId" } },
 	questCredits = { { id = "questId", bucket = "quests" }, { id = "npcId", bucket = "npcs" } },
 	offers = { { id = "questId", bucket = "quests" } },
+	mapArt = { { id = "mapId", bucket = "maps" } },
+	mapOverlays = { { id = "mapId", bucket = "maps" } },
+	mapRects = { { id = "mapId", bucket = "maps" }, { id = "parentId", bucket = "maps" } },
 }
 
 local function lookup_name(bucket, id)
@@ -1689,6 +1699,23 @@ local function pack_effects(effects)
 	return packed
 end
 
+-- A list whose order and repeats mean something, such as a map's tiles in the order they are laid out. A zero is a
+-- tile with no file. Anything that is not a whole number makes the list unusable, so it is left out.
+local function pack_sequence(list)
+	if type(list) ~= "table" or #list == 0 then
+		return nil
+	end
+	local packed = {}
+	for i = 1, #list do
+		local id = list[i]
+		if type(id) ~= "number" or not usable(id) or id < 0 or id % 1 ~= 0 then
+			return nil
+		end
+		packed[i] = id
+	end
+	return packed
+end
+
 local function pack_value(column, row)
 	if column == "sources" then
 		return pack_sources(row.sources)
@@ -1707,6 +1734,9 @@ local function pack_value(column, row)
 	end
 	if column == "requires" then
 		return pack_ids(row.requires)
+	end
+	if column == "tiles" or column == "files" then
+		return pack_sequence(row[column])
 	end
 	if column == "requiredItems" then
 		return pack_item_refs(row.requiredItems)

@@ -20,7 +20,7 @@ local CAP = {
 	maps = 12, factions = 512, spells = 192, skillLines = 512, currencies = 512, items = 128, objects = 128,
 	npcs = 40, quests = 24, talents = 512, recipes = 256, kills = 1024, drops = 1024, vendors = 1024,
 	merchantCosts = 1024, objectLoot = 1024, fishingLoot = 512, npcSpells = 1024, npcFactions = 1024,
-	taxiNodes = 256, taxiRoutes = 512, instanceEntrances = 512, instanceEncounters = 512, questCredits = 512, offers = 1024,
+	taxiNodes = 256, taxiRoutes = 512, instanceEntrances = 512, instanceEncounters = 512, questCredits = 512, offers = 1024, mapArt = 256, mapOverlays = 512, mapRects = 512,
 }
 
 -- Indexes kept beside the rows. They are rebuilt from the rows, so they are saved

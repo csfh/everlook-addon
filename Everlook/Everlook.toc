@@ -27,6 +27,7 @@ recipes.lua
 taxi.lua
 fishing.lua
 instances.lua
+maps.lua
 drops.lua
 scan.lua
 hash.lua

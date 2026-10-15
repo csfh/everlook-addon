@@ -34,6 +34,9 @@ return function(load_addon, path)
 		taxiRoutes = { { fromNodeId = 2, toNodeId = 6, cost = 192, durationSeconds = 75, hops = 2 } },
 		instanceEntrances = { { instanceId = 43, mapId = 1413, x = 525, y = 375, enters = 3, name = "Wailing Caverns" } },
 		offers = { { questId = 176, classId = 1, raceId = 1, band = 2, opens = 6, offered = 4 } },
+		mapArt = { { mapId = 1429, artId = 2169, layerWidth = 1002, layerHeight = 668, tileWidth = 256, tileHeight = 256, minScale = 1000, maxScale = 1000, zoomSteps = 0, tiles = { 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22 } } },
+		mapOverlays = { { mapId = 1429, offsetX = 231, offsetY = 129, width = 462, height = 210, files = { 31, 32, 33, 34 }, top = 0, hover = 0 } },
+		mapRects = { { mapId = 1429, parentId = 1415, left = 400000, right = 420000, top = 500000, bottom = 530000 } },
 		questCredits = { { questId = 176, objective = 1, npcId = 448, credits = 4 } },
 		instanceEncounters = { { instanceId = 43, encounterId = 585, kills = 2, wipes = 1, name = "Lady Anacondra" } },
 	}
