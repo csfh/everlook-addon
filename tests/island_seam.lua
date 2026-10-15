@@ -215,9 +215,9 @@ return function(root, check, island_world, quest_world, secret_stat)
 		end
 		local before = surface_alphas()
 		check("the island surface starts at 96 percent", #before > 0 and before[1] == 0.96)
-		addon.module.set("smart_island", "opacity", 60)
+		addon.module.set("smart_island", "opacity", 82)
 		local after = surface_alphas()
-		check("the opacity option retints the surfaces already built", #after == #before and after[1] == 0.6)
+		check("the opacity option retints the surfaces already built", #after == #before and after[1] == 0.82)
 	end
 	do
 		local addon = island_world()
@@ -572,8 +572,8 @@ return function(root, check, island_world, quest_world, secret_stat)
 		}
 		addon.module.set("smart_island", "enabled", true)
 		check("the island borrows the game's tooltip border when it exists", applied >= 3 and centers[1].color ~= nil)
-		addon.module.set("smart_island", "opacity", 70)
-		check("the opacity option tints the native fill", centers[1].color[4] == 0.7)
+		addon.module.set("smart_island", "opacity", 84)
+		check("the opacity option tints the native fill", centers[1].color[4] == 0.84)
 	end
 	do
 		local addon, _, _, state, _, _, frames = island_world()
