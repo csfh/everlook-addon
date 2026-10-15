@@ -52,11 +52,22 @@ local function apply(enabled)
 	for key, element in pairs(elements) do
 		local frame = _G[element.frame]
 		local wanted = enabled and module.get(id, key)
-		if frame and wanted ~= (hidden[key] == true) then
-			for _, event in ipairs(element.events) do
-				if wanted then frame:UnregisterEvent(event) else frame:RegisterEvent(event) end
+		if frame and wanted ~= (hidden[key] ~= nil) then
+			if wanted then
+				-- Remember only the events this frame was listening to, so turning it back on never starts one
+				-- that something else had stopped.
+				local stopped = {}
+				for _, event in ipairs(element.events) do
+					if type(frame.IsEventRegistered) ~= "function" or frame:IsEventRegistered(event) then
+						frame:UnregisterEvent(event)
+						stopped[#stopped + 1] = event
+					end
+				end
+				hidden[key] = stopped
+			else
+				for _, event in ipairs(hidden[key]) do frame:RegisterEvent(event) end
+				hidden[key] = nil
 			end
-			hidden[key] = wanted or nil
 		end
 	end
 	apply_stance(enabled)

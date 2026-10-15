@@ -1486,7 +1486,7 @@ return function(root, check)
 		for _, name in ipairs(names) do frame.events[name] = true end
 		function frame:UnregisterEvent(name) self.events[name] = nil end
 		function frame:RegisterEvent(name) self.events[name] = true end
-		function frame:UnregisterEvent(name) self.events[name] = nil end
+		function frame:IsEventRegistered(name) return self.events[name] == true end
 		return frame
 	end
 	env5.TalkingHeadFrame = listening({ "TALKINGHEAD_REQUESTED", "TALKINGHEAD_CLOSE" })
@@ -1558,6 +1558,16 @@ return function(root, check)
 		env5.ZoneTextFrame.events.ZONE_CHANGED_NEW_AREA and not env5.TalkingHeadFrame.events.TALKINGHEAD_REQUESTED and not env5.RaidWarningFrame.events.CHAT_MSG_RAID_WARNING)
 	addon5.module.set("hide_clutter", "enabled", false)
 	check("turning the module off restores every element", all_events_back())
+	do
+		-- Another addon had already stopped the raid warning frame listening. Hiding and then restoring must not
+		-- start it again: only what Hide clutter itself stopped comes back.
+		env5.RaidWarningFrame.events.CHAT_MSG_RAID_WARNING = nil
+		addon5.module.set("hide_clutter", "raid_warnings", true)
+		addon5.module.set("hide_clutter", "enabled", true)
+		addon5.module.set("hide_clutter", "enabled", false)
+		check("an event another addon stopped is not started again", not env5.RaidWarningFrame.events.CHAT_MSG_RAID_WARNING)
+		env5.RaidWarningFrame.events.CHAT_MSG_RAID_WARNING = true
+	end
 	env5.TalkingHeadFrame = nil
 	addon5.module.set("hide_clutter", "enabled", true)
 	check("a frame this client does not have is skipped and the rest still apply", not env5.RaidWarningFrame.events.CHAT_MSG_RAID_WARNING)
