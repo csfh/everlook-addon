@@ -2688,6 +2688,7 @@ assert(loadfile(root .. "/tests/combat.lua"))()(root, check)
 assert(loadfile(root .. "/tests/install.lua"))()(root, check)
 assert(loadfile(root .. "/tests/errors.lua"))()(root, check)
 assert(loadfile(root .. "/tests/where.lua"))()(root, check)
+assert(loadfile(root .. "/tests/overlaps.lua"))()(root, check)
 
 if os.getenv("EVERLOOK_WORLD_FIXTURE") then
 	assert(loadfile(root .. "/tests/world_fixture.lua"))()(load_addon, os.getenv("EVERLOOK_WORLD_FIXTURE"))

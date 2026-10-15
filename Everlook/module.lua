@@ -144,6 +144,7 @@ local function apply(module)
 		if extension.apply then extension.apply(enabled) end
 	end
 	sync_events()
+	if enabled and Everlook.overlaps then Everlook.overlaps.warn(module) end
 end
 
 function registry.set(id, key, value)
