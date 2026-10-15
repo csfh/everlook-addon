@@ -71,6 +71,35 @@ local function flights()
 	return settings.routes
 end
 
+-- The flight in progress, kept in the saved variables so that a /reload in the air does not lose the timer:
+-- GetTime keeps counting across a reload, and the game still says the player is on a taxi.
+local RESUME_WITHIN = 3 * 60 * 60
+
+local function remember_route()
+	if not route or not route.started then return end
+	EverlookDB.qol[id].current = { key = route.key, origin = route.origin, destination = route.destination, started = route.started }
+end
+
+local function forget_route()
+	if EverlookDB and EverlookDB.qol and EverlookDB.qol[id] then EverlookDB.qol[id].current = nil end
+end
+
+local function resume_route()
+	local saved = EverlookDB and EverlookDB.qol and EverlookDB.qol[id] and EverlookDB.qol[id].current
+	if route or type(saved) ~= "table" then return end
+	local now = GetTime and GetTime()
+	local flying = UnitOnTaxi and UnitOnTaxi("player")
+	if not number(now) or not number(saved.started) or flying ~= true or saved.started > now or now - saved.started > RESUME_WITHIN
+		or type(saved.key) ~= "string" or type(saved.destination) ~= "string" or type(saved.origin) ~= "string" then
+		forget_route()
+		return
+	end
+	next_trip = next_trip + 1
+	route = { key = saved.key, requested = saved.started, started = saved.started, destination = saved.destination, origin = saved.origin,
+		island_key = "flight:" .. next_trip }
+	start_watch()
+end
+
 local function departure(index)
 	if not module.enabled(id) or not NumTaxiNodes or not TaxiNodeName or not TaxiNodeGetType then return end
 	local origin
@@ -131,12 +160,16 @@ function update()
 			end
 			end_island(true)
 			route = nil
+			forget_route()
 		elseif now - route.requested > 10 then end_island(false); route = nil end
 		frame:Hide()
 		if not route then stop_watch() end
 		return
 	end
-	route.started = route.started or now
+	if not route.started then
+		route.started = now
+		remember_route()
+	end
 	local elapsed = now - route.started
 	if elapsed < 0 then frame:Hide(); return end
 	local known = flights()[route.key]
@@ -152,6 +185,7 @@ local function apply(enabled)
 	if not enabled then
 		end_island(false)
 		route = nil
+		forget_route()
 		if frame then frame:Hide() end
 		stop_watch()
 		return
@@ -167,7 +201,7 @@ local function apply(enabled)
 		poller = CreateFrame("Frame", "EverlookFlightPoller")
 		frame:Hide()
 	end
-	if route then start_watch() end
+	if route then start_watch() else resume_route() end
 	if not hooked and TakeTaxiNode and hooksecurefunc then hooksecurefunc("TakeTaxiNode", departure); hooked = true end
 end
 

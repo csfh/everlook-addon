@@ -1084,6 +1084,33 @@ return function(root, check)
 	local route = env2.EverlookDB.qol.flight_time.routes["::Origin>Destination"]
 	check("flight duration learns while display starts hidden", route and route.seconds == 60 and route.samples == 1)
 	check("landing stops the flight poller", ground_poller.scripts.OnUpdate == nil)
+	do
+		-- A reload in the air: a new session with the same saved variables, the same clock, and the player still on the taxi.
+		time = 100
+		hooks.TakeTaxiNode(2)
+		flying = true
+		update()
+		check("a flight in the air is kept in the saved variables", env2.EverlookDB.qol.flight_time.current and env2.EverlookDB.qol.flight_time.current.started == 100)
+		local resumed, resumed_env, _, resumed_hooks, _, resumed_frames = load_qol()
+		resumed_env.EverlookDB.qol = env2.EverlookDB.qol
+		resumed_env.GetTime = env2.GetTime
+		resumed_env.UnitOnTaxi = env2.UnitOnTaxi
+		resumed_env.TakeTaxiNode = function() end
+		resumed.module.set("flight_time", "enabled", true)
+		time = 160
+		for _, frame in ipairs(resumed_frames) do
+			if frame.shown and frame.scripts.OnUpdate then frame.scripts.OnUpdate(frame, 0.25) end
+		end
+		flying = false
+		time = 220
+		for _, frame in ipairs(resumed_frames) do
+			if frame.shown and frame.scripts.OnUpdate then frame.scripts.OnUpdate(frame, 0.25) end
+		end
+		local after = env2.EverlookDB.qol.flight_time.routes["::Origin>Destination"]
+		check("after a reload in the air the flight is timed from when it started", after and after.samples == 2 and after.seconds == 90)
+		check("landing clears the saved flight", env2.EverlookDB.qol.flight_time.current == nil)
+		flying = false
+	end
 
 	-- The quest interface checks below reuse this font.
 	local font
