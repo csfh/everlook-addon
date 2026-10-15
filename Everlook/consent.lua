@@ -12,7 +12,7 @@ local RETRY = 8
 local TRIES = 10
 
 local DIALOG = "EVERLOOK_COLLECT"
-local TEXT = "Everlook can record what you see while you play: creatures, items, quests, vendors and the places they were seen. It writes them to a file on your computer, with no character name, realm or guild. Signed in to the Everlook app, that file goes to everlook.ing, where the facts are shared on the site.\n\nRecord and share these facts?\n\nYou can change this any time: type /everlook and use Record world data."
+local TEXT = "Everlook can record what you see while you play: creatures, items, quests, vendors and where you saw them. It saves them to a file on your computer, with no character name, realm or guild. If you are signed in to the Everlook app, the app sends that file to everlook.ing, where facts from many players are checked against each other and shown to everyone.\n\nRecord what you see?\n\nYou can change this at any time. Type /everlook and turn Record world data on or off."
 
 local function in_cinematic()
 	if type(InCinematic) == "function" and InCinematic() then return true end
@@ -47,8 +47,8 @@ end
 local function define()
 	StaticPopupDialogs[DIALOG] = {
 		text = TEXT,
-		button1 = "Yes, record",
-		button2 = "No",
+		button1 = "Record",
+		button2 = "Don't record",
 		OnAccept = function() answer(true) end,
 		OnCancel = function(_, _, reason)
 			-- "override" is the game closing it for something else, not the player's answer.

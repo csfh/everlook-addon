@@ -78,5 +78,5 @@ function Everlook.report.command(words)
 		Everlook.say("Write what went wrong after the command, such as /everlook report the vendor sells nothing.")
 		return
 	end
-	Everlook.say("Saved. The Everlook app sends it with your next upload, with the build, your place and the modules you have on. No character name is in it.")
+	Everlook.say("Saved. When you are signed in, the Everlook app sends it with your next upload, with the client build, your place and the modules you have on. It holds no character name.")
 end
