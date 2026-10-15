@@ -1,0 +1,12 @@
+## Interface: 16001
+## Title: |cffffd100Everlook|r |cff66bbffData|r
+## Notes: What players have seen, checked against each other, for Everlook tooltips. It loads when something asks for it.
+## Author: Christoffer Hallas
+## Dependencies: Everlook
+## LoadOnDemand: 1
+## Group: Everlook
+## IconTexture: Interface\AddOns\Everlook\assets\logo.tga
+
+data.lua
+meta.lua
+drops_1.lua

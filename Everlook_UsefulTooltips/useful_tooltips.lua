@@ -13,6 +13,30 @@ local function add_lookup(tooltip, kind, entry_id)
 	end
 end
 
+-- The shared catalog is a data addon that loads the first time a tooltip asks for it, never in combat.
+-- Where it is not installed, or cannot load, the tooltip is what it was.
+local function pack()
+	if type(_G.Everlook_Data) == "table" then return _G.Everlook_Data end
+	local record = Everlook.data_addons and Everlook.data_addons.Everlook_Data
+	if record and (record.state == "failed" or record.state == "unsupported") then return nil end
+	if not Everlook.load_data_addon then return nil end
+	local ok = Everlook.load_data_addon("Everlook_Data", "item tooltip")
+	return ok and type(_G.Everlook_Data) == "table" and _G.Everlook_Data or nil
+end
+
+local SHOWN_DROPPERS = 3
+
+local function add_pack_drops(tooltip, item_id)
+	if not module.get(id, "pack") then return end
+	local data = pack()
+	local droppers = data and data.drops and data.drops(item_id)
+	if not droppers then return end
+	local names = {}
+	for index = 1, math.min(#droppers, SHOWN_DROPPERS) do names[index] = droppers[index].name end
+	local more = #droppers - #names
+	tooltip:AddLine("Dropped by " .. table.concat(names, ", ") .. (more > 0 and (" and " .. more .. " more") or ""), 0.8, 0.8, 0.8, true)
+end
+
 local function once(tooltip, key)
 	return Everlook.tooltips.once(id, tooltip, key)
 end
@@ -28,6 +52,7 @@ local function item(tooltip, data)
 	if type(item_id) ~= "number" or not once(tooltip, "item:" .. item_id) then return end
 	if module.get(id, "item_ids") then tooltip:AddLine("Item ID: " .. item_id, 0.6, 0.8, 1) end
 	add_lookup(tooltip, "item", item_id)
+	add_pack_drops(tooltip, item_id)
 	if C_Item and C_Item.GetItemInfo then
 		local price = select(11, C_Item.GetItemInfo(item_id))
 		if type(price) == "number" and price > 0 and GetCoinTextureString then
@@ -73,6 +98,7 @@ module.register({
 		npc_ids = { name = "Show NPC IDs", default = true, description = "Adds the NPC id to a creature or vehicle tooltip. Players, objects, and item tooltips stay as they are, places you have seen stay on their own option, and an id the client hides adds no line." },
 		vendor_price = { name = "Show vendor value per item", default = true, description = "Adds the price a vendor pays for one of the item. An item with no sell price gets no line, other tooltips stay as they are, the bag total stays on its own option, and an id the client hides adds no line." },
 		stack_total = { name = "Show bag quantity and total vendor value", default = true, description = "On an item tooltip, adds the number in your bags and what a vendor would pay for all of them, once you have more than one and the item sells. The bank is left out, a single copy or an item with no sell price gets no line, and the price of one item stays on its own option." },
+		pack = { name = "Show who drops an item, from the shared catalog", default = true, description = "Adds a line to an item tooltip naming up to three creatures that players have seen drop it, from the facts other players have recorded and Everlook has checked against each other. It needs the Everlook Data addon, which loads the first time it is asked and never in combat. Without it, or on an item nobody has seen drop, the tooltip stays as it was, the places you have seen stay on their own option, and an id the client hides adds no line." },
 		lookup = { name = "Show vendors, drops, spells, quests, and object contents you have seen", default = true, description = "Adds up to three lines on an item, creature, vehicle, or object tooltip for vendors, drops, spells, quests, and object contents you have already recorded. Players and spell tooltips stay without those lines, an id the client hides adds none, and the ids and sell price stay on their own options." },
 	},
 	apply = install, events = { "ADDON_LOADED" }, on_event = function() install(true) end,

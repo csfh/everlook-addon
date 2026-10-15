@@ -9,6 +9,7 @@ Everlook_CameraDistance
 Everlook_ChatLayout
 Everlook_CinematicSkip
 Everlook_CompactChat
+Everlook_Data
 Everlook_FlightTime
 Everlook_Fonts
 Everlook_FriendConveniences
