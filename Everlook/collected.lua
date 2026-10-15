@@ -347,7 +347,6 @@ local function prepare_row(button)
 	label:SetPoint("RIGHT", detail, "LEFT", -8, 0)
 	label:SetJustifyH("LEFT")
 	label:SetWordWrap(false)
-	label:SetMaxLines(1)
 	button.label = label
 end
 
