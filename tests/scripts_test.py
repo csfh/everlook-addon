@@ -255,6 +255,23 @@ class LayoutTest(unittest.TestCase):
     def folders(self):
         return sorted(path for path in ADDON.iterdir() if path.is_dir() and re.fullmatch(r"Everlook(_[A-Za-z0-9]+)?", path.name))
 
+    def test_every_media_path_exists_and_every_asset_is_named(self):
+        sources = {path: path.read_text(encoding="utf-8") for folder in self.folders()
+                   for path in list(folder.glob("*.lua")) + list(folder.glob("*.xml")) + list(folder.glob("*.toc"))}
+        everything = "\n".join(sources.values())
+        for path, text in sources.items():
+            for folder, rest in re.findall(r'Interface\\+AddOns\\+(Everlook\w*)\\+([^"\'\s)]*)', text):
+                target = ADDON / folder / rest.replace("\\\\", "/").replace("\\", "/")
+                with self.subTest(source=f"{path.relative_to(ADDON)}", path=rest):
+                    # A path that ends at a folder is a prefix the code finishes with a file name.
+                    self.assertTrue(target.exists(), f"{path.relative_to(ADDON)} names {folder}\\{rest}, which does not exist")
+        for folder in self.folders():
+            media = [path for path in sorted((folder / "assets").glob("*")) if path.suffix in {".tga", ".ttf", ".blp", ".png", ".ogg", ".mp3", ".wav"}] if (folder / "assets").is_dir() else []
+            for asset in media:
+                with self.subTest(asset=f"{folder.name}/assets/{asset.name}"):
+                    self.assertTrue(asset.name in everything or asset.stem in everything,
+                                    f"{folder.name}/assets/{asset.name} is not named by any Lua, XML or TOC file")
+
     def test_every_listed_file_exists_and_every_file_is_listed(self):
         for folder in self.folders():
             with self.subTest(addon=folder.name):
