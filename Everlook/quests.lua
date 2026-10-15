@@ -7,11 +7,7 @@ local ROLE_ENDER = 2
 local ROLE_ACCEPTED = 3
 local ROLE_POI = 4
 
-local function public(value)
-	if Everlook.world.usable(value) then
-		return value
-	end
-end
+local public = Everlook.public
 
 local function escape_word(word)
 	return (word:gsub("(%W)", "%%%1"))

@@ -9,6 +9,7 @@
 world.lua
 trace.lua
 sched.lua
+combat.lua
 location.lua
 sightings.lua
 npcs.lua

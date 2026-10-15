@@ -145,6 +145,19 @@ function Everlook.world.usable(value)
 	return true
 end
 
+-- A value the client hides cannot be compared, formatted or stored. These two are the
+-- shared answer: `secret` says whether a value is hidden, `public` gives the value back
+-- or nil when it is.
+function Everlook.secret(value)
+	return not Everlook.world.usable(value)
+end
+
+function Everlook.public(value)
+	if Everlook.world.usable(value) then
+		return value
+	end
+end
+
 local function usable(value)
 	return Everlook.world.usable(value)
 end

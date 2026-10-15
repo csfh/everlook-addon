@@ -5,11 +5,7 @@ Everlook.drops = {}
 -- COMBAT_LOG_EVENT_UNFILTERED cannot be registered by addons on this client.
 -- Opening a creature's loot window is the kill and the drop we can still see.
 
-local function public(value)
-	if Everlook.world.usable(value) then
-		return value
-	end
-end
+local public = Everlook.public
 
 -- Spells whose result opens a loot window that no creature dropped. The loot
 -- source on those windows is an item, and may be unreadable, so the cast
