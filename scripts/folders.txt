@@ -30,6 +30,7 @@ Everlook_IslandReputation
 Everlook_IslandShare
 Everlook_IslandWarnings
 Everlook_MapPins
+Everlook_MapReveal
 Everlook_MinimapCoordinates
 Everlook_NameplateTitles
 Everlook_Nameplates
