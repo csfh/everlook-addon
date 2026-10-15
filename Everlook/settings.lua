@@ -259,6 +259,10 @@ SlashCmdList.EVERLOOK = function(message, ...)
 		Everlook.report.command(words)
 		return
 	end
+	if type(message) == "string" and message:lower():match("^%s*probe%s*$") then
+		Everlook.probe.run()
+		return
+	end
 	if type(message) == "string" and message:lower():match("^%s*collect%s*$") then
 		Everlook.consent.show()
 		return
