@@ -1372,6 +1372,32 @@ return function(root, check)
 	addon2.module.set("quest_interface", "enabled", false)
 	check("quest interface restores the previous text size", font.size == 12 and cvar_calls == 0)
 
+	do
+		-- The "at once" option sets the game's own variable where there is one, and puts the player's value back.
+		local values = { instantQuestText = "0" }
+		local sets = {}
+		env2.GetCVar = function(name) return values[name] end
+		env2.SetCVar = function(name, value) sets[#sets + 1] = name .. "=" .. value; values[name] = value end
+		env2.EverlookDB = env2.EverlookDB or {}
+		addon2.module.set("quest_interface", "enabled", true)
+		check("the at once option is off by default and the variable is left alone", #sets == 0 and values.instantQuestText == "0")
+		addon2.module.set("quest_interface", "instant_text", true)
+		check("turned on, it sets the variable and keeps the player's value", values.instantQuestText == "1" and env2.EverlookDB.instantTextBefore == "0")
+		addon2.module.set("quest_interface", "enabled", false)
+		check("turning the module off puts the player's value back and forgets it", values.instantQuestText == "0" and env2.EverlookDB.instantTextBefore == nil)
+		addon2.module.set("quest_interface", "enabled", true)
+		values.instantQuestText = "1"
+		addon2.module.set("quest_interface", "instant_text", false)
+		check("turning the option off puts the saved value back", values.instantQuestText == "0")
+		values.instantQuestText = nil
+		local before = #sets
+		addon2.module.set("quest_interface", "instant_text", true)
+		check("a client with no such variable is left alone", #sets == before and env2.EverlookDB.instantTextBefore == nil)
+		addon2.module.set("quest_interface", "instant_text", false)
+		addon2.module.set("quest_interface", "enabled", false)
+		env2.GetCVar, env2.SetCVar = nil, nil
+	end
+
 	local tracker_addon, tracker_env, tracker_event = load_qol()
 	local text_setting = 4
 	tracker_env.Enum = { EditModeObjectiveTrackerSetting = { TextSize = text_setting } }
