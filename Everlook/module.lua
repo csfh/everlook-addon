@@ -76,10 +76,16 @@ local function on_step(option, value)
 	return tonumber(string.format("%." .. math.max(decimals(step), decimals(option.min)) .. "f", value))
 end
 
+-- A module's settings hold only what the player changed. A value that is the default is
+-- not stored, so a default we change later reaches everyone who never touched the
+-- option, and a saved value that is no longer valid is dropped.
 local function fill_defaults(id, options)
 	local values = saved(id)
 	for key, option in pairs(options) do
-		if type(values[key]) ~= type(option.default) or not allowed(option, values[key]) then values[key] = option.default end
+		local value = values[key]
+		if value ~= nil and (type(value) ~= type(option.default) or not allowed(option, value) or value == option.default) then
+			values[key] = nil
+		end
 	end
 end
 
@@ -146,6 +152,7 @@ function registry.set(id, key, value)
 	assert(not (issecretvalue and issecretvalue(value)) and type(value) == type(option.default) and allowed(option, value), "Invalid Everlook module option")
 	if type(value) == "number" then assert(value == value and value > -math.huge and value < math.huge, "Invalid Everlook module number") end
 	if option.min then value = on_step(option, value) end
+	if value == option.default then value = nil end
 	saved(id)[key] = value
 	apply(module)
 end

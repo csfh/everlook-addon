@@ -60,8 +60,8 @@ return function(root, check)
 		check("a module waits for its own addon before its first apply", #applied == 0 and env.EverlookDB.qol == nil)
 		env.EverlookDB.qol = { late = { amount = "three", enabled = true } }
 		finish("Everlook_late")
-		check("a module registered after Everlook still gets its saved defaults and one apply",
-			#applied == 1 and applied[1] == true and env.EverlookDB.qol.late.amount == 3)
+		check("a module registered after Everlook still gets its defaults and one apply",
+			#applied == 1 and applied[1] == true and registry.get("late", "amount") == 3 and env.EverlookDB.qol.late.amount == nil)
 	end
 
 	do
@@ -148,7 +148,7 @@ return function(root, check)
 		finish("Everlook_loot")
 		finish("Everlook_mail")
 		check("an extension's option is saved under the host",
-			registry.get("host", "feed_loot") == false and registry.get("host", "feed_mail") == true and env.EverlookDB.qol.host.feed_mail == true)
+			registry.get("host", "feed_loot") == false and registry.get("host", "feed_mail") == true and env.EverlookDB.qol.host.feed_mail == nil)
 		registry.set("host", "feed_loot", true)
 		check("an extension option is set through the host", env.EverlookDB.qol.host.feed_loot == true and registry.get("host", "feed_loot") == true)
 		check("an option name is taken once per host", not pcall(registry.extend, "host", {
@@ -236,6 +236,38 @@ return function(root, check)
 		local before = after
 		fire("PLAYER_REGEN_ENABLED")
 		check("the registry keeps listening for the end of combat while no module wants the event", after == before + 1)
+	end
+
+	do
+		local registry, env, finish = load_registry()
+		env.EverlookDB.qol = { tidy = { enabled = true, amount = 3, size = 2, mode = "gone" } }
+		plain(registry, "tidy", "map", 10, {
+			options = {
+				amount = { name = "Amount", default = 3, min = 1, max = 5 },
+				size = { name = "Size", default = 1, min = 1, max = 5 },
+				mode = { name = "Mode", default = "a", choices = { { "a", "A" }, { "b", "B" } } },
+			},
+		})
+		finish("Everlook_tidy")
+		local stored = env.EverlookDB.qol.tidy
+		check("a value equal to its default is not kept", stored.amount == nil)
+		check("a value the player changed is kept", stored.enabled == true and stored.size == 2)
+		check("a value no longer on the list is dropped", stored.mode == nil and registry.get("tidy", "mode") == "a")
+		registry.set("tidy", "size", 1)
+		check("setting an option back to its default stores nothing", stored.size == nil and registry.get("tidy", "size") == 1)
+	end
+
+	do
+		local registry, env, finish = load_registry()
+		plain(registry, "moved", "map", 10, { options = { limit = { name = "Limit", default = 5, min = 1, max = 9 } } })
+		finish("Everlook_moved")
+		check("an untouched option reads the default and stores nothing", registry.get("moved", "limit") == 5 and env.EverlookDB.qol.moved.limit == nil)
+		local db = env.EverlookDB
+		local later, later_env, later_finish = load_registry()
+		later_env.EverlookDB = db
+		plain(later, "moved", "map", 10, { options = { limit = { name = "Limit", default = 7, min = 1, max = 9 } } })
+		later_finish("Everlook_moved")
+		check("a default that changes in code reaches a player who never set it", later.get("moved", "limit") == 7)
 	end
 
 end
