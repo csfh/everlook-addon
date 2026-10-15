@@ -17,6 +17,7 @@ npcs.lua
 items.lua
 objects.lua
 quests.lua
+credit.lua
 vendors.lua
 spells.lua
 talents.lua

@@ -263,6 +263,8 @@ function Everlook.drops.note_death(guid)
 	if type(guid) ~= "string" or type(CanLootUnit) ~= "function" or not (C_Timer and type(C_Timer.After) == "function") then return end
 	local npcId = Everlook.npcs.creature_id(guid)
 	if not npcId or not mine(guid) or not remember_death(guid) then return end
+	-- Kill credit asks who died just now.
+	Everlook.drops.last_kill = { npcId = npcId, at = type(GetTime) == "function" and public(GetTime()) or nil, used = false }
 	C_Timer.After(DEATH_DELAY, function()
 		if counted[guid] then return end
 		local ok, has_loot = pcall(CanLootUnit, guid)

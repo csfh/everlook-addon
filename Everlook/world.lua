@@ -31,7 +31,7 @@ local collected_version = 0
 local BUCKETS = {
 	"maps", "factions", "spells", "skillLines", "currencies", "items", "objects", "npcs", "quests", "talents",
 	"recipes", "kills", "drops", "vendors", "merchantCosts", "objectLoot", "fishingLoot", "npcSpells",
-	"npcFactions", "taxiNodes", "taxiRoutes", "instanceEntrances", "instanceEncounters",
+	"npcFactions", "taxiNodes", "taxiRoutes", "instanceEntrances", "instanceEncounters", "questCredits",
 }
 
 local COLUMNS = {
@@ -58,6 +58,7 @@ local COLUMNS = {
 	taxiRoutes = { "fromNodeId", "toNodeId", "cost", "durationSeconds", "hops" },
 	instanceEntrances = { "instanceId", "mapId", "x", "y", "enters", "name" },
 	instanceEncounters = { "instanceId", "encounterId", "kills", "wipes", "name" },
+	questCredits = { "questId", "objective", "npcId", "credits" },
 }
 
 local KEYS = {
@@ -69,11 +70,12 @@ local KEYS = {
 	fishingLoot = { "mapId", "areaId", "itemId" }, npcSpells = { "npcId", "spellId" },
 	taxiRoutes = { "fromNodeId", "toNodeId" },
 	instanceEntrances = { "instanceId", "mapId", "x", "y" }, instanceEncounters = { "instanceId", "encounterId" },
+	questCredits = { "questId", "objective", "npcId" },
 }
 
 local COUNTERS = {
 	drops = true, kills = true, loots = true, pickpockets = true, skins = true, empties = true,
-	opens = true, casts = true, quantity = true, seen = true, enters = true, wipes = true,
+	opens = true, casts = true, quantity = true, seen = true, enters = true, wipes = true, credits = true,
 }
 
 local SOURCES = { target = 1, mouseover = 2, nameplate = 3, merchant = 4, loot = 5 }
@@ -649,6 +651,7 @@ local LIST_LABELS = {
 	taxiRoutes = "Flight paths",
 	instanceEntrances = "Dungeon entrances",
 	instanceEncounters = "Boss fights",
+	questCredits = "Kill credit",
 }
 
 local LIST_PARTS = {
@@ -686,6 +689,7 @@ local LIST_PARTS = {
 	},
 	instanceEntrances = { { name = "name", id = "instanceId" } },
 	instanceEncounters = { { name = "name", id = "encounterId" } },
+	questCredits = { { id = "questId", bucket = "quests" }, { id = "npcId", bucket = "npcs" } },
 }
 
 local function lookup_name(bucket, id)

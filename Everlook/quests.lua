@@ -1284,6 +1284,7 @@ frame:SetScript("OnEvent", function(_, event, first, second)
 	end
 	if event == "QUEST_LOG_UPDATE" then
 		queue_log()
+		if Everlook.credit then Everlook.credit.update() end
 		return
 	end
 	if event == "GOSSIP_SHOW" or event == "QUEST_GREETING" then
