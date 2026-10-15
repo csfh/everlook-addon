@@ -68,4 +68,33 @@ return function(root, check)
 		frame.on_event(frame, "PLAYER_REGEN_ENABLED")
 		check("work that errors is reported and does not stop the next", #failures == 1 and tostring(failures[1]):find("boom", 1, true) and ran[#ran] == "after")
 	end
+	do
+		local fighting, loaded, calls = false, {}, 0
+		local addon, env = load({
+			InCombatLockdown = function() return fighting end,
+			C_AddOns = {
+				IsAddOnLoaded = function(name) return loaded[name] == true end,
+				LoadAddOn = function(name)
+					calls = calls + 1
+					if name == "Everlook_Missing" then return false, "MISSING" end
+					loaded[name] = true
+					return true
+				end,
+			},
+		})
+		fighting = true
+		local ok, why = addon.load_data_addon("Everlook_Catalog", "an item tooltip")
+		check("a data addon is not loaded in combat, and says why", ok == false and why == "in combat" and calls == 0 and addon.data_addons.Everlook_Catalog.state == "waiting")
+		check("the reason it was wanted is kept", addon.data_addons.Everlook_Catalog.reason == "an item tooltip")
+		fighting = false
+		local frame = env.created[#env.created]
+		frame.on_event(frame, "PLAYER_REGEN_ENABLED")
+		check("it loads when combat ends, once", loaded.Everlook_Catalog == true and calls == 1 and addon.data_addons.Everlook_Catalog.state == "loaded")
+		check("asking again for a loaded addon does not load it again", addon.load_data_addon("Everlook_Catalog", "again") == true and calls == 1)
+		local missing, failure = addon.load_data_addon("Everlook_Missing", "test")
+		check("a load that fails says so and is not retried", missing == false and failure == "MISSING" and addon.data_addons.Everlook_Missing.state == "failed")
+		local plain = load({})
+		check("a client that cannot load addons on demand is told so", plain.load_data_addon("Everlook_Catalog", "x") == false and plain.data_addons.Everlook_Catalog.state == "unsupported")
+	end
+
 end
