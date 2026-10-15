@@ -49,7 +49,7 @@ return function(root, check)
 
 	local _, indoors, indoor_rows = load()
 	indoors.inside = true
-	indoors.handler(nil, "ZONE_CHANGED_NEW_AREA")
+	indoors.handler(nil, "PLAYER_LEAVING_WORLD")
 	indoors.handler(nil, "PLAYER_ENTERING_WORLD")
 	check("a point is never noted from inside an instance", #indoor_rows == 0)
 

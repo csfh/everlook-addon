@@ -24,7 +24,7 @@ local function snap(value)
 	return math.floor(value / QUANT + 0.5) * QUANT
 end
 
--- Called as the player leaves the world and on a zone change; it keeps the point only while the player is outdoors.
+-- Called as the player leaves the world (a dungeon always comes after a loading screen); it keeps the point only while the player is outdoors.
 function Everlook.instances.note_outside()
 	if type(IsInInstance) == "function" and IsInInstance() then return end
 	local location = Everlook.location and Everlook.location.player(true)
@@ -72,10 +72,9 @@ end
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("PLAYER_LEAVING_WORLD")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 frame:RegisterEvent("ENCOUNTER_END")
 frame:SetScript("OnEvent", function(_, event, first, second, third, fourth, fifth)
-	if event == "PLAYER_LEAVING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
+	if event == "PLAYER_LEAVING_WORLD" then
 		Everlook.instances.note_outside()
 	elseif event == "PLAYER_ENTERING_WORLD" then
 		Everlook.instances.arrived()

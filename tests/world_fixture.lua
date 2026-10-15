@@ -22,7 +22,7 @@ return function(load_addon, path)
 		quests = { { id = 176, title = "Wanted: Hogger", level = 11, requiredLevel = 9, description = "Hogger has been terrorizing Northshire.", progressText = "Have you found Hogger?", completionText = "Stormwind is safer.", questType = 1, factionSide = 1, mapId = 37, giverId = 448, requires = { 54 } } },
 		talents = { { id = 1, name = "Improved Frostbolt", icon = 135846, classId = 8, treeId = 41, treeName = "Frost", nodeId = 90, tier = 1, column = 2, maxRank = 5, rank = 0, spellId = 11070 } },
 		recipes = { { spellId = 2018, name = "Rough Copper Bomb", skillLineId = 164, craftedItemId = 4358, craftedMinimum = 1, craftedMaximum = 1, orangeSkill = 30, yellowSkill = 45 } },
-		kills = { { npcId = 448, kills = 4, loots = 3, pickpockets = 0, skins = 1 } },
+		kills = { { npcId = 448, kills = 4, loots = 3, pickpockets = 0, skins = 1, empties = 2 } },
 		drops = { { npcId = 448, itemId = 2589, drops = 2, quantity = 3 } },
 		vendors = { { npcId = 54, itemId = 2589, price = 52, quantity = 1, stock = 20 } },
 		merchantCosts = { { npcId = 54, itemId = 2589, position = 1, costItemId = 0, currencyId = 81, amount = 5 } },

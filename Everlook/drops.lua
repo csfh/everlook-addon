@@ -146,7 +146,7 @@ end
 
 -- One scratch row per kind. A later slot only changes the ids and counters.
 local drop_row = { drops = 1 }
-local kill_row = { kills = 1, loots = 1, pickpockets = 0, skins = 0 }
+local kill_row = { kills = 1, loots = 1, pickpockets = 0, skins = 0, empties = 0 }
 local object_row = { drops = 1 }
 
 local function slot_loot(slot)
@@ -204,6 +204,7 @@ function Everlook.drops.scan()
 					kill_row.loots = 0
 					kill_row.pickpockets = creature_kind == "pickpocket" and 1 or 0
 					kill_row.skins = creature_kind == "skin" and 1 or 0
+					kill_row.empties = 0
 					Everlook.world.count("kills", kill_row)
 				end
 			elseif itemId and npcId and first_window(guid, windows) then
@@ -222,6 +223,7 @@ function Everlook.drops.scan()
 					-- counters stay at zero.
 					kill_row.pickpockets = 0
 					kill_row.skins = 0
+					kill_row.empties = 0
 					Everlook.world.count("kills", kill_row)
 					Everlook.npcs.record("npc", "loot")
 					Everlook.npcs.record("target", "loot")
@@ -231,8 +233,50 @@ function Everlook.drops.scan()
 	end
 end
 
+-- A kill with nothing to loot never opens a loot window, so it never reaches the count a drop chance is out of.
+-- A death is counted as such only when it is surely the player's own: the creature was the player's target, was
+-- not tapped by someone else, and the player was fighting; and only when the game says, a second later, that the
+-- corpse holds nothing. A death the client hides, or a client missing any of these functions, counts nothing.
+local DEATH_DELAY = 1
+local DIED_KEPT = 128
+local died, died_order, died_next = {}, {}, 0
+local empty_row = { kills = 0, loots = 0, pickpockets = 0, skins = 0, empties = 1 }
+
+local function remember_death(guid)
+	if died[guid] then return false end
+	died[guid] = true
+	died_next = died_next % DIED_KEPT + 1
+	local evicted = died_order[died_next]
+	if evicted then died[evicted] = nil end
+	died_order[died_next] = guid
+	return true
+end
+
+local function mine(guid)
+	if type(UnitGUID) ~= "function" or type(UnitIsTapDenied) ~= "function" or type(UnitAffectingCombat) ~= "function" then return false end
+	if public(UnitGUID("target")) ~= guid then return false end
+	return public(UnitIsTapDenied("target")) == false and public(UnitAffectingCombat("player")) == true
+end
+
+function Everlook.drops.note_death(guid)
+	guid = public(guid)
+	if type(guid) ~= "string" or type(CanLootUnit) ~= "function" or not (C_Timer and type(C_Timer.After) == "function") then return end
+	local npcId = Everlook.npcs.creature_id(guid)
+	if not npcId or not mine(guid) or not remember_death(guid) then return end
+	C_Timer.After(DEATH_DELAY, function()
+		if counted[guid] then return end
+		local ok, has_loot = pcall(CanLootUnit, guid)
+		if ok and public(has_loot) == false then
+			empty_row.npcId = npcId
+			Everlook.world.count("kills", empty_row)
+		end
+	end)
+end
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("LOOT_OPENED")
+-- Not every client has this event, and registering one it lacks raises an error.
+if frame.RegisterEvent then pcall(frame.RegisterEvent, frame, "UNIT_DIED") end
 -- Only the player's own casts matter, so the client sends no one else's.
 for _, event in ipairs({ "UNIT_SPELLCAST_SENT", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED" }) do
 	if frame.RegisterUnitEvent then
@@ -250,6 +294,8 @@ local CAST_PHASES = {
 frame:SetScript("OnEvent", function(_, event, unit, second, third, fourth)
 	if event == "LOOT_OPENED" then
 		Everlook.drops.scan()
+	elseif event == "UNIT_DIED" then
+		Everlook.drops.note_death(unit)
 	elseif public(unit) == "player" then
 		-- SENT carries the spell as its fourth value, the others as their third.
 		local phase = CAST_PHASES[event]

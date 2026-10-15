@@ -46,7 +46,7 @@ local COLUMNS = {
 	quests = { "id", "title", "level", "requiredLevel", "suggestedGroup", "frequency", "description", "objectiveText", "progressText", "completionText", "questType", "factionSide", "mapId", "objectives", "giverId", "turnInId", "starters", "enders", "rewards", "locations", "sources", "requires", "requiredItems", "questLineId", "questLineName" },
 	talents = { "id", "name", "icon", "classId", "treeId", "treeName", "nodeId", "tier", "column", "maxRank", "rank", "spellId", "prereqTier", "prereqColumn" },
 	recipes = { "spellId", "name", "skillLineId", "craftedItemId", "craftedMinimum", "craftedMaximum", "orangeSkill", "yellowSkill", "greenSkill", "greySkill", "reagents" },
-	kills = { "npcId", "kills", "loots", "pickpockets", "skins" },
+	kills = { "npcId", "kills", "loots", "pickpockets", "skins", "empties" },
 	drops = { "npcId", "itemId", "drops", "quantity" },
 	vendors = { "npcId", "itemId", "price", "quantity", "stock", "extendedCost" },
 	merchantCosts = { "npcId", "itemId", "position", "costItemId", "currencyId", "amount" },
@@ -72,7 +72,7 @@ local KEYS = {
 }
 
 local COUNTERS = {
-	drops = true, kills = true, loots = true, pickpockets = true, skins = true,
+	drops = true, kills = true, loots = true, pickpockets = true, skins = true, empties = true,
 	opens = true, casts = true, quantity = true, seen = true, enters = true, wipes = true,
 }
 
