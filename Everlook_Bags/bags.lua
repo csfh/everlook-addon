@@ -48,8 +48,6 @@ local in_world = false
 local bank_open = false
 local tooltip_hooked = false
 -- The item each tooltip last showed other characters' items for, so a refresh does not add them twice.
-local told = setmetatable({}, { __mode = "k" })
-local clear_hooked = setmetatable({}, { __mode = "k" })
 local MOST_CHARACTERS_NAMED = 5
 -- A slot that is folded away keeps its place at the grid's corner, clear and deaf to the mouse. What it
 -- was before is kept, so it can be put back exactly.
@@ -469,14 +467,10 @@ end
 local function say_where_else(tooltip, data)
 	if not (module.enabled(id) and module.get(id, "remember") == true) then return end
 	local item_id = data and data.id
-	if not junk.valid(item_id) or told[tooltip] == item_id then return end
+	if not junk.valid(item_id) or Everlook.tooltips.done(id, tooltip, item_id) then return end
 	local others, warband = alts.others(alts.data(), current_key(), item_id)
 	if #others == 0 and warband == 0 then return end
-	told[tooltip] = item_id
-	if type(tooltip.HasScript) == "function" and tooltip:HasScript("OnTooltipCleared") and not clear_hooked[tooltip] then
-		clear_hooked[tooltip] = true
-		tooltip:HookScript("OnTooltipCleared", function(self) told[self] = nil end)
-	end
+	Everlook.tooltips.once(id, tooltip, item_id)
 	local function line(left, right)
 		if type(tooltip.AddDoubleLine) == "function" then
 			tooltip:AddDoubleLine(left, right, 1, 1, 1, 0.7, 0.7, 0.7)
@@ -498,11 +492,8 @@ local function say_where_else(tooltip, data)
 end
 
 local function hook_tooltips()
-	if tooltip_hooked or type(TooltipDataProcessor) ~= "table" or type(TooltipDataProcessor.AddTooltipPostCall) ~= "function"
-		or type(Enum) ~= "table" or type(Enum.TooltipDataType) ~= "table" then
-		return
-	end
-	TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, say_where_else)
+	if tooltip_hooked then return end
+	Everlook.tooltips.add(id, "item", say_where_else)
 	tooltip_hooked = true
 end
 

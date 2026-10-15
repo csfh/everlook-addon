@@ -3,16 +3,9 @@ local Everlook = Everlook
 local module = Everlook.module
 local id = "site_links"
 local hooked
-local seen = setmetatable({}, { __mode = "k" })
 
 local function show(tooltip, kind, entry_id)
-	local key = kind .. ":" .. entry_id
-	if seen[tooltip] == key then return end
-	seen[tooltip] = key
-	if tooltip.HasScript and tooltip:HasScript("OnTooltipCleared") and not tooltip.everlook_link_clear then
-		tooltip.everlook_link_clear = true
-		tooltip:HookScript("OnTooltipCleared", function(self) seen[self] = nil end)
-	end
+	if not Everlook.tooltips.once(id, tooltip, kind .. ":" .. entry_id) then return end
 	tooltip:AddLine("Everlook: " .. (Everlook.links.url(kind, entry_id):gsub("^https://", "")), 0.6, 0.8, 1)
 end
 
@@ -46,10 +39,10 @@ local function unit(tooltip)
 end
 
 local function apply(enabled)
-	if not enabled or hooked or not TooltipDataProcessor or not Enum or not Enum.TooltipDataType then return end
-	TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, item)
-	TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Spell, spell)
-	TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, unit)
+	if not enabled or hooked then return end
+	Everlook.tooltips.add(id, "item", item)
+	Everlook.tooltips.add(id, "spell", spell)
+	Everlook.tooltips.add(id, "unit", unit)
 	hooked = true
 end
 

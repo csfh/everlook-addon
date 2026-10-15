@@ -513,7 +513,7 @@ return function(root, check)
 	check("an object uses the game classification when it exists", survey.world.row("objects", 1731).objectType == "Mailbox")
 
 	local addon, play, fire = load({
-		"world", "links", "module", "useful_tooltips", "chat_tweaks", "coordinates", "quest_levels", "cinematic_skip", "camera", "ground_effects", "mail", "gossip_continue", "map_pins",
+		"world", "links", "module", "tooltips", "useful_tooltips", "chat_tweaks", "coordinates", "quest_levels", "cinematic_skip", "camera", "ground_effects", "mail", "gossip_continue", "map_pins",
 	})
 	play.TooltipDataProcessor = {
 		AddTooltipPostCall = function(kind, callback)

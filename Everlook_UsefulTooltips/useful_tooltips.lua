@@ -3,7 +3,6 @@ local Everlook = Everlook
 local module = Everlook.module
 local id = "useful_tooltips"
 local hooked = false
-local seen = setmetatable({}, { __mode = "k" })
 
 local function add_lookup(tooltip, kind, entry_id)
 	if not module.get(id, "lookup") or not Everlook.world or not Everlook.world.lookup then return end
@@ -15,13 +14,7 @@ local function add_lookup(tooltip, kind, entry_id)
 end
 
 local function once(tooltip, key)
-	if seen[tooltip] == key then return false end
-	seen[tooltip] = key
-	if tooltip.HasScript and tooltip:HasScript("OnTooltipCleared") and not tooltip.everlook_qol_clear then
-		tooltip.everlook_qol_clear = true
-		tooltip:HookScript("OnTooltipCleared", function(self) seen[self] = nil end)
-	end
-	return true
+	return Everlook.tooltips.once(id, tooltip, key)
 end
 
 local function item(tooltip, data)
@@ -67,15 +60,9 @@ end
 
 local function install(enabled)
 	if not enabled or hooked then return end
-	if TooltipDataProcessor and Enum and Enum.TooltipDataType then
-		TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, item)
-		TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, unit)
-		hooked = true
-	elseif GameTooltip and GameTooltip.HasScript and GameTooltip:HasScript("OnTooltipSetItem") then
-		GameTooltip:HookScript("OnTooltipSetItem", item)
-		GameTooltip:HookScript("OnTooltipSetUnit", unit)
-		hooked = true
-	end
+	Everlook.tooltips.add(id, "item", item)
+	Everlook.tooltips.add(id, "unit", unit)
+	hooked = true
 end
 
 module.register({
