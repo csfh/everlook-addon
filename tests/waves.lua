@@ -639,6 +639,17 @@ return function(root, check)
 	addon.module.set("camera", "enabled", true)
 	check("camera distance uses the saved setting", distance == "2.6")
 	addon.module.set("camera", "distance", 3)
+	-- A reload in the middle: a new session with the same saved variables, and the game still holding the number set here.
+	do
+		local reloaded, reloaded_env = load({ "world", "links", "module", "camera" })
+		reloaded_env.EverlookDB.qol = play.EverlookDB.qol
+		reloaded_env.EverlookDB.cameraBefore = play.EverlookDB.cameraBefore
+		reloaded_env.GetCVar = play.GetCVar
+		reloaded_env.SetCVar = play.SetCVar
+		reloaded.module.set("camera", "enabled", false)
+		check("turning the camera off after a reload puts back the distance from before, not the one set here", distance == "1.0")
+		reloaded.module.set("camera", "enabled", true)
+	end
 	addon.module.set("camera", "enabled", false)
 	check("turning the camera off restores the previous distance", distance == "1.0")
 

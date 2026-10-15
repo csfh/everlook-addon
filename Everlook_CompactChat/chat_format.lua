@@ -97,24 +97,26 @@ end
 -- dropdown's off value, and ChatFrameUtil.GetTimestampFormat returns nothing
 -- for it. The previous choice comes back when this option or the module turns off.
 local cvar = "showTimestamps"
-local timestamp_before
 
+-- The choice from before the module hid timestamps is kept in the saved variables, not in this session:
+-- after a reload the game already holds "none", and putting that back would never show them again.
 local function set_timestamps(hidden)
 	if type(GetCVar) ~= "function" or type(SetCVar) ~= "function" then
 		return
 	end
+	EverlookDB = EverlookDB or {}
 	if hidden then
-		if timestamp_before == nil then
+		if EverlookDB.timestampsBefore == nil then
 			local current = GetCVar(cvar)
 			if type(current) ~= "string" or (issecretvalue and issecretvalue(current)) then
 				return
 			end
-			timestamp_before = current
+			EverlookDB.timestampsBefore = current
 		end
 		SetCVar(cvar, "none")
-	elseif timestamp_before ~= nil then
-		SetCVar(cvar, timestamp_before)
-		timestamp_before = nil
+	elseif EverlookDB.timestampsBefore ~= nil then
+		SetCVar(cvar, EverlookDB.timestampsBefore)
+		EverlookDB.timestampsBefore = nil
 	end
 end
 

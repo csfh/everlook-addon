@@ -1034,6 +1034,19 @@ return function(root, check)
 	check("enabling again hides the timestamp choice the player has now", chat_env.timestamps == "none")
 	chat.module.set("chat_format", "enabled", false)
 	check("turning it off restores that later choice", chat_env.timestamps == "|cffff9900%H:%M|r ")
+	do
+		-- A reload in the middle: a new session with the same saved variables, and the game still holding "none".
+		chat_env.timestamps = "%H:%M "
+		chat.module.set("chat_format", "enabled", true)
+		local reloaded, reloaded_env = load_qol()
+		reloaded_env.EverlookDB.qol = chat_env.EverlookDB.qol
+		reloaded_env.EverlookDB.timestampsBefore = chat_env.EverlookDB.timestampsBefore
+		reloaded_env.GetCVar = chat_env.GetCVar
+		reloaded_env.SetCVar = chat_env.SetCVar
+		reloaded.module.set("chat_format", "enabled", false)
+		check("turning timestamps back on after a reload restores the choice from before, not the none set here", chat_env.timestamps == "%H:%M ")
+		chat.module.set("chat_format", "enabled", false)
+	end
 	chat_env.timestamp_untouched = true
 	chat_env.GetCVar = function() return nil end
 	chat_env.SetCVar = function() chat_env.timestamp_untouched = false end

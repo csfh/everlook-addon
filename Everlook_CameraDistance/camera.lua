@@ -3,21 +3,24 @@ local Everlook = Everlook
 local module = Everlook.module
 local id = "camera"
 local cvar = "cameraDistanceMaxZoomFactor"
-local previous
 
+-- The factor from before this was turned on is kept in the saved variables, not in this session: after a
+-- reload the game already holds the number this set, and putting that back would never undo it.
 local function apply(enabled)
 	if type(GetCVar) ~= "function" or type(SetCVar) ~= "function" then
 		return
 	end
+	EverlookDB = EverlookDB or {}
 	if not enabled then
-		if previous ~= nil then
-			SetCVar(cvar, previous)
-			previous = nil
+		if EverlookDB.cameraBefore ~= nil then
+			SetCVar(cvar, EverlookDB.cameraBefore)
+			EverlookDB.cameraBefore = nil
 		end
 		return
 	end
-	if previous == nil then
-		previous = GetCVar(cvar)
+	if EverlookDB.cameraBefore == nil then
+		local current = GetCVar(cvar)
+		if type(current) == "string" and not (issecretvalue and issecretvalue(current)) then EverlookDB.cameraBefore = current end
 	end
 	SetCVar(cvar, tostring(module.get(id, "distance")))
 end
