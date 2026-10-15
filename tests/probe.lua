@@ -44,4 +44,29 @@ return function(root, check)
 	env_finish()
 	check("the answer is saved with the types and counts, and the listener stops", unregistered and env.EverlookDB.probe.events[1] == "UNIT_DIED string x2" and env.EverlookDB.probe.build == "70374")
 	check("the saved answer holds no GUID", not tostring(env.EverlookDB.probe.events[1]):find("Creature", 1, true))
+	do
+		-- What the game says about a corpse a second after the death, with the id kept out.
+		local timers, death_handler = {}, nil
+		local looked = {}
+		local dying, death_env = load({
+			CreateFrame = function() return { RegisterEvent = function() end, SetScript = function(_, _, fn) death_handler = fn end, UnregisterAllEvents = function() end } end,
+			C_Timer = { After = function(seconds, fn) timers[#timers + 1] = { seconds = seconds, fn = fn } end },
+			UnitGUID = function(unit) if unit == "target" then return "Creature-0-7" end end,
+			CanLootUnit = function(guid) looked[#looked + 1] = guid; return false, true end,
+			issecretvalue = function(value) return value == "hidden" end,
+		})
+		dying.probe.run()
+		death_handler(nil, "UNIT_DIED", "Creature-0-7")
+		death_handler(nil, "UNIT_DIED", "Creature-0-8")
+		death_handler(nil, "UNIT_DIED", "hidden")
+		check("each readable death is looked at once, a second later, and a hidden one not at all", #timers == 3 and timers[2].seconds == 1 and timers[3].seconds == 1 and #looked == 0)
+		timers[2].fn(); timers[3].fn()
+		timers[1].fn()
+		local joined = table.concat(death_env.EverlookDB.probe.events, "\n")
+		check("the answer says whether the creature was the target, and what CanLootUnit returned, with no id",
+			joined:find("death: target at death true, CanLootUnit answered (hasLoot false, canLoot true) x1", 1, true)
+			and joined:find("death: target at death false, CanLootUnit answered (hasLoot false, canLoot true) x1", 1, true)
+			and not joined:find("Creature", 1, true))
+	end
+
 end

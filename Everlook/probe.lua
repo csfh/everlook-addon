@@ -80,7 +80,21 @@ function Everlook.probe.run()
 		local ok = pcall(frame.RegisterEvent, frame, event)
 		report[#report + 1] = "Register " .. event .. ": " .. (ok and "accepted" or "refused")
 	end
+	-- A death: was it the player's target, and a second later does the game say the corpse can be looted?
+	-- Only booleans are kept, never the id, so two runs can be compared without a creature in them.
+	local function watch_death(guid)
+		if type(guid) ~= "string" or secret(guid) then return end
+		local targeted = type(UnitGUID) == "function" and UnitGUID("target") == guid
+		if type(C_Timer) ~= "table" or type(C_Timer.After) ~= "function" or type(CanLootUnit) ~= "function" then return end
+		C_Timer.After(1, function()
+			local ok, has, can = pcall(CanLootUnit, guid)
+			local line = ("death: target at death %s, CanLootUnit %s (hasLoot %s, canLoot %s)"):format(
+				tostring(targeted), ok and "answered" or "errored", ok and tostring(has) or "?", ok and tostring(can) or "?")
+			seen[line] = (seen[line] or 0) + 1
+		end)
+	end
 	frame:SetScript("OnEvent", function(_, event, first)
+		if event == "UNIT_DIED" then watch_death(first) end
 		local line = (event == "GOSSIP_SHOW" or event == "QUEST_GREETING") and Everlook.probe.offers() or Everlook.probe.describe(event, first)
 		seen[line] = (seen[line] or 0) + 1
 	end)
