@@ -177,15 +177,4 @@ return function(root, check)
 		check("a missing function is said as missing", table.concat(missing_env.EverlookDB.probe.maps.lines, "\n"):find("GetMapArtID: missing", 1, true) ~= nil)
 	end
 
-	do
-		local names = { [14] = "Durotar", [15] = "Dustwallow Marsh", [4096] = "Hidden", [4097] = "" }
-		local areas, areas_env = load({ C_Map = { GetAreaInfo = function(id) if id == 4096 then return "secret" end return names[id] end } })
-		areas.probe.run("areas")
-		local kept = areas_env.EverlookDB.probe.areas.lines
-		check("the area probe keeps each area's id and name, and counts them on the first line", kept[1]:find("2 area names", 1, true) and kept[2] == "14|Durotar" and kept[3] == "15|Dustwallow Marsh")
-		check("a name the client hides is left out", not table.concat(kept, "\n"):find("4096", 1, true))
-		local bare, bare_env = load({})
-		bare.probe.run("areas")
-		check("a client with no area function says so", bare_env.EverlookDB.probe.areas.lines[1]:find("no C_Map.GetAreaInfo", 1, true) ~= nil)
-	end
 end

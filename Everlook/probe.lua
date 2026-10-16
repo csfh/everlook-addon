@@ -82,11 +82,9 @@ local function keep(subject, lines)
 	EverlookDB = EverlookDB or {}
 	EverlookDB.probe = EverlookDB.probe or {}
 	EverlookDB.probe[subject] = { lines = lines, build = type(GetBuildInfo) == "function" and select(2, GetBuildInfo()) or nil }
-	for index, line in ipairs(lines) do
-		if index > 8 then break end
+	for _, line in ipairs(lines) do
 		if Everlook.say then Everlook.say(line) end
 	end
-	if #lines > 8 and Everlook.say then Everlook.say(("(%d more lines are in the saved file)"):format(#lines - 8)) end
 	if Everlook.say then Everlook.say("Saved under EverlookDB.probe." .. subject .. ".") end
 end
 
@@ -134,19 +132,6 @@ local function shape(value)
 	end
 	table.sort(keys)
 	return "{" .. table.concat(keys, ", ") .. "}"
-end
-
--- `areas` is the name the game gives each area id: the names of the pieces a zone's map is drawn from are these names run
--- together, so the pictures can be found in the game's own files.
-function SUBJECTS.areas()
-	if not (C_Map and C_Map.GetAreaInfo) then return { "areas: this client has no C_Map.GetAreaInfo" } end
-	local lines = { "area names, one line each as id|name" }
-	for id = 1, 30000 do
-		local ok, name = pcall(C_Map.GetAreaInfo, id)
-		if ok and type(name) == "string" and name ~= "" and not secret(name) then lines[#lines + 1] = id .. "|" .. name end
-	end
-	lines[1] = ("%d area names, one line each as id|name"):format(#lines - 1)
-	return lines
 end
 
 function SUBJECTS.maps()
@@ -223,7 +208,7 @@ function Everlook.probe.run(subject)
 	if type(subject) == "string" and subject ~= "" then
 		local check = SUBJECTS[subject:lower()]
 		if not check then
-			if Everlook.say then Everlook.say("Probe what? combat, lines, quests, maps, areas, or nothing for the death, giver and function check.") end
+			if Everlook.say then Everlook.say("Probe what? combat, lines, quests, maps, or nothing for the death, giver and function check.") end
 			return
 		end
 		keep(subject:lower(), check())
