@@ -86,4 +86,8 @@ frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:SetScript("OnEvent", function(self)
 	self:UnregisterEvent("PLAYER_ENTERING_WORLD")
 	Everlook.consent.start()
+	-- The journey starts from here too, so it listens to nothing until the player is in the world and has said yes.
+	if Everlook.journey then
+		Everlook.journey.start()
+	end
 end)

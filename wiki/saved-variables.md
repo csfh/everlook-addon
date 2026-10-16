@@ -62,6 +62,14 @@ An older `raw` is moved into pages in the background. Its tables stay the saved 
 
 `minimap.angle` is written when the button is dragged. The button texture is always `assets/logo.tga`.
 
+## Journey
+
+`EverlookDB.journey` and `EverlookDB.qol.journey` hold a character's journey, which is the one thing here that carries a character name. It is off until the player says yes to its own question (`journey.lua`), separate from Record world data, and it listens to no event until then.
+
+`EverlookDB.qol.journey` stays on the machine. `tokens` maps a character's GUID to a random 16 hex token, and `state[token]` holds `seq` (the last sequence number, never reset), `rows` and `met` (counts for the caps), `seen` and `last` (what has been recorded, so a creature or zone counts once and a quest by where it stands), `pending` (rows waiting to be sealed) and `profile`. A row is `{ seq, kind, id, map, level, at }`, with 0 where the game did not say.
+
+`EverlookDB.journey` is what the app reads: `v`, `enabled`, `signer` and `characters[token].chunks`, each `{ from, to, payload, signature }`. At logout the pending rows are packed 500 to a chunk with the character's name, realm, class, race, faction and level inside the payload, and signed over `j1;token;from;to;payload` with the account's token. Nothing in this table holds a GUID, a name or a realm in the clear. Without a token the rows wait for the next logout. Turning the journey off clears `characters` and the pending rows, and keeps `seq`. The format and caps are in `docs/contracts.md` of the Everlook repository, under "Journey".
+
 ## Load
 
 On addon load, `EverlookDB.raw` becomes the row table. A later sighting merges into those rows. The load line reports the count.

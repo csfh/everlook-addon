@@ -141,6 +141,19 @@ local function build()
 			checkbox:AddSearchTags("upload")
 		end
 	end
+	-- The journey is its own choice, apart from recording world data, because it sends a character name.
+	if Everlook.journey and Everlook.journey.enabled then
+		local journey = Settings.RegisterProxySetting(category, "Everlook_Journey", "boolean", "Keep a journey", false,
+			function() return Everlook.journey.enabled() end,
+			function(value) Everlook.journey.set_enabled(value) end)
+		local journey_box = Settings.CreateCheckbox(category, journey,
+			"Keeps the quests each of your characters takes, the zones it finds and the creatures it meets, with the character's name, realm, class, race and level. Signed in to the Everlook app, they go to everlook.ing, and you choose there how each character is shown and who sees it. Off, nothing new is kept and what has not been sent yet is removed.")
+		if type(journey_box) == "table" and type(journey_box.AddSearchTags) == "function" then
+			journey_box:AddSearchTags("Everlook")
+			journey_box:AddSearchTags("privacy")
+			journey_box:AddSearchTags("journey")
+		end
+	end
 	layout:AddInitializer(CreateSettingsButtonInitializer("Eager scan", "Scan", Everlook.scan.now,
 		"Read your bags, gear, spellbook, talents, currencies, professions, nearby units, factions and quest lines once, now.", true))
 	-- Each subject is a page in the list on the left.

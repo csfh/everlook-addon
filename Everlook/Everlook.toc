@@ -47,6 +47,7 @@ tooltips.lua
 blizzard_settings.lua
 collected.lua
 consent.lua
+journey.lua
 sched_page.lua
 settings.lua
 minimap.lua

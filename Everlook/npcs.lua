@@ -71,6 +71,10 @@ function Everlook.npcs.record(unit, source, guid)
 		sightings.note(guid, source)
 		return
 	end
+	-- The journey counts a creature the first time it is met, whether or not world data is recorded.
+	if Everlook.journey then
+		Everlook.journey.note("met", id)
+	end
 	if settled[guid] then
 		sightings.note(guid, source)
 		refresh_row.id = id
