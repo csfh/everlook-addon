@@ -2163,6 +2163,9 @@ check("npc stays unsettled until its reaction is known", class_reads > reaction_
 ;(function()
 	local saved_db = _G.EverlookDB
 	_G.EverlookDB = {}
+	_G.GetRealmName = function()
+		return "Realm"
+	end
 	local met = load_addon()
 	met.world.reset()
 	met.config.collecting = function()
@@ -2170,14 +2173,9 @@ check("npc stays unsettled until its reaction is known", class_reads > reaction_
 	end
 	met.journey.set_enabled(true)
 	met.npcs.record("target", "target")
-	local _, met_state = next(_G.EverlookDB.qol.journey.state)
-	local met_row
-	for _, candidate in ipairs(met_state.pending) do
-		if candidate[2] == 4 then
-			met_row = candidate
-		end
-	end
-	check("a creature is met for the journey while world data is off", met_row ~= nil and met_row[3] == 448 and (met.world.document().npcs or {})[1] == nil)
+	local met_summary = met.journey.summary()
+	check("a creature is met for the journey while world data is off", met_summary.counts.met == 1 and met_summary.rows >= 1 and (met.world.document().npcs or {})[1] == nil)
+	_G.GetRealmName = nil
 	_G.EverlookDB = saved_db
 end)()
 _G.GetTime = nil

@@ -49,5 +49,6 @@ collected.lua
 consent.lua
 journey.lua
 sched_page.lua
+journey_page.lua
 settings.lua
 minimap.lua

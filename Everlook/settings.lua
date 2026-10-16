@@ -207,6 +207,9 @@ local function build()
 		end
 	end
 	subpages[#subpages + 1] = Settings.RegisterCanvasLayoutSubcategory(category, Everlook.collected.page(), "Collected data")
+	if Everlook.journey and Everlook.journey.page then
+		subpages[#subpages + 1] = Settings.RegisterCanvasLayoutSubcategory(category, Everlook.journey.page(), "Journey")
+	end
 	if Everlook.sched and Everlook.sched.page then
 		subpages[#subpages + 1] = Settings.RegisterCanvasLayoutSubcategory(category, Everlook.sched.page(), "Performance")
 	end

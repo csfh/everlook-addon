@@ -7,11 +7,21 @@ Everlook.journey = {}
 -- the game, so it has its own question, separate from recording world data, and
 -- it records nothing until the player has said yes.
 --
--- Rows are kept in EverlookDB.qol.journey, which the app never reads, and are
--- sealed at logout into signed chunks in EverlookDB.journey, which it does. A
--- chunk holds the character's token, never its GUID; the GUID-to-token map and
--- the record of what has been seen stay in the first table. See
--- docs/contracts.md, "Journey".
+-- The saved file holds strings, never big tables, as the world data does, and for
+-- the same reason: a long journey must not make the file too large to load.
+--
+--   EverlookDB.qol.journey (stays on this machine)
+--     tokens[guid]  the character's token
+--     state[token]  small numbers and counts, and `pages`: what has been recorded,
+--                   in pages of ids, each one an encoded string, read when touched
+--   EverlookDB.journey (what the app reads)
+--     characters[token].chunks  rows sharded by sequence number, 500 to a chunk,
+--                   each packed and signed on its own
+--
+-- Chunks are signed strictly in order, a few blocks a frame, so the app can send
+-- the unbroken run of signed chunks and stop at the first one that is not ready.
+-- See docs/contracts.md, "Journey". These pages are not the world data's
+-- (pages.lua): their names hold a token, and a dirty one must not queue a world segment.
 
 local ACCEPTED, COMPLETED, ABANDONED, MET, ZONE = 1, 2, 3, 4, 5
 local KINDS = {
@@ -22,15 +32,25 @@ local KINDS = {
 	zone = ZONE,
 }
 
-local CHUNK_ROWS = 500
+-- A chunk covers one range of sequence numbers. It is full when it reaches the end of its range.
+local RANGE = 500
 local MET_CAP = 20000
 local ROW_CAP = 25000
 local MAX_ID = 2147483647
-local KEY_SPAN = 4294967296
+
+-- A page holds the ids in one span, and at most this many pages are read at a time.
+local SPAN = 1024
+local MAX_LOADED = 8
 
 -- The game fires QUEST_REMOVED for a turn-in as well as for giving a quest up, and
 -- not always in the same order as QUEST_TURNED_IN, so a removal is decided a moment later.
 local REMOVAL_WAIT = 2
+
+-- Signing runs a few blocks at a time, as the world manifest does. At logout it gets a short
+-- budget, well under what the world data spends, and whatever is left is signed next session.
+local HASH_BLOCKS = 6
+local LOGOUT_MS = 100
+local NO_TOKEN_SLEEP = 10
 
 -- The journey question comes after the world-data question, which settles at 6 seconds.
 local SETTLE = 14
@@ -41,6 +61,12 @@ local TEXT = "Everlook can also keep a journey for each character you play: the 
 
 local function plain(value)
 	return not (issecretvalue and issecretvalue(value))
+end
+
+local function clock()
+	if type(debugprofilestop) == "function" then
+		return debugprofilestop()
+	end
 end
 
 local function saved()
@@ -55,13 +81,21 @@ local function uploaded()
 	return db.journey
 end
 
--- What stays on this machine: the GUID-to-token map, and for each character the
--- rows waiting to be sealed and what it has already recorded.
 local function private()
 	local db = saved()
 	db.qol = db.qol or {}
 	db.qol.journey = db.qol.journey or { tokens = {}, state = {} }
 	return db.qol.journey
+end
+
+-- Whether this client can encode what the journey saves. Without it nothing is recorded.
+function Everlook.journey.available()
+	local encoding = C_EncodingUtil
+	return type(encoding) == "table"
+		and type(encoding.SerializeCBOR) == "function"
+		and type(encoding.DeserializeCBOR) == "function"
+		and type(encoding.EncodeBase64) == "function"
+		and type(encoding.DecodeBase64) == "function"
 end
 
 function Everlook.journey.enabled()
@@ -73,6 +107,134 @@ end
 function Everlook.journey.asked()
 	local db = _G.EverlookDB
 	return type(db) == "table" and type(db.journey) == "table" and db.journey.enabled ~= nil
+end
+
+-- Encoding. A value becomes CBOR, then base64, deflated when that is shorter. The prefix
+-- says which, and says whose: "j1" is the journey's own pages, "2" a chunk for the site.
+local function deflate_method()
+	return Enum and Enum.CompressionMethod and Enum.CompressionMethod.Deflate or 0
+end
+
+local function wrap(prefix, value)
+	local encoding = C_EncodingUtil
+	local cbor = encoding.SerializeCBOR(value, { ignoreSerializationErrors = true })
+	local mode, body = "r", cbor
+	if encoding.CompressString then
+		local level = Enum and Enum.CompressionLevel and Enum.CompressionLevel.Default or 0
+		local deflated = encoding.CompressString(cbor, deflate_method(), level)
+		if type(deflated) == "string" and #deflated < #cbor then
+			mode, body = "c", deflated
+		end
+	end
+	return prefix .. mode .. "." .. encoding.EncodeBase64(body)
+end
+
+local function unwrap(prefix, text)
+	if type(text) ~= "string" then
+		return nil
+	end
+	local mode, body = text:match("^" .. prefix .. "([rc])%.(.*)$")
+	if not mode then
+		return nil
+	end
+	local encoding = C_EncodingUtil
+	local binary = encoding.DecodeBase64(body)
+	if type(binary) ~= "string" then
+		return nil
+	end
+	if mode == "c" then
+		if not encoding.DecompressString then
+			return nil
+		end
+		binary = encoding.DecompressString(binary, deflate_method())
+		if type(binary) ~= "string" then
+			return nil
+		end
+	end
+	local value = encoding.DeserializeCBOR(binary)
+	return type(value) == "table" and value or nil
+end
+
+-- Pages: what has been recorded, as ids in spans, so a long journey is a few strings and not
+-- thousands of table entries. A page is read when first touched, at most MAX_LOADED are kept,
+-- and the least recently used goes first, saved if it changed. Spaces: m creatures met, z zones
+-- found, q quests (the last thing done, and 4 more once completed).
+local pages = {}
+local page_count = 0
+local page_clock = 0
+
+local function flush_page(entry)
+	if entry.dirty then
+		entry.state.pages[entry.key] = next(entry.data) ~= nil and wrap("j1", entry.data) or nil
+		entry.dirty = false
+	end
+end
+
+local function make_room()
+	while page_count >= MAX_LOADED do
+		local oldest, handle
+		for key, entry in pairs(pages) do
+			if not oldest or entry.used < oldest.used then
+				oldest, handle = entry, key
+			end
+		end
+		if not oldest then
+			return
+		end
+		flush_page(oldest)
+		pages[handle] = nil
+		page_count = page_count - 1
+	end
+end
+
+local function page_for(token, state, space, id)
+	local key = space .. ":" .. math.floor(id / SPAN)
+	local handle = token .. "|" .. key
+	local entry = pages[handle]
+	page_clock = page_clock + 1
+	if not entry then
+		make_room()
+		entry = { state = state, key = key, data = unwrap("j1", state.pages[key]) or {}, used = 0 }
+		pages[handle] = entry
+		page_count = page_count + 1
+	end
+	entry.used = page_clock
+	return entry
+end
+
+local function flush_pages()
+	for _, entry in pairs(pages) do
+		flush_page(entry)
+	end
+end
+
+-- Drops every page of one character without saving them, for when what they remember is wiped.
+local function drop_pages(state)
+	for handle, entry in pairs(pages) do
+		if entry.state == state then
+			pages[handle] = nil
+			page_count = page_count - 1
+		end
+	end
+end
+
+function Everlook.journey.loaded()
+	return page_count
+end
+
+local function fresh_counts()
+	return { completed = 0, started = 0, abandoned = 0, met = 0, zones = 0 }
+end
+
+-- The server's time, not this machine's clock, which the site would refuse if it ran a day ahead.
+local function now()
+	if type(GetServerTime) == "function" then
+		local server = GetServerTime()
+		if type(server) == "number" and plain(server) then
+			return server
+		end
+	end
+	return type(time) == "function" and time() or 0
 end
 
 local function player_guid()
@@ -94,10 +256,10 @@ local function unique_token(tokens)
 			return token
 		end
 	end
-	return string.format("%016x", (time and time() or 0) % 0xFFFFFFFF)
+	return string.format("%016x", now() % 0xFFFFFFFF)
 end
 
--- The token and rows of the character playing now, made the first time it records.
+-- The token and numbers of the character playing now, made the first time it records.
 local function current()
 	local guid = player_guid()
 	if not guid then
@@ -111,7 +273,7 @@ local function current()
 	end
 	local state = store.state[token]
 	if not state then
-		state = { seq = 0, rows = 0, met = 0, seen = {}, last = {}, pending = {} }
+		state = { seq = 0, rows = 0, met_rows = 0, counts = fresh_counts(), pages = {} }
 		store.state[token] = state
 	end
 	return token, state
@@ -154,67 +316,163 @@ local function profile()
 	if faction ~= "Alliance" and faction ~= "Horde" and faction ~= "Neutral" then
 		faction = nil
 	end
+	local level = level_here()
 	return {
 		name = name,
 		realm = realm,
 		class = number_or_zero(class, 1, 100) > 0 and class or nil,
 		race = type(race) == "string" and plain(race) and race:match("^%a+$") and race or nil,
 		faction = faction,
-		level = number_or_zero(type(UnitLevel) == "function" and UnitLevel("player") or nil, 1, 255) > 0 and UnitLevel("player") or nil,
+		level = level > 0 and level or nil,
 	}
 end
 
--- The server's time, not this machine's clock, which the site would refuse if it ran a day ahead.
-local function now()
-	if type(GetServerTime) == "function" then
-		local server = GetServerTime()
-		if type(server) == "number" and plain(server) then
-			return server
+-- Chunks. The rows of a chunk are kept in memory while it is open, and packed when it fills
+-- and at logout. A packed chunk is { from, to, payload }, and gets a `signature` when its turn comes.
+local session = {}
+local task
+
+local function wake()
+	if task then
+		task.wake()
+	end
+end
+
+local function range_end(from)
+	return math.ceil(from / RANGE) * RANGE
+end
+
+local function character_for(token)
+	local journey = uploaded()
+	journey.characters = journey.characters or {}
+	journey.characters[token] = journey.characters[token] or { chunks = {} }
+	return journey.characters[token]
+end
+
+-- The rows of the open chunk, read from the last packed chunk the first time they are wanted
+-- in a session, when that chunk still has room.
+local function open_for(token)
+	local cache = session[token]
+	if cache then
+		return cache
+	end
+	cache = { rows = {} }
+	session[token] = cache
+	local db = _G.EverlookDB
+	local character = db and db.journey and db.journey.characters and db.journey.characters[token]
+	local last = character and character.chunks[#character.chunks]
+	if last and last.to < range_end(last.from) then
+		local document = unwrap("2", last.payload)
+		if document and type(document.r) == "table" and #document.r > 0 then
+			cache.rows = document.r
 		end
 	end
-	return type(time) == "function" and time() or 0
+	return cache
+end
+
+local function pack(token, about, rows)
+	return wrap("2", { v = 1, t = token, p = about, r = rows })
+end
+
+-- Packs the open chunk in place, so a session adds rows to it and not a chunk of its own. Its
+-- signature goes, since it no longer covers what is there.
+local function pack_open(token, state, cache)
+	local rows = cache.rows
+	if #rows == 0 or not state.profile then
+		return false
+	end
+	local chunks = character_for(token).chunks
+	local from, to = rows[1][1], rows[#rows][1]
+	local entry = chunks[#chunks]
+	if not entry or entry.from ~= from then
+		entry = {}
+		chunks[#chunks + 1] = entry
+	end
+	entry.from, entry.to, entry.payload, entry.signature = from, to, pack(token, state.profile, rows), nil
+	cache.dirty = false
+	return true
+end
+
+local function append_row(token, state, row)
+	local cache = open_for(token)
+	cache.rows[#cache.rows + 1] = row
+	cache.dirty = true
+	if row[1] >= range_end(cache.rows[1][1]) and pack_open(token, state, cache) then
+		cache.rows = {}
+		wake()
+	end
+end
+
+-- Where a character stands with a quest: completed, in progress or given up.
+local function progress(value)
+	local completed = value >= 4
+	local last = completed and value - 4 or value
+	if completed then
+		return "completed"
+	end
+	if last == ACCEPTED then
+		return "started"
+	end
+	if last == ABANDONED then
+		return "abandoned"
+	end
 end
 
 -- Records one thing. A creature or zone counts once ever, and a quest by where it
--- stands: taken once while it is held, completed once, given up only while held.
+-- stands: taken once while it is held, completed once, given up only while it is held.
 function Everlook.journey.note(name, id, map)
-	if not Everlook.journey.enabled() then
+	if not Everlook.journey.enabled() or not Everlook.journey.available() then
 		return
 	end
 	local kind = KINDS[name]
 	if not kind or type(id) ~= "number" or not plain(id) or id ~= math.floor(id) or id < 1 or id > MAX_ID then
 		return
 	end
-	local _, state = current()
+	local token, state = current()
 	if not state or state.rows >= ROW_CAP then
 		return
 	end
+	state.profile = state.profile or profile()
+	if not state.profile then
+		return
+	end
+	local counts = state.counts
 	if kind == MET or kind == ZONE then
-		local key = kind * KEY_SPAN + id
-		if state.seen[key] or (kind == MET and state.met >= MET_CAP) then
+		local space = kind == MET and "m" or "z"
+		local entry = page_for(token, state, space, id)
+		if entry.data[id] or (kind == MET and state.met_rows >= MET_CAP) then
 			return
 		end
-		state.seen[key] = true
+		entry.data[id] = 1
+		entry.dirty = true
 		if kind == MET then
-			state.met = state.met + 1
+			state.met_rows = state.met_rows + 1
+			counts.met = counts.met + 1
+		else
+			counts.zones = counts.zones + 1
 		end
 	else
-		local last = state.last[id]
+		local entry = page_for(token, state, "q", id)
+		local value = entry.data[id] or 0
+		local completed = value >= 4
+		local last = completed and value - 4 or value
 		if (kind == ACCEPTED and last == ACCEPTED) or (kind == COMPLETED and last == COMPLETED) or (kind == ABANDONED and last ~= ACCEPTED) then
 			return
 		end
-		state.last[id] = kind
+		local after = kind + ((completed or kind == COMPLETED) and 4 or 0)
+		local before_state, after_state = progress(value), progress(after)
+		if before_state then
+			counts[before_state] = counts[before_state] - 1
+		end
+		if after_state then
+			counts[after_state] = counts[after_state] + 1
+		end
+		entry.data[id] = after
+		entry.dirty = true
 	end
 	state.seq = state.seq + 1
 	state.rows = state.rows + 1
-	state.pending[#state.pending + 1] = {
-		state.seq,
-		kind,
-		id,
-		map or map_here(),
-		level_here(),
-		now(),
-	}
+	append_row(token, state, { state.seq, kind, id, map or map_here(), level_here(), now() })
 end
 
 local function note_zone()
@@ -238,91 +496,145 @@ local function note_removal(id)
 	end
 end
 
--- Serializes a chunk's document the way a world segment is: CBOR, then base64,
--- deflated when that is shorter.
-local function pack(token, about, rows)
-	local cbor = C_EncodingUtil.SerializeCBOR({ v = 1, t = token, p = about, r = rows }, { ignoreSerializationErrors = true })
-	local payload = "2r." .. C_EncodingUtil.EncodeBase64(cbor)
-	if C_EncodingUtil.CompressString then
-		local method = Enum and Enum.CompressionMethod and Enum.CompressionMethod.Deflate or 0
-		local level = Enum and Enum.CompressionLevel and Enum.CompressionLevel.Default or 0
-		local deflated = C_EncodingUtil.CompressString(cbor, method, level)
-		if type(deflated) == "string" then
-			local smaller = "2c." .. C_EncodingUtil.EncodeBase64(deflated)
-			if #smaller < #payload then
-				payload = smaller
+-- Signing. The signature covers the token, the range and the payload, and is made with the
+-- account's token a few blocks at a time. It goes in order, one character's chunks after
+-- one another, so the app can send the unbroken run that is signed and stop at the first
+-- chunk that is not ready, and no chunk is skipped over.
+local pads, pads_secret
+local job
+
+local function pads_for(secret)
+	if pads_secret ~= secret then
+		pads, pads_secret = Everlook.hash.hmac_key(secret), secret
+	end
+	return pads
+end
+
+local function first_unsigned()
+	local db = _G.EverlookDB
+	local characters = db and db.journey and db.journey.characters
+	if type(characters) ~= "table" then
+		return nil
+	end
+	for token, character in pairs(characters) do
+		for _, chunk in ipairs(character.chunks) do
+			if not chunk.signature then
+				return token, chunk
 			end
 		end
 	end
-	return payload
 end
 
-local function sign(secret, token, from, to, payload)
-	return Everlook.hash.hmac_sha256(secret, string.format("j1;%s;%d;%d;%s", token, from, to, payload))
-end
-
--- A chunk's signature covers its token, range and payload, not the secret, so a new
--- token can sign again what is already stored, as the world manifest is signed again.
--- Without this, chunks sealed under an earlier secret would never verify.
-local function resign(secret, signer)
+-- A new token signs every chunk again, so each loses its signature until its turn comes
+-- and none is sent under the old one, where the site would turn it away for good.
+local function ensure_signer(signer)
 	local journey = _G.EverlookDB and _G.EverlookDB.journey
-	if type(journey) ~= "table" or journey.signer == signer or type(journey.characters) ~= "table" then
+	if type(journey) ~= "table" or journey.signer == signer then
 		return
 	end
-	for token, character in pairs(journey.characters) do
+	for _, character in pairs(journey.characters or {}) do
 		for _, chunk in ipairs(character.chunks) do
-			chunk.signature = sign(secret, token, chunk.from, chunk.to, chunk.payload)
+			chunk.signature = nil
 		end
 	end
 	journey.signer = signer
+	job = nil
 end
 
-local function seal_character(token, state, secret)
-	local journey = uploaded()
-	journey.characters = journey.characters or {}
-	local character = journey.characters[token] or { chunks = {} }
-	journey.characters[token] = character
-	local rows = state.pending
-	for first = 1, #rows, CHUNK_ROWS do
-		local group = {}
-		for index = first, math.min(first + CHUNK_ROWS - 1, #rows) do
-			group[#group + 1] = rows[index]
+local function sign_step(limit)
+	if not Everlook.journey.enabled() then
+		job = nil
+		return false
+	end
+	local secret, signer
+	if Everlook.config and type(Everlook.config.credentials) == "function" then
+		secret, signer = Everlook.config.credentials()
+	end
+	-- A new token is noticed first: it is what leaves the chunks unsigned.
+	if secret and _G.EverlookDB.journey.signer ~= signer then
+		ensure_signer(signer)
+	end
+	local token, chunk = first_unsigned()
+	if not chunk then
+		job = nil
+		return false
+	end
+	if not secret then
+		return NO_TOKEN_SLEEP
+	end
+	local began = clock()
+	repeat
+		if not job or job.chunk ~= chunk or job.payload ~= chunk.payload then
+			job = {
+				chunk = chunk,
+				payload = chunk.payload,
+				stream = Everlook.hash.hmac_stream(pads_for(secret), string.format("j1;%s;%d;%d;%s", token, chunk.from, chunk.to, chunk.payload)),
+			}
 		end
-		local from, to = group[1][1], group[#group][1]
-		local payload = pack(token, state.profile, group)
-		character.chunks[#character.chunks + 1] = {
-			from = from,
-			to = to,
-			payload = payload,
-			signature = sign(secret, token, from, to, payload),
-		}
-	end
-	state.pending = {}
+		if job.stream:step(HASH_BLOCKS) then
+			chunk.signature = job.stream:hex()
+			job = nil
+			token, chunk = first_unsigned()
+			if not chunk then
+				return false
+			end
+		end
+	until not began or clock() - began >= (limit or 0)
+	return true
 end
 
--- At logout, signs what the session recorded. Without the token the app places
--- there is nothing to sign with, so the rows wait for the next logout.
+-- At logout, packs what the session recorded and signs as much as the budget allows. What is
+-- left is signed in the background next session.
 function Everlook.journey.seal()
-	if not Everlook.journey.enabled() or not Everlook.config or type(Everlook.config.credentials) ~= "function" then
+	if not Everlook.journey.enabled() or not Everlook.journey.available() then
 		return
 	end
-	local secret, signer = Everlook.config.credentials()
-	if not secret or type(C_EncodingUtil) ~= "table" or type(C_EncodingUtil.SerializeCBOR) ~= "function" or type(C_EncodingUtil.EncodeBase64) ~= "function" then
-		return
-	end
-	resign(secret, signer)
 	local store = private()
 	local playing = player_guid() and store.tokens[player_guid()]
 	for token, state in pairs(store.state) do
 		if token == playing then
 			state.profile = profile() or state.profile
 		end
-		if #state.pending > 0 and state.profile then
-			seal_character(token, state, secret)
-			uploaded().signer = signer
-			uploaded().v = 1
+		local cache = session[token]
+		if cache and cache.dirty then
+			pack_open(token, state, cache)
 		end
 	end
+	flush_pages()
+	if not Everlook.config or type(Everlook.config.credentials) ~= "function" then
+		return
+	end
+	local began = clock()
+	while sign_step(LOGOUT_MS) == true do
+		if began and clock() - began >= LOGOUT_MS then
+			break
+		end
+	end
+end
+
+-- What the settings page shows: the counts of the character playing now, and where signing stands.
+function Everlook.journey.summary()
+	local summary = { available = Everlook.journey.available(), enabled = Everlook.journey.enabled() }
+	local guid = player_guid()
+	local token = guid and _G.EverlookDB and _G.EverlookDB.qol and _G.EverlookDB.qol.journey and _G.EverlookDB.qol.journey.tokens[guid]
+	local state = token and _G.EverlookDB.qol.journey.state[token]
+	if state then
+		summary.counts, summary.rows, summary.profile = state.counts, state.rows, state.profile
+	end
+	local signed, waiting = 0, 0
+	local characters = _G.EverlookDB and _G.EverlookDB.journey and _G.EverlookDB.journey.characters
+	local character = token and characters and characters[token]
+	for _, chunk in ipairs(character and character.chunks or {}) do
+		if chunk.signature then
+			signed = signed + 1
+		else
+			waiting = waiting + 1
+		end
+	end
+	summary.signed, summary.waiting = signed, waiting
+	summary.open = token and session[token] and #session[token].rows or 0
+	summary.token = Everlook.config and type(Everlook.config.credentials) == "function" and Everlook.config.credentials() ~= nil
+	return summary
 end
 
 local function define()
@@ -358,7 +670,7 @@ local function ask(tries)
 	if Everlook.journey.asked() then
 		return
 	end
-	local ready = Everlook.config and Everlook.config.asked() and Everlook.consent and not Everlook.consent.blocked()
+	local ready = Everlook.journey.available() and Everlook.config and Everlook.config.asked() and Everlook.consent and not Everlook.consent.blocked()
 	if ready then
 		define()
 		StaticPopup_Show(DIALOG)
@@ -407,11 +719,17 @@ frame:SetScript("OnEvent", function(_, event, first, second)
 	end
 end)
 
+-- Signing is a task of the scheduler, and sleeps until there is something to sign.
+if Everlook.sched and Everlook.sched.task then
+	task = Everlook.sched.task("journey", { step = sign_step })
+end
+
 -- Called once the player is in the world: listens if the journey is on, asks if it has not been answered.
 function Everlook.journey.start()
 	if Everlook.journey.enabled() then
 		listen(true)
 		note_zone()
+		wake()
 	end
 	if Everlook.journey.asked() or type(C_Timer) ~= "table" or type(C_Timer.After) ~= "function" then
 		return
@@ -428,14 +746,13 @@ function Everlook.journey.set_enabled(on)
 	journey.enabled = on and true or false
 	if not on then
 		journey.characters = nil
-		local db = saved()
-		local store = db.qol and db.qol.journey
-		if store then
-			for _, state in pairs(store.state) do
-				state.pending = {}
-				state.seen = {}
-				state.last = {}
-			end
+		job = nil
+		local store = saved().qol and saved().qol.journey
+		for token, state in pairs(store and store.state or {}) do
+			drop_pages(state)
+			state.pages = {}
+			state.counts = fresh_counts()
+			session[token] = nil
 		end
 	end
 	listen(on and true or false)
