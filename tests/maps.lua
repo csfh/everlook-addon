@@ -8,7 +8,7 @@ return function(root, check)
 			for key, value in pairs(row) do copy[key] = value end
 			stored[#stored + 1] = { bucket = bucket, row = copy }
 		end } }
-		local state = { map = 1429, pieces = { { offsetX = 231, offsetY = 129, textureWidth = 462, textureHeight = 210, fileDataIDs = { 31, 32, 33, 34 }, isDrawOnTopLayer = true, isShownByMouseOver = false } } }
+		local state = { waiting = {}, map = 1429, pieces = { { offsetX = 231, offsetY = 129, textureWidth = 462, textureHeight = 210, fileDataIDs = { 31, 32, 33, 34 }, isDrawOnTopLayer = true, isShownByMouseOver = false } } }
 		local env = setmetatable({
 			C_Map = {
 				GetBestMapForUnit = function() return state.map end,
@@ -16,9 +16,13 @@ return function(root, check)
 				GetMapArtID = function(map) return map + 1000 end,
 				GetMapArtLayers = function() return { { layerWidth = 1002, layerHeight = 668, tileWidth = 256, tileHeight = 256, minScale = 0.5, maxScale = 1, additionalZoomSteps = 2 } } end,
 				GetMapArtLayerTextures = function() return { 11, 12, 12, 0 } end,
+				GetMapChildrenInfo = function(map) if map == 947 then return { { mapID = 1415, parentMapID = 947 }, { mapID = 1429, parentMapID = 1415 }, { mapID = 1430, parentMapID = 1415 } } end end,
 				GetMapRectOnMap = function(map, parent) if parent == 1415 then return 0.4, 0.42, 0.5, 0.53 elseif parent == 947 then return 0.3, 0.5, 0.2, 0.6 end end,
 			},
 			C_MapExplorationInfo = { GetExploredMapTextures = function() return state.pieces end },
+			C_Timer = { After = function(_, fn) state.waiting[#state.waiting + 1] = fn end },
+			GetBuildInfo = function() return "1.60.1", "70374" end,
+			EverlookDB = {},
 		}, { __index = _G })
 		env._G = env
 		local chunk = assert(loadfile(source("maps")))
@@ -67,4 +71,42 @@ return function(root, check)
 	no_art_env.C_Map.GetMapArtLayers = function() return {} end
 	no_art.maps.scan()
 	check("a map with no layer has no art row", #of(no_art_stored, "mapArt") == 0)
+
+	local function drain(state)
+		local ticks = 0
+		while #state.waiting > 0 and ticks < 50 do
+			local run = table.remove(state.waiting, 1)
+			run()
+			ticks = ticks + 1
+		end
+		return ticks
+	end
+	local sweeper, sweep_state, sweep_stored, sweep_env = load()
+	sweeper.maps.sweep()
+	check("a sweep waits for a tick before it looks at any map", #sweep_stored == 0 and #sweep_state.waiting == 1)
+	drain(sweep_state)
+	local swept_art = of(sweep_stored, "mapArt")
+	check("a sweep records the art of the top map and every map below it, and each map's place on its parent", #swept_art == 4 and swept_art[1].mapId == 947
+		and #of(sweep_stored, "mapRects") == 3 and of(sweep_stored, "mapRects")[2].parentId == 1415)
+	check("a sweep needs no exploration: it writes no explored pieces", #of(sweep_stored, "mapOverlays") == 0)
+	check("a finished sweep is remembered for the client build", sweep_env.EverlookDB.mapsSwept == "70374")
+	sweeper.maps.sweep()
+	check("a build that was swept is not swept again", #sweep_state.waiting == 0)
+	sweep_env.GetBuildInfo = function() return "1.61.0", "70400" end
+	sweeper.maps.sweep()
+	check("a new build is swept again", #sweep_state.waiting == 1)
+
+	local many, many_state, many_stored, many_env = load()
+	many_env.C_Map.GetMapChildrenInfo = function()
+		local list = {}
+		for index = 1, 45 do list[index] = { mapID = 2000 + index, parentMapID = 947 } end
+		return list
+	end
+	many.maps.sweep()
+	local ticks = drain(many_state)
+	check("a long list is spread over several ticks, twenty maps at a time", ticks >= 3 and #of(many_stored, "mapArt") == 46)
+	local cut, cut_state, cut_stored, cut_env = load()
+	cut_env.EverlookDB = false
+	cut.maps.sweep()
+	check("without its saved table a sweep does nothing", #cut_state.waiting == 0 and #cut_stored == 0)
 end

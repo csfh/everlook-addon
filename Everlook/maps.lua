@@ -99,3 +99,49 @@ function Everlook.maps.scan()
 		map_id = parent
 	end
 end
+
+-- Every map the game has below the player's top map, once per client build. A map's art and place need no
+-- exploration, so this fills the base layout at once; only the explored pieces come from play. The work is spread
+-- over a few ticks so a login is not slowed.
+local PER_TICK = 20
+local TICK_SECONDS = 0.2
+
+function Everlook.maps.sweep()
+	if not (C_Map and C_Map.GetBestMapForUnit and C_Map.GetMapInfo and C_Map.GetMapChildrenInfo and C_Timer and C_Timer.After) then return end
+	if type(EverlookDB) ~= "table" then return end
+	local build = public(select(2, GetBuildInfo()))
+	if type(build) ~= "string" or EverlookDB.mapsSwept == build then return end
+	local top = whole(C_Map.GetBestMapForUnit("player"))
+	for _ = 1, MAX_DEPTH do
+		local info = top and top > 0 and C_Map.GetMapInfo(top)
+		local parent = type(info) == "table" and whole(info.parentMapID) or nil
+		if not parent or parent <= 0 then break end
+		top = parent
+	end
+	if not top or top <= 0 then return end
+	local list = { { mapID = top } }
+	local children = C_Map.GetMapChildrenInfo(top, nil, true)
+	if type(children) == "table" then
+		for index = 1, #children do list[#list + 1] = children[index] end
+	end
+	local at = 1
+	local function step()
+		local last = math.min(at + PER_TICK - 1, #list)
+		for index = at, last do
+			local entry = list[index]
+			local map_id = type(entry) == "table" and whole(entry.mapID) or nil
+			if map_id and map_id > 0 and not seen[map_id] then
+				local parent = whole(entry.parentMapID)
+				pcall(record_art, map_id)
+				if parent and parent > 0 then pcall(record_rect, map_id, parent) end
+			end
+		end
+		at = last + 1
+		if at <= #list then
+			C_Timer.After(TICK_SECONDS, step)
+		else
+			EverlookDB.mapsSwept = build
+		end
+	end
+	C_Timer.After(TICK_SECONDS, step)
+end

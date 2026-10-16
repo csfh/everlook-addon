@@ -79,7 +79,12 @@ frame:SetScript("OnEvent", function(_, event, first, second, third, fourth, fift
 		if Everlook.maps then pcall(Everlook.maps.scan) end
 	elseif event == "PLAYER_ENTERING_WORLD" then
 		Everlook.instances.arrived()
-		if Everlook.maps then Everlook.world.defer("maps", function() pcall(Everlook.maps.scan) end) end
+		if Everlook.maps then
+			Everlook.world.defer("maps", function()
+				pcall(Everlook.maps.scan)
+				pcall(Everlook.maps.sweep)
+			end)
+		end
 	elseif event == "ENCOUNTER_END" then
 		-- encounterID, encounterName, difficultyID, groupSize, success
 		Everlook.instances.encounter_ended(first, second, fifth)
