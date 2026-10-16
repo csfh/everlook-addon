@@ -37,6 +37,7 @@ return function(root, check)
 		env.C_Map = { GetBestMapForUnit = function() return world.map end }
 		env.time = function() return world.now end
 		env.GetTime = function() return world.now end
+		env.GetServerTime = function() return world.server_now or world.now end
 		env.CreateFrame = function()
 			local frame = { events = {} }
 			function frame:RegisterEvent(event) self.events[event] = true end
@@ -57,7 +58,7 @@ return function(root, check)
 		env.StaticPopup_Show = function(which) shown[#shown + 1] = which end
 		Everlook.config = {
 			credentials = function()
-				if world.signed then return "secret", "0123456789abcdef" end
+				if world.signed then return world.secret or "secret", world.signer or "0123456789abcdef" end
 			end,
 			asked = function() return world.asked end,
 		}
@@ -267,6 +268,30 @@ return function(root, check)
 	check("no GUID is in what was signed", not contains(s.serialized, GUID))
 	check("the name and realm are only inside the signed payload, never in the table the app reads", not contains(s.db.journey, "Thrall") and not contains(s.db.journey, "Nordanaar"))
 	check("the GUID stays on this machine, outside the uploaded table", s.db.qol.journey.tokens[GUID] == token)
+
+	-- A new secret signs again what is already stored, so chunks sealed under the old one still verify.
+	s = on()
+	s.Everlook.journey.note("met", 1)
+	s.fire("PLAYER_LOGOUT")
+	token = s.character()
+	local before = s.chunks()[1].signature
+	s.world.secret = "second-secret"
+	s.world.signer = "fedcba9876543210"
+	s.Everlook.journey.note("met", 2)
+	s.fire("PLAYER_LOGOUT")
+	chunks = s.chunks()
+	check("a new secret signs the stored chunks again", chunks[1].signature ~= before and chunks[1].signature == "second-secret|j1;" .. token .. ";1;1;" .. chunks[1].payload)
+	check("and the new chunk, and the signer", chunks[2].signature == "second-secret|j1;" .. token .. ";2;2;" .. chunks[2].payload and s.db.journey.signer == "fedcba9876543210")
+	s.fire("PLAYER_LOGOUT")
+	check("the same secret does not sign anything again", s.chunks()[1].signature == "second-secret|j1;" .. token .. ";1;1;" .. chunks[1].payload)
+
+	-- Rows carry the server's time, not the machine's clock.
+	s = on()
+	s.world.server_now = 1760000000
+	s.world.now = 1760000000 + 3 * 86400
+	s.Everlook.journey.note("met", 77)
+	_, state = s.character()
+	check("a row is stamped with the server time, so a wrong PC clock does not get a chunk refused", state.pending[1][6] == 1760000000)
 
 	-- Without a token from the app nothing can be signed, so nothing is sealed and nothing is lost.
 	s = on()

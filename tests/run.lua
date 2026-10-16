@@ -96,6 +96,7 @@ local function load_addon()
 		"scan.lua",
 		"hash.lua",
 		"config.lua",
+		"journey.lua",
 		"pages.lua",
 		"segments.lua",
 		"sign_template.lua",
@@ -2155,6 +2156,30 @@ clock.now = 1018
 reaction_npc.npcs.record("target", "target")
 local reaction_row = reaction_npc.world.document().npcs[1]
 check("npc stays unsettled until its reaction is known", class_reads > reaction_reads and reaction_row and reaction_row[11] == 4)
+
+-- A player who keeps a journey and does not record world data still meets creatures: the journey does not
+-- wait on the world-data answer, which only world.store and world.count check. It runs in a function of its
+-- own because this file's main chunk is out of local variables.
+;(function()
+	local saved_db = _G.EverlookDB
+	_G.EverlookDB = {}
+	local met = load_addon()
+	met.world.reset()
+	met.config.collecting = function()
+		return false
+	end
+	met.journey.set_enabled(true)
+	met.npcs.record("target", "target")
+	local _, met_state = next(_G.EverlookDB.qol.journey.state)
+	local met_row
+	for _, candidate in ipairs(met_state.pending) do
+		if candidate[2] == 4 then
+			met_row = candidate
+		end
+	end
+	check("a creature is met for the journey while world data is off", met_row ~= nil and met_row[3] == 448 and (met.world.document().npcs or {})[1] == nil)
+	_G.EverlookDB = saved_db
+end)()
 _G.GetTime = nil
 _G.UnitGUID = nil
 _G.UnitIsPlayer = nil

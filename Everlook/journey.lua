@@ -164,6 +164,17 @@ local function profile()
 	}
 end
 
+-- The server's time, not this machine's clock, which the site would refuse if it ran a day ahead.
+local function now()
+	if type(GetServerTime) == "function" then
+		local server = GetServerTime()
+		if type(server) == "number" and plain(server) then
+			return server
+		end
+	end
+	return type(time) == "function" and time() or 0
+end
+
 -- Records one thing. A creature or zone counts once ever, and a quest by where it
 -- stands: taken once while it is held, completed once, given up only while held.
 function Everlook.journey.note(name, id, map)
@@ -202,7 +213,7 @@ function Everlook.journey.note(name, id, map)
 		id,
 		map or map_here(),
 		level_here(),
-		type(time) == "function" and time() or 0,
+		now(),
 	}
 end
 
@@ -246,6 +257,26 @@ local function pack(token, about, rows)
 	return payload
 end
 
+local function sign(secret, token, from, to, payload)
+	return Everlook.hash.hmac_sha256(secret, string.format("j1;%s;%d;%d;%s", token, from, to, payload))
+end
+
+-- A chunk's signature covers its token, range and payload, not the secret, so a new
+-- token can sign again what is already stored, as the world manifest is signed again.
+-- Without this, chunks sealed under an earlier secret would never verify.
+local function resign(secret, signer)
+	local journey = _G.EverlookDB and _G.EverlookDB.journey
+	if type(journey) ~= "table" or journey.signer == signer or type(journey.characters) ~= "table" then
+		return
+	end
+	for token, character in pairs(journey.characters) do
+		for _, chunk in ipairs(character.chunks) do
+			chunk.signature = sign(secret, token, chunk.from, chunk.to, chunk.payload)
+		end
+	end
+	journey.signer = signer
+end
+
 local function seal_character(token, state, secret)
 	local journey = uploaded()
 	journey.characters = journey.characters or {}
@@ -263,7 +294,7 @@ local function seal_character(token, state, secret)
 			from = from,
 			to = to,
 			payload = payload,
-			signature = Everlook.hash.hmac_sha256(secret, string.format("j1;%s;%d;%d;%s", token, from, to, payload)),
+			signature = sign(secret, token, from, to, payload),
 		}
 	end
 	state.pending = {}
@@ -279,6 +310,7 @@ function Everlook.journey.seal()
 	if not secret or type(C_EncodingUtil) ~= "table" or type(C_EncodingUtil.SerializeCBOR) ~= "function" or type(C_EncodingUtil.EncodeBase64) ~= "function" then
 		return
 	end
+	resign(secret, signer)
 	local store = private()
 	local playing = player_guid() and store.tokens[player_guid()]
 	for token, state in pairs(store.state) do
