@@ -147,11 +147,22 @@ local function build()
 			function() return Everlook.journey.enabled() end,
 			function(value) Everlook.journey.set_enabled(value) end)
 		local journey_box = Settings.CreateCheckbox(category, journey,
-			"Keeps the quests each of your characters takes, the zones it finds and the creatures it meets, with the character's name, realm, class, race and level. Signed in to the Everlook app, they go to everlook.ing, and you choose there how each character is shown and who sees it. Off, nothing new is kept and what has not been sent yet is removed.")
+			"Keeps the quests each of your characters takes, the zones and places it finds and the creatures it meets, with the character's name, realm, class, race and level. Signed in to the Everlook app, they go to everlook.ing, and you choose there how each character is shown and who sees it. Off, nothing new is kept and what has not been sent yet is removed.")
 		if type(journey_box) == "table" and type(journey_box.AddSearchTags) == "function" then
 			journey_box:AddSearchTags("Everlook")
 			journey_box:AddSearchTags("privacy")
 			journey_box:AddSearchTags("journey")
+		end
+		-- Where each thing happened is a choice of its own, because a spot says more than the journey does.
+		local spots = Settings.RegisterProxySetting(category, "Everlook_JourneyPositions", "boolean", "Keep where I stood", false,
+			function() return Everlook.journey.positions() end,
+			function(value) Everlook.journey.set_positions(value) end)
+		local spots_box = Settings.CreateCheckbox(category, spots,
+			"Adds where on the map your character stood to each thing in the journey, as a spot accurate to a tenth of a percent of the map. everlook.ing draws it on your journey page for whoever you let see the journey. Off, new things carry no spot, and spots already waiting to be sent are still sent.")
+		if type(spots_box) == "table" and type(spots_box.AddSearchTags) == "function" then
+			spots_box:AddSearchTags("Everlook")
+			spots_box:AddSearchTags("privacy")
+			spots_box:AddSearchTags("journey")
 		end
 	end
 	layout:AddInitializer(CreateSettingsButtonInitializer("Eager scan", "Scan", Everlook.scan.now,

@@ -14,6 +14,7 @@ local COUNTS = {
 	{ key = "abandoned", label = "Quests given up" },
 	{ key = "met", label = "Creatures met" },
 	{ key = "zones", label = "Zones found" },
+	{ key = "areas", label = "Places discovered" },
 }
 
 local function plural(count, one, many)
@@ -41,7 +42,7 @@ function Everlook.journey.lines(summary)
 	for index, entry in ipairs(COUNTS) do
 		lines.counts[index] = { label = entry.label, value = tostring(counts[entry.key] or 0) }
 	end
-	lines.recorded = plural(summary.rows or 0, "thing recorded", "things recorded")
+	lines.recorded = plural(summary.rows or 0, "thing recorded", "things recorded") .. (summary.positions and ", with where you stood." or ", without where you stood.")
 	lines.signing[1] = plural(summary.signed or 0, "chunk is signed and ready for the app", "chunks are signed and ready for the app")
 	local waiting = (summary.waiting or 0) + ((summary.open or 0) > 0 and 1 or 0)
 	if waiting > 0 then

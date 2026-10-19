@@ -47,7 +47,17 @@ return function(root, check)
 		env.UnitRace = function() return "Orc", world.race end
 		env.UnitFactionGroup = function() return world.faction end
 		env.UnitLevel = function() return world.level end
-		env.C_Map = { GetBestMapForUnit = function() return world.map end }
+		env.C_Map = {
+			GetBestMapForUnit = function() return world.map end,
+			-- A spot is a normalized position, as the game gives it, or nothing where the game does not say.
+			GetPlayerMapPosition = function()
+				if world.spot then
+					return { GetXY = function() return world.spot.x, world.spot.y end }
+				end
+			end,
+		}
+		-- The areas the character has uncovered at its spot, the first the most specific.
+		env.C_MapExplorationInfo = { GetExploredAreaIDsAtPosition = function() return world.areas end }
 		env.time = function() return world.now end
 		env.GetServerTime = function() return world.server_now or world.now end
 		env.debugprofilestop = function()
@@ -174,7 +184,7 @@ return function(root, check)
 	check("journey records nothing after the player says no", #s.chunks() == 0 and select(2, s.character()) == nil)
 	check("and still listens to nothing", s.listening() == 0)
 	s.Everlook.journey.set_enabled(true)
-	check("it listens once the player says yes", s.listening() == 6)
+	check("it listens once the player says yes", s.listening() == 8)
 	s.Everlook.journey.note("met", 823)
 	check("journey records once the player says yes", #s.rows() == 1)
 	s.Everlook.journey.set_enabled(false)
@@ -190,7 +200,7 @@ return function(root, check)
 	s = load({ journey = { enabled = true } })
 	check("a saved yes is not listening until the player is in the world", s.listening() == 0)
 	s.Everlook.journey.start()
-	check("starting a session with a saved yes listens and notes the zone", s.listening() == 6 and #s.rows() == 1 and s.woken() >= 1)
+	check("starting a session with a saved yes listens and notes the zone", s.listening() == 8 and #s.rows() == 1 and s.woken() >= 1)
 
 	-- A row holds its sequence, kind, id, map, level and time.
 	s = on()
@@ -488,7 +498,7 @@ return function(root, check)
 	s.Everlook.journey.note("met", 11)
 	local lines = s.Everlook.journey.lines(s.Everlook.journey.summary())
 	check("the page says whose journey it is, and lists the counts", lines.status == "On for Thrall of Nordanaar." and lines.counts[2].label == "Quests in progress" and lines.counts[2].value == "1" and lines.counts[4].value == "2")
-	check("it says how much is recorded and what is waiting to be signed", lines.recorded == "3 things recorded" and lines.signing[2] == "1 chunk is waiting to be signed, at logout and in the background.")
+	check("it says how much is recorded and what is waiting to be signed", lines.recorded == "3 things recorded, without where you stood." and lines.signing[2] == "1 chunk is waiting to be signed, at logout and in the background.")
 	check("and that it is signed with the token", lines.signing[#lines.signing] == "Signed with your Everlook token.")
 	s.world.signed = false
 	check("or that the token is missing", s.Everlook.journey.lines(s.Everlook.journey.summary()).signing[#s.Everlook.journey.lines(s.Everlook.journey.summary()).signing] == "Place the token in the Everlook app, and the journey is signed.")
@@ -536,4 +546,116 @@ return function(root, check)
 	s.Everlook.journey.start()
 	s.pending[1]()
 	check("it is not asked on a client that could not keep the answer", #s.shown == 0)
+
+	-- Areas: the game's own list of what the character has uncovered, recorded once ever, as kind 6.
+	s = on()
+	s.world.map = 1411
+	s.world.spot = { x = 0.5, y = 0.5 }
+	s.world.areas = { 17, 4 }
+	s.fire("ZONE_CHANGED")
+	s.fire("ZONE_CHANGED_INDOORS")
+	rows = s.rows()
+	check("a subzone change records the most specific area uncovered at the spot, once", #rows == 1 and rows[1][2] == 6 and rows[1][3] == 17 and rows[1][4] == 1411)
+	s.world.areas = { 18 }
+	s.fire("ZONE_CHANGED")
+	check("another area is another row, and both are counted", #s.rows() == 2 and select(2, s.character()).counts.areas == 2)
+	s.world.areas = nil
+	s.fire("ZONE_CHANGED")
+	s.world.areas = {}
+	s.fire("ZONE_CHANGED")
+	s.world.areas = { 0 }
+	s.fire("ZONE_CHANGED")
+	check("a spot with no area, or an id that is no id, records nothing", #s.rows() == 2)
+	s = on()
+	s.world.map = 1411
+	s.world.spot = { x = 0.5, y = 0.5 }
+	s.world.areas = { 17 }
+	s.fire("PLAYER_ENTERING_WORLD")
+	check("entering the world notes the area as well as the zone", (function()
+		local entered = s.rows()
+		return #entered == 2 and entered[1][2] == 5 and entered[2][2] == 6
+	end)())
+	s = load({ journey = { enabled = true } })
+	s.world.spot = { x = 0.5, y = 0.5 }
+	s.world.areas = { 17 }
+	s.Everlook.journey.start()
+	check("starting a session notes the area the character stands in", #s.rows() == 2)
+
+	-- Positions are their own yes. Without it a row is the six numbers it always was.
+	s = on()
+	s.world.map = 1411
+	s.world.spot = { x = 0.4731, y = 0.6004 }
+	s.Everlook.journey.note("met", 823)
+	check("without a yes to positions a row carries no spot", #s.rows()[1] == 6 and s.Everlook.journey.positions() == false)
+	s = on()
+	s.world.map = 1411
+	s.world.spot = { x = 0.4731, y = 0.6004 }
+	s.Everlook.journey.set_positions(true)
+	s.Everlook.journey.note("met", 823)
+	check("with a yes a row ends with x and y in tenths of a percent of the map", (function()
+		local row = s.rows()[1]
+		return #row == 8 and row[7] == 473 and row[8] == 600
+	end)())
+	s.world.spot = nil
+	s.Everlook.journey.note("met", 824)
+	s.world.spot = { x = 1.4, y = 0.5 }
+	s.Everlook.journey.note("met", 825)
+	s.world.spot = { x = 0, y = 0.5 }
+	s.Everlook.journey.note("met", 826)
+	check("where the game gives no spot, or one off the map, the row says 0 and 0 together", (function()
+		local rows_now = s.rows()
+		return #rows_now == 4 and rows_now[2][7] == 0 and rows_now[2][8] == 0 and rows_now[3][7] == 0 and rows_now[3][8] == 0 and rows_now[4][7] == 0 and rows_now[4][8] == 0
+	end)())
+	s.Everlook.journey.set_positions(false)
+	s.world.spot = { x = 0.5, y = 0.5 }
+	s.Everlook.journey.note("met", 827)
+	check("turning it off stops new spots and keeps the rows already written", (function()
+		local rows_now = s.rows()
+		return #rows_now == 5 and #rows_now[5] == 6 and rows_now[1][7] == 473
+	end)())
+
+	-- The question about positions: asked once after the journey is on, to a new yes and to an old one.
+	s = load({ journey = { enabled = true } })
+	s.Everlook.journey.start()
+	check("a player who said yes to the journey before positions existed is asked about them", #s.pending == 1)
+	s.pending[1]()
+	check("it is the positions dialog, and says where on the map and who sees it", #s.shown == 1 and s.shown[1] == "EVERLOOK_JOURNEY_POSITIONS" and s.env.StaticPopupDialogs.EVERLOOK_JOURNEY_POSITIONS.text:find("where on the map", 1, true) and s.env.StaticPopupDialogs.EVERLOOK_JOURNEY_POSITIONS.text:find("whoever you let see", 1, true))
+	local positions_dialog = s.env.StaticPopupDialogs.EVERLOOK_JOURNEY_POSITIONS
+	positions_dialog.OnCancel(nil, nil, "override")
+	check("a dialog something else closes is not an answer", s.Everlook.journey.positions_asked() == false)
+	positions_dialog.OnAccept()
+	check("Accept turns positions on", s.Everlook.journey.positions() == true and s.Everlook.journey.positions_asked() == true)
+	positions_dialog.OnCancel(nil, nil, "clicked")
+	check("No turns them off for good", s.db.journey.positions == false and s.Everlook.journey.positions_asked() == true)
+	s = load({ journey = { enabled = true, positions = false } })
+	s.Everlook.journey.start()
+	check("it is never asked again once answered", #s.pending == 0)
+	s = load({ journey = { enabled = false } })
+	s.Everlook.journey.start()
+	check("and not asked while the journey is off", #s.pending == 0)
+	s = load()
+	s.Everlook.journey.start()
+	s.pending[1]()
+	s.pending[1]()
+	s.env.StaticPopupDialogs.EVERLOOK_JOURNEY.OnAccept()
+	s.world.blocked = nil
+	check("saying yes to the journey schedules the question about positions", #s.pending >= 1)
+	s.settle()
+	check("and it is asked", s.shown[#s.shown] == "EVERLOOK_JOURNEY_POSITIONS")
+	s.world.blocked = true
+	local blocked = load({ journey = { enabled = true } })
+	blocked.world.blocked = true
+	blocked.Everlook.journey.start()
+	blocked.pending[1]()
+	check("it is not asked over another dialog", #blocked.shown == 0)
+
+	-- The page says whether spots are kept, and counts the areas.
+	check("the journey page counts places discovered and says whether where you stood is kept", (function()
+		local page_lines = s.Everlook.journey.lines({ available = true, enabled = true, positions = true, counts = { areas = 3 }, rows = 3, profile = { name = "Thrall", realm = "Nordanaar" } })
+		local counted = false
+		for _, entry in ipairs(page_lines.counts) do
+			if entry.label == "Places discovered" and entry.value == "3" then counted = true end
+		end
+		return counted and page_lines.recorded:find("with where you stood", 1, true) ~= nil
+	end)())
 end

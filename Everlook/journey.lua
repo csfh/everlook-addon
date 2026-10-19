@@ -23,13 +23,14 @@ Everlook.journey = {}
 -- See docs/contracts.md, "Journey". These pages are not the world data's
 -- (pages.lua): their names hold a token, and a dirty one must not queue a world segment.
 
-local ACCEPTED, COMPLETED, ABANDONED, MET, ZONE = 1, 2, 3, 4, 5
+local ACCEPTED, COMPLETED, ABANDONED, MET, ZONE, AREA = 1, 2, 3, 4, 5, 6
 local KINDS = {
 	quest_accepted = ACCEPTED,
 	quest_completed = COMPLETED,
 	quest_abandoned = ABANDONED,
 	met = MET,
 	zone = ZONE,
+	area = AREA,
 }
 
 -- A chunk covers one range of sequence numbers. It is full when it reaches the end of its range.
@@ -57,7 +58,12 @@ local SETTLE = 14
 local RETRY = 8
 local TRIES = 10
 local DIALOG = "EVERLOOK_JOURNEY"
-local TEXT = "Everlook can also keep a journey for each character you play: the quests it takes, the zones it finds and the creatures it meets, with the character's name, realm, class, race and level. If you are signed in to the Everlook app, the app sends it to everlook.ing, where other signed-in members can see it unless you choose otherwise. You choose how each character is shown, and who sees it, on everlook.ing.\n\nKeep a journey for your characters?\n\nYou can change this at any time: type /everlook and turn Keep a journey on or off. Turning it off removes what has not been sent yet. What the site already holds you can delete in your settings on everlook.ing."
+local TEXT = "Everlook can also keep a journey for each character you play: the quests it takes, the zones and places it finds and the creatures it meets, with the character's name, realm, class, race and level. If you are signed in to the Everlook app, the app sends it to everlook.ing, where other signed-in members can see it unless you choose otherwise. You choose how each character is shown, and who sees it, on everlook.ing.\n\nKeep a journey for your characters?\n\nYou can change this at any time: type /everlook and turn Keep a journey on or off. Turning it off removes what has not been sent yet. What the site already holds you can delete in your settings on everlook.ing."
+
+-- Where a character stood is its own question, asked once after the journey is on, because a position is
+-- more than the journey says: it marks where on the map each thing happened.
+local POSITIONS_DIALOG = "EVERLOOK_JOURNEY_POSITIONS"
+local POSITIONS_TEXT = "Everlook can also keep where on the map your character stood for each thing in the journey, as a spot accurate to a tenth of a percent of the map. everlook.ing uses it to show where you have been on your journey page, to whoever you let see the journey.\n\nKeep where your characters stood?\n\nYou can change this at any time: type /everlook and turn Keep where I stood on or off. Turning it off stops new spots being kept. Spots already in the journey waiting to be sent are still sent, and what the site already holds you can delete in your settings on everlook.ing."
 
 local function plain(value)
 	return not (issecretvalue and issecretvalue(value))
@@ -107,6 +113,18 @@ end
 function Everlook.journey.asked()
 	local db = _G.EverlookDB
 	return type(db) == "table" and type(db.journey) == "table" and db.journey.enabled ~= nil
+end
+
+-- Whether the player has said yes to keeping where each thing happened.
+function Everlook.journey.positions()
+	local db = _G.EverlookDB
+	return type(db) == "table" and type(db.journey) == "table" and db.journey.positions == true
+end
+
+-- Whether the player has answered the question about positions, either way.
+function Everlook.journey.positions_asked()
+	local db = _G.EverlookDB
+	return type(db) == "table" and type(db.journey) == "table" and db.journey.positions ~= nil
 end
 
 -- Encoding. A value becomes CBOR, then base64, deflated when that is shorter. The prefix
@@ -223,7 +241,7 @@ function Everlook.journey.loaded()
 end
 
 local function fresh_counts()
-	return { completed = 0, started = 0, abandoned = 0, met = 0, zones = 0 }
+	return { completed = 0, started = 0, abandoned = 0, met = 0, zones = 0, areas = 0 }
 end
 
 -- The server's time, not this machine's clock, which the site would refuse if it ran a day ahead.
@@ -295,6 +313,32 @@ end
 
 local function level_here()
 	return number_or_zero(type(UnitLevel) == "function" and UnitLevel("player") or nil, 1, 255)
+end
+
+-- Where on the map the player stands, in tenths of a percent of its width and height (1 to 1000), or 0 and 0
+-- where the game does not say, as it does not inside an instance. Only read when the player has said yes.
+local function spot_here(map)
+	if map < 1 or type(C_Map) ~= "table" or type(C_Map.GetPlayerMapPosition) ~= "function" then
+		return 0, 0
+	end
+	local ok, position = pcall(C_Map.GetPlayerMapPosition, map, "player")
+	if not ok or type(position) ~= "table" then
+		return 0, 0
+	end
+	local x, y
+	if type(position.GetXY) == "function" then
+		x, y = position:GetXY()
+	else
+		x, y = position.x, position.y
+	end
+	if type(x) ~= "number" or type(y) ~= "number" or not plain(x) or not plain(y) then
+		return 0, 0
+	end
+	local tx, ty = math.floor(x * 1000 + 0.5), math.floor(y * 1000 + 0.5)
+	if tx < 1 or tx > 1000 or ty < 1 or ty > 1000 then
+		return 0, 0
+	end
+	return tx, ty
 end
 
 -- What a chunk says about its character. Nothing is made without a name and a realm.
@@ -437,8 +481,8 @@ function Everlook.journey.note(name, id, map)
 		return
 	end
 	local counts = state.counts
-	if kind == MET or kind == ZONE then
-		local space = kind == MET and "m" or "z"
+	if kind == MET or kind == ZONE or kind == AREA then
+		local space = kind == MET and "m" or (kind == ZONE and "z" or "a")
 		local entry = page_for(token, state, space, id)
 		if entry.data[id] or (kind == MET and state.met_rows >= MET_CAP) then
 			return
@@ -448,8 +492,10 @@ function Everlook.journey.note(name, id, map)
 		if kind == MET then
 			state.met_rows = state.met_rows + 1
 			counts.met = counts.met + 1
-		else
+		elseif kind == ZONE then
 			counts.zones = counts.zones + 1
+		else
+			counts.areas = (counts.areas or 0) + 1
 		end
 	else
 		local entry = page_for(token, state, "q", id)
@@ -472,13 +518,41 @@ function Everlook.journey.note(name, id, map)
 	end
 	state.seq = state.seq + 1
 	state.rows = state.rows + 1
-	append_row(token, state, { state.seq, kind, id, map or map_here(), level_here(), now() })
+	local where = map or map_here()
+	local row = { state.seq, kind, id, where, level_here(), now() }
+	-- A spot is kept only after the player has said yes to it, and is whole or missing: both numbers, or 0 and 0.
+	if Everlook.journey.positions() then
+		row[7], row[8] = spot_here(where)
+	end
+	append_row(token, state, row)
 end
 
 local function note_zone()
 	local map = map_here()
 	if map > 0 then
 		Everlook.journey.note("zone", map, map)
+	end
+end
+
+-- The area the player stands in, by the game's own list of what the character has uncovered at this spot. An area is
+-- recorded once ever, like a zone.
+local function note_area()
+	local map = map_here()
+	local reader = type(C_MapExplorationInfo) == "table" and C_MapExplorationInfo.GetExploredAreaIDsAtPosition
+	if map < 1 or type(reader) ~= "function" or type(C_Map) ~= "table" or type(C_Map.GetPlayerMapPosition) ~= "function" then
+		return
+	end
+	local ok, position = pcall(C_Map.GetPlayerMapPosition, map, "player")
+	if not ok or type(position) ~= "table" then
+		return
+	end
+	local found, ids = pcall(reader, map, position)
+	if not found or type(ids) ~= "table" then
+		return
+	end
+	local area = ids[1]
+	if type(area) == "number" and plain(area) and area >= 1 then
+		Everlook.journey.note("area", area, map)
 	end
 end
 
@@ -614,7 +688,7 @@ end
 
 -- What the settings page shows: the counts of the character playing now, and where signing stands.
 function Everlook.journey.summary()
-	local summary = { available = Everlook.journey.available(), enabled = Everlook.journey.enabled() }
+	local summary = { available = Everlook.journey.available(), enabled = Everlook.journey.enabled(), positions = Everlook.journey.positions() }
 	local guid = player_guid()
 	local token = guid and _G.EverlookDB and _G.EverlookDB.qol and _G.EverlookDB.qol.journey and _G.EverlookDB.qol.journey.tokens[guid]
 	local state = token and _G.EverlookDB.qol.journey.state[token]
@@ -637,6 +711,9 @@ function Everlook.journey.summary()
 	return summary
 end
 
+-- The question about positions is asked after the journey's yes, so the journey's dialog needs to reach it.
+local ask_positions
+
 local function define()
 	StaticPopupDialogs[DIALOG] = {
 		text = TEXT,
@@ -646,6 +723,11 @@ local function define()
 			Everlook.journey.set_enabled(true)
 			if Everlook.say then
 				Everlook.say("The journey is on. Turn it off with /everlook.")
+			end
+			if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+				C_Timer.After(RETRY, function()
+					ask_positions(TRIES)
+				end)
 			end
 		end,
 		OnCancel = function(_, _, reason)
@@ -662,6 +744,52 @@ local function define()
 		hideOnEscape = true,
 		preferredIndex = 3,
 	}
+end
+
+local function define_positions()
+	StaticPopupDialogs[POSITIONS_DIALOG] = {
+		text = POSITIONS_TEXT,
+		button1 = "Keep where I stood",
+		button2 = "Don't keep it",
+		OnAccept = function()
+			Everlook.journey.set_positions(true)
+			if Everlook.say then
+				Everlook.say("Keeping where you stood is on. Turn it off with /everlook.")
+			end
+		end,
+		OnCancel = function(_, _, reason)
+			-- "override" is the game closing it for something else, not the player's answer.
+			if reason == "clicked" or reason == nil then
+				Everlook.journey.set_positions(false)
+				if Everlook.say then
+					Everlook.say("Keeping where you stood is off. Turn it on with /everlook.")
+				end
+			end
+		end,
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+		preferredIndex = 3,
+	}
+end
+
+-- Asked once, after the journey is on, and never over another dialog, in combat or in a cinematic. A player who
+-- said yes to the journey before positions existed is asked too: their yes did not cover where they stood.
+ask_positions = function(tries)
+	if not Everlook.journey.enabled() or Everlook.journey.positions_asked() then
+		return
+	end
+	local ready = Everlook.journey.available() and Everlook.consent and not Everlook.consent.blocked()
+	if ready then
+		define_positions()
+		StaticPopup_Show(POSITIONS_DIALOG)
+		return
+	end
+	if tries > 1 and type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+		C_Timer.After(RETRY, function()
+			ask_positions(tries - 1)
+		end)
+	end
 end
 
 -- Asked once, only after the world-data question has been answered, and never
@@ -684,7 +812,7 @@ local function ask(tries)
 end
 
 -- The journey listens to nothing until the player has said yes, and stops when they say no.
-local EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_REMOVED", "PLAYER_LOGOUT" }
+local EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_REMOVED", "PLAYER_LOGOUT" }
 local frame = CreateFrame("Frame")
 local listening = false
 
@@ -705,6 +833,9 @@ end
 frame:SetScript("OnEvent", function(_, event, first, second)
 	if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
 		note_zone()
+		note_area()
+	elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" then
+		note_area()
 	elseif event == "QUEST_ACCEPTED" then
 		-- Retail sends the quest id alone, older clients the log index and then the id.
 		Everlook.journey.note("quest_accepted", type(second) == "number" and second or first)
@@ -729,9 +860,18 @@ function Everlook.journey.start()
 	if Everlook.journey.enabled() then
 		listen(true)
 		note_zone()
+		note_area()
 		wake()
 	end
-	if Everlook.journey.asked() or type(C_Timer) ~= "table" or type(C_Timer.After) ~= "function" then
+	if type(C_Timer) ~= "table" or type(C_Timer.After) ~= "function" then
+		return
+	end
+	if Everlook.journey.asked() then
+		if Everlook.journey.enabled() and not Everlook.journey.positions_asked() then
+			C_Timer.After(SETTLE, function()
+				ask_positions(TRIES)
+			end)
+		end
 		return
 	end
 	C_Timer.After(SETTLE, function()
@@ -758,5 +898,12 @@ function Everlook.journey.set_enabled(on)
 	listen(on and true or false)
 	if on then
 		note_zone()
+		note_area()
 	end
+end
+
+-- Keeping where each thing happened is a yes or a no of its own. Off, new rows carry no spot; the rows already
+-- waiting to be sent keep theirs, which the question says.
+function Everlook.journey.set_positions(on)
+	uploaded().positions = on and true or false
 end
