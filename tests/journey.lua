@@ -56,6 +56,8 @@ return function(root, check)
 				end
 			end,
 		}
+		-- The quests the game lists as done: a count is all the journey reads of it.
+		env.C_QuestLog = { GetAllCompletedQuestIDs = function() return world.done or {} end }
 		-- The areas the character has uncovered at its spot, the first the most specific.
 		env.C_MapExplorationInfo = { GetExploredAreaIDsAtPosition = function() return world.areas end }
 		env.time = function() return world.now end
@@ -184,7 +186,7 @@ return function(root, check)
 	check("journey records nothing after the player says no", #s.chunks() == 0 and select(2, s.character()) == nil)
 	check("and still listens to nothing", s.listening() == 0)
 	s.Everlook.journey.set_enabled(true)
-	check("it listens once the player says yes", s.listening() == 8)
+	check("it listens once the player says yes", s.listening() == 9)
 	s.Everlook.journey.note("met", 823)
 	check("journey records once the player says yes", #s.rows() == 1)
 	s.Everlook.journey.set_enabled(false)
@@ -200,7 +202,7 @@ return function(root, check)
 	s = load({ journey = { enabled = true } })
 	check("a saved yes is not listening until the player is in the world", s.listening() == 0)
 	s.Everlook.journey.start()
-	check("starting a session with a saved yes listens and notes the zone", s.listening() == 8 and #s.rows() == 1 and s.woken() >= 1)
+	check("starting a session with a saved yes listens and notes the zone", s.listening() == 9 and #s.rows() == 1 and s.woken() >= 1)
 
 	-- A row holds its sequence, kind, id, map, level and time.
 	s = on()
@@ -287,7 +289,7 @@ return function(root, check)
 	for _, bad in ipairs({ 0, -4, 2 ^ 31, "823" }) do s.Everlook.journey.note("met", bad) end
 	s.Everlook.journey.note("met", nil)
 	s.Everlook.journey.note("unknown_kind", 823)
-	check("an id that is not a positive integer is ignored, and so is a kind that does not exist", #s.chunks() == 0 and select(2, s.character()) == nil)
+	check("an id that is not a positive integer is ignored, and so is a kind that does not exist", #s.chunks() == 0 and select(2, s.character()).rows == 0)
 
 	-- The caps: creatures stop first, then everything.
 	s = on()
@@ -658,4 +660,101 @@ return function(root, check)
 		end
 		return counted and page_lines.recorded:find("with where you stood", 1, true) ~= nil
 	end)())
+
+	-- Gaps: only what there is firm evidence for, and a baseline only for a journey that is new.
+	local function listed(count)
+		local ids = {}
+		for index = 1, count do ids[index] = index end
+		return ids
+	end
+	s = load()
+	s.world.level, s.world.done = 38, listed(112)
+	s.Everlook.journey.set_enabled(true)
+	local _, fresh = s.character()
+	check("a brand-new journey is given a baseline: when, at what level, and how many quests the game lists as done", fresh.baseline ~= nil and fresh.baseline.level == 38 and fresh.baseline.done == 112 and fresh.baseline.at == 1760000000)
+	check("and a mark to compare the next login with", fresh.mark ~= nil and fresh.mark.level == 38 and fresh.mark.done == 112)
+	s.Everlook.journey.note("met", 5)
+	local first_document = s.decode(s.rows() and s.chunks()[1])
+	check("the baseline rides in the chunk's profile, which is signed with the rows", first_document.p.base.level == 38 and first_document.p.base.done == 112 and first_document.p.gaps == nil)
+
+	s = load({ qol = { journey = { tokens = { [GUID] = "aaaabbbbccccdddd" }, state = { aaaabbbbccccdddd = { seq = 5, rows = 5, met_rows = 5, counts = { completed = 0, started = 0, abandoned = 0, met = 5, zones = 0, areas = 0 }, pages = {} } } } }, journey = { enabled = true } })
+	s.world.level, s.world.done = 40, listed(300)
+	s.Everlook.journey.start()
+	local _, older = s.character()
+	check("a journey that already had rows is given a mark and no claim about what came before", older.baseline == nil and older.gaps == nil and older.mark ~= nil and older.mark.level == 40)
+
+	-- A level gained while the addon was not there to see it is a gap. A bigger list of finished quests alone is not.
+	s = on()
+	s.world.level, s.world.done = 38, listed(100)
+	s.fire("PLAYER_LOGOUT")
+	local db = s.db
+	s = load(db)
+	s.world.level, s.world.done, s.world.now = 38, listed(140), 1760000000 + 86400
+	s.Everlook.journey.start()
+	check("more quests listed as done, with no level gained, is not a gap: the game finishes some by itself", select(2, s.character()).gaps == nil)
+	s.fire("PLAYER_LOGOUT")
+	s = load(db)
+	s.world.level, s.world.done, s.world.now = 42, listed(150), 1760000000 + 3 * 86400
+	s.Everlook.journey.start()
+	local _, away = s.character()
+	check("levels gained between logout and the next login are a gap, from the last mark to now", #away.gaps == 1 and away.gaps[1].k == 2 and away.gaps[1].l == 4 and away.gaps[1].f == 1760000000 + 86400 and away.gaps[1].t == 1760000000 + 3 * 86400)
+	check("and the quests the game lists as more are said as that, not as quests the journey missed", away.gaps[1].d == 10)
+	s.Everlook.journey.note("met", 7)
+	local gap_document = s.decode((s.rows() and s.chunks())[1])
+	check("the gap rides in the chunk's profile and survives the profile being read again at logout", gap_document.p.gaps ~= nil and gap_document.p.gaps[1].k == 2 and gap_document.p.gaps[1].l == 4)
+
+	-- A level gained with the addon here is never a gap, even if the session ended without a logout.
+	s = on()
+	s.world.level = 38
+	s.world.level = 39
+	s.fire("PLAYER_LEVEL_UP", 39)
+	db = s.db
+	s = load(db)
+	s.world.level = 39
+	s.Everlook.journey.start()
+	check("a level gained while the addon was running is not a gap, even after a session that did not log out", select(2, s.character()).gaps == nil)
+
+	-- Turning the journey off and on again is a gap, with what changed in between.
+	s = on()
+	s.world.level, s.world.done = 38, listed(100)
+	s.Everlook.journey.set_enabled(false)
+	s.world.level, s.world.done, s.world.now = 40, listed(105), 1760000000 + 7200
+	s.Everlook.journey.set_enabled(true)
+	local _, toggled = s.character()
+	check("turning it off and on again is a gap, of the kind the player caused", #toggled.gaps == 1 and toggled.gaps[1].k == 1 and toggled.gaps[1].l == 2 and toggled.gaps[1].d == 5 and toggled.gaps[1].f == 1760000000 and toggled.gaps[1].t == 1760000000 + 7200)
+	check("and it is said once", toggled.off_at == nil)
+	s.Everlook.journey.set_enabled(false)
+	s.Everlook.journey.set_enabled(true)
+	check("an off and on with nothing changed is still a gap, of no levels and no quests", #select(2, s.character()).gaps == 2 and select(2, s.character()).gaps[2].l == nil and select(2, s.character()).gaps[2].d == nil)
+
+	-- The journey being full is a gap, said once.
+	s = on()
+	s.Everlook.journey.note("met", 1)
+	local _, full = s.character()
+	full.met_rows = 20000
+	s.Everlook.journey.note("met", 2)
+	s.Everlook.journey.note("met", 3)
+	check("reaching the cap for creatures is a gap, said once", #full.gaps == 1 and full.gaps[1].k == 3)
+	full.rows = 25000
+	s.Everlook.journey.note("zone", 9)
+	check("and so is the cap for everything, which is the same gap", #full.gaps == 1)
+
+	-- Only the newest gaps are kept.
+	s = on()
+	for step = 1, 15 do
+		s.Everlook.journey.set_enabled(false)
+		s.world.level = 38 + step
+		s.world.now = 1760000000 + step * 100
+		s.Everlook.journey.set_enabled(true)
+	end
+	local _, many = s.character()
+	check("at most 12 gaps are kept, the oldest dropped", #many.gaps == 12 and many.gaps[1].l == 1 and many.gaps[12].f == 1760000000 + 14 * 100)
+
+	-- The page says only what is known.
+	local lines = s.Everlook.journey.gap_lines({ baseline = { at = 1760000000, level = 38, done = 112 }, gaps = { { k = 1, f = 1760000000, t = 1760086400, l = 1, d = 2 }, { k = 2, f = 1760100000, t = 1760200000, l = 4, d = 8 }, { k = 3, f = 1760300000 } } })
+	check("the page says where the journey began, in what the game lists", lines[1]:find("begins on " .. os.date("%b %d, %Y", 1760000000), 1, true) ~= nil and lines[1]:find("at level 38", 1, true) ~= nil and lines[1]:find("112 quests as done", 1, true) ~= nil)
+	check("it says a stretch the player turned off, and the changes in it", lines[2]:find("the journey was turned off.", 1, true) ~= nil and lines[2]:find("gained 1 level and the game lists 2 more quests as done", 1, true) ~= nil)
+	check("it says levels the journey did not see without naming a cause", lines[3]:find("gained 4 levels the journey did not see.", 1, true) ~= nil and lines[3]:find("8 more quests as done", 1, true) ~= nil and lines[3]:find("addon", 1, true) == nil and lines[3]:find("disabled", 1, true) == nil)
+	check("it says when the journey was full, and that the site shows the same", lines[4]:find("reached its limit", 1, true) ~= nil and lines[5]:find("everlook.ing", 1, true) ~= nil)
+	check("with nothing to say it says nothing", #s.Everlook.journey.gap_lines({}) == 0)
 end

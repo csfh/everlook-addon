@@ -43,6 +43,9 @@ local MAX_ID = 2147483647
 local SPAN = 1024
 local MAX_LOADED = 8
 
+-- A gap is a stretch the addon can see the journey did not record. At most this many are kept, the oldest dropped.
+local GAPS_KEPT = 12
+
 -- The game fires QUEST_REMOVED for a turn-in as well as for giving a quest up, and
 -- not always in the same order as QUEST_TURNED_IN, so a removal is decided a moment later.
 local REMOVAL_WAIT = 2
@@ -341,6 +344,68 @@ local function spot_here(map)
 	return tx, ty
 end
 
+-- How many quests the game lists as done. It counts more than the journey can: the game also lists quests that
+-- finish by themselves, such as ones that track a place visited, so a difference is reported as what the game
+-- lists and never as quests the journey missed.
+local function completed_count()
+	local reader = type(C_QuestLog) == "table" and C_QuestLog.GetAllCompletedQuestIDs
+	if type(reader) ~= "function" then
+		return nil
+	end
+	local ok, ids = pcall(reader)
+	if ok and type(ids) == "table" then
+		return #ids
+	end
+end
+
+-- Where the character stands now, to compare with the next time. Fields the game does not give are left out.
+local function mark_now()
+	local level = level_here()
+	return { at = now(), level = level > 0 and level or nil, done = completed_count() }
+end
+
+local function add_gap(state, gap)
+	state.gaps = state.gaps or {}
+	state.gaps[#state.gaps + 1] = gap
+	while #state.gaps > GAPS_KEPT do
+		table.remove(state.gaps, 1)
+	end
+end
+
+-- Looks for a stretch the journey did not record, and only reports one it has firm evidence for: the player
+-- turned the journey off and on again, or the character gained levels while the addon was not there to see
+-- it (a level does not change while logged out). A rise in the game's own list of finished quests is not
+-- evidence, because the game finishes some by itself; it is reported only inside a stretch that is one.
+-- A journey that already had rows before this existed gets a mark and no claim about what came before; only a
+-- brand-new journey is given a baseline.
+local function watch(state)
+	local here = mark_now()
+	local mark = state.mark
+	if not mark then
+		if state.seq == 0 and state.baseline == nil then
+			state.baseline = { at = here.at, level = here.level, done = here.done }
+		end
+	else
+		local gained = (here.level or 0) - (mark.level or 0)
+		local listed = (here.done and mark.done and here.done > mark.done) and here.done - mark.done or nil
+		if state.off_at then
+			add_gap(state, { k = 1, f = state.off_at, t = here.at, l = gained > 0 and gained or nil, d = listed })
+		elseif gained > 0 then
+			add_gap(state, { k = 2, f = mark.at, t = here.at, l = gained, d = listed })
+		end
+	end
+	state.off_at = nil
+	state.mark = here
+end
+
+-- The journey is full: from now it adds nothing new. Said once.
+local function record_cap(state)
+	if not state.capped then
+		state.capped = true
+		add_gap(state, { k = 3, f = now() })
+	end
+end
+
 -- What a chunk says about its character. Nothing is made without a name and a realm.
 local function profile()
 	local name = type(UnitName) == "function" and UnitName("player") or nil
@@ -432,7 +497,14 @@ local function pack_open(token, state, cache)
 		entry = {}
 		chunks[#chunks + 1] = entry
 	end
-	entry.from, entry.to, entry.payload, entry.signature = from, to, pack(token, state.profile, rows), nil
+	-- A fresh table each time: the profile is read again at logout, and the baseline and gaps are not part of it.
+	local about = {}
+	for key, value in pairs(state.profile) do
+		about[key] = value
+	end
+	about.base = state.baseline
+	about.gaps = state.gaps and #state.gaps > 0 and state.gaps or nil
+	entry.from, entry.to, entry.payload, entry.signature = from, to, pack(token, about, rows), nil
 	cache.dirty = false
 	return true
 end
@@ -473,7 +545,11 @@ function Everlook.journey.note(name, id, map)
 		return
 	end
 	local token, state = current()
-	if not state or state.rows >= ROW_CAP then
+	if not state then
+		return
+	end
+	if state.rows >= ROW_CAP then
+		record_cap(state)
 		return
 	end
 	state.profile = state.profile or profile()
@@ -484,7 +560,11 @@ function Everlook.journey.note(name, id, map)
 	if kind == MET or kind == ZONE or kind == AREA then
 		local space = kind == MET and "m" or (kind == ZONE and "z" or "a")
 		local entry = page_for(token, state, space, id)
-		if entry.data[id] or (kind == MET and state.met_rows >= MET_CAP) then
+		if entry.data[id] then
+			return
+		end
+		if kind == MET and state.met_rows >= MET_CAP then
+			record_cap(state)
 			return
 		end
 		entry.data[id] = 1
@@ -668,6 +748,10 @@ function Everlook.journey.seal()
 	for token, state in pairs(store.state) do
 		if token == playing then
 			state.profile = profile() or state.profile
+			-- Where the character stood when it left, so the next login can tell what changed while the addon was away.
+			if Everlook.journey.enabled() then
+				state.mark = mark_now()
+			end
 		end
 		local cache = session[token]
 		if cache and cache.dirty then
@@ -694,6 +778,7 @@ function Everlook.journey.summary()
 	local state = token and _G.EverlookDB.qol.journey.state[token]
 	if state then
 		summary.counts, summary.rows, summary.profile = state.counts, state.rows, state.profile
+		summary.baseline, summary.gaps = state.baseline, state.gaps
 	end
 	local signed, waiting = 0, 0
 	local characters = _G.EverlookDB and _G.EverlookDB.journey and _G.EverlookDB.journey.characters
@@ -812,7 +897,7 @@ local function ask(tries)
 end
 
 -- The journey listens to nothing until the player has said yes, and stops when they say no.
-local EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_REMOVED", "PLAYER_LOGOUT" }
+local EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "PLAYER_LEVEL_UP", "QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_REMOVED", "PLAYER_LOGOUT" }
 local frame = CreateFrame("Frame")
 local listening = false
 
@@ -836,6 +921,15 @@ frame:SetScript("OnEvent", function(_, event, first, second)
 		note_area()
 	elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" then
 		note_area()
+	elseif event == "PLAYER_LEVEL_UP" then
+		-- Keep the mark current, so a level gained with the addon here is never mistaken for one it did not see.
+		local guid = player_guid()
+		local store = private()
+		local state = guid and store.tokens[guid] and store.state[store.tokens[guid]]
+		if state and state.mark then
+			local level = number_or_zero(first, 1, 255)
+			state.mark.level = level > 0 and level or level_here()
+		end
 	elseif event == "QUEST_ACCEPTED" then
 		-- Retail sends the quest id alone, older clients the log index and then the id.
 		Everlook.journey.note("quest_accepted", type(second) == "number" and second or first)
@@ -859,6 +953,14 @@ end
 function Everlook.journey.start()
 	if Everlook.journey.enabled() then
 		listen(true)
+		local state
+		if Everlook.journey.available() then
+			local _
+			_, state = current()
+		end
+		if state then
+			watch(state)
+		end
 		note_zone()
 		note_area()
 		wake()
@@ -883,7 +985,18 @@ end
 -- sequence numbers stay, since the site has seen them and a lower one would never be sent.
 function Everlook.journey.set_enabled(on)
 	local journey = uploaded()
+	local was = journey.enabled == true
 	journey.enabled = on and true or false
+	if not on and was then
+		-- Where the character stood when the journey stopped, so turning it on again can say what changed in between.
+		local guid = player_guid()
+		local store = private()
+		local state = guid and store.tokens[guid] and store.state[store.tokens[guid]]
+		if state then
+			state.mark = mark_now()
+			state.off_at = state.mark.at
+		end
+	end
 	if not on then
 		journey.characters = nil
 		job = nil
@@ -897,6 +1010,14 @@ function Everlook.journey.set_enabled(on)
 	end
 	listen(on and true or false)
 	if on then
+		local state
+		if Everlook.journey.available() then
+			local _
+			_, state = current()
+		end
+		if state then
+			watch(state)
+		end
 		note_zone()
 		note_area()
 	end
